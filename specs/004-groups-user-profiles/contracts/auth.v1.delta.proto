@@ -1,0 +1,36 @@
+// Delta to services/auth/api/proto/auth/v1/auth.proto. Field numbers continue the
+// existing messages; nothing is renumbered or removed (wire-compatible).
+syntax = "proto3";
+package auth.v1;
+
+// ---- changed -----------------------------------------------------------------
+message SessionIdentity {
+  string user_id = 1;
+  string tenant_id = 2;
+  string session_id = 3;
+  repeated string roles = 4;   // NOW: effective roles (direct ∪ groups)
+  repeated string amr = 5;
+  bool operator = 6;
+  string display_name = 7;     // NEW: "First Last" | explicit display name | email local part
+  string avatar_url = 8;       // NEW: gateway-relative path, "" when none; content-addressed
+}
+
+// ---- new ---------------------------------------------------------------------
+// Profiles answers "who is this user id" for services on the Freya channel.
+// Caller identity: service SVID (policy.yaml); tenant comes from the request and
+// must match the caller's grant like Authorization.Check. Phone is never returned.
+service Profiles {
+  rpc Lookup(LookupProfilesRequest) returns (LookupProfilesResponse);
+}
+message LookupProfilesRequest {
+  string tenant_id = 1;
+  repeated string user_ids = 2; // ≤ 100
+}
+message PublicProfile {
+  string user_id = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+}
+message LookupProfilesResponse {
+  repeated PublicProfile profiles = 1; // unknown ids omitted; order not guaranteed
+}

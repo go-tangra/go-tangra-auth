@@ -1,0 +1,10 @@
+{
+  "latestErrorEvent": {
+    "code": "TYPE-001",
+    "message": "Failed to generate type declaration. Execute the below cmd to reproduce and fix the error. #TYPE-001\nargs: {\"cmd\":\"/home/jadmin/.local/node/bin/node /home/jadmin/projects/go-freya/services/auth/console/node_modules/typescript/bin/tsc --project /home/jadmin/projects/go-freya/services/auth/console/node_modules/.federation/tsconfig.f3fa1cc7bb71ddc1c30e3c6a1aa5018a.json\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/type#type-001",
+    "args": {
+      "cmd": "/home/jadmin/.local/node/bin/node /home/jadmin/projects/go-freya/services/auth/console/node_modules/typescript/bin/tsc --project /home/jadmin/projects/go-freya/services/auth/console/node_modules/.federation/tsconfig.f3fa1cc7bb71ddc1c30e3c6a1aa5018a.json"
+    },
+    "timestamp": 1789625043154
+  }
+}

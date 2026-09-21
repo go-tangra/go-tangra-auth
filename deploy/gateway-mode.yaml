@@ -1,0 +1,43 @@
+# Development configuration for services/auth behind the application gateway
+# (workstation only): no edge listener; the browser API and console are served
+# on the Freya HTTP server to the gateway only.
+service_name: auth
+trust_domain: example.org
+env: dev
+identity:
+  provider: file
+  file: { cert: ../../.dev/ca/auth.pem, key: ../../.dev/ca/auth.key, bundle: ../../.dev/ca/ca.pem }
+authz: { source: file, path: deploy/policy.yaml }
+server: { grpc_addr: 127.0.0.1:9543, http_addr: 127.0.0.1:9544 }
+admin: { addr: 127.0.0.1:9190 }
+discovery:
+  static:
+    gateway: ["127.0.0.1:9643"]
+gateway: { enabled: true, service: gateway }
+issuer: https://localhost:8443
+db:
+  dsn: postgres://auth_app:dev@127.0.0.1:5432/auth?sslmode=disable
+  migrate_dsn: postgres://postgres:dev@127.0.0.1:5432/auth?sslmode=disable
+valkey:
+  addresses: ["127.0.0.1:6379"]
+  username: auth
+  password: dev
+  allow_plaintext: true
+openfga:
+  url: http://127.0.0.1:8080
+  preshared_key: dev-openfga-key
+  allow_plaintext: true
+kek:
+  source: file
+  path: deploy/dev-kek.b64
+email:
+  transport: smtp
+  host: 127.0.0.1
+  port: 1025
+  from: auth@example.org
+  allow_plaintext: true
+profile:
+  avatar_max_bytes: 2097152
+  avatar_size: 512
+limits:
+  max_request_bytes: 2162688 # avatar uploads (2 MiB + slack); JSON handlers keep their own 64 KiB cap

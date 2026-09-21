@@ -1,0 +1,188 @@
+/* Copy of services/gateway/shell/src/theme/materio.css (see materio.ts).
+   Materio look on top of Vuetify: Inter at 15px, muted body text with darker headings,
+   6px radii, soft shadows, a menu that blends with the page and a detached top bar.
+   Colours come from the Vuetify theme (src/theme/materio.ts); only shapes live here. */
+
+:root {
+  --v-font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --freya-radius: 0.375rem;
+  --freya-radius-lg: 0.625rem;
+  --freya-shadow: 0 0.25rem 0.625rem 0 rgba(46, 38, 61, 0.2);
+  --freya-shadow-sm: 0 0.1875rem 0.375rem 0 rgba(46, 38, 61, 0.18);
+  --freya-gutter: 1.5rem;
+}
+
+.v-theme--dark {
+  --freya-shadow: 0 0.25rem 0.625rem 0 rgba(19, 17, 32, 0.4);
+  --freya-shadow-sm: 0 0.1875rem 0.375rem 0 rgba(19, 17, 32, 0.36);
+}
+
+/* Type scale (Materio: 15px body, 1.375 line height, medium-weight headings). */
+.v-application {
+  font-size: 0.9375rem;
+  line-height: 1.375;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-background)) calc(var(--v-medium-emphasis-opacity) * 100%), transparent);
+}
+
+.v-application h1,
+.v-application h2,
+.v-application h3,
+.v-application h4,
+.v-application h5,
+.v-application h6,
+.v-application .text-h1,
+.v-application .text-h2,
+.v-application .text-h3,
+.v-application .text-h4,
+.v-application .text-h5,
+.v-application .text-h6,
+.v-application .v-card-title,
+.v-application .v-toolbar-title,
+.v-application .v-list-item-title {
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) calc(var(--v-high-emphasis-opacity) * 100%), transparent);
+}
+
+.v-application .text-h1 { font-size: 2.875rem; font-weight: 500; letter-spacing: normal; }
+.v-application .text-h2 { font-size: 2.375rem; font-weight: 500; letter-spacing: normal; }
+.v-application .text-h3 { font-size: 1.75rem; font-weight: 500; letter-spacing: normal; }
+.v-application .text-h4 { font-size: 1.5rem; font-weight: 500; letter-spacing: normal; }
+.v-application .text-h5 { font-size: 1.125rem; font-weight: 500; letter-spacing: normal; }
+.v-application .text-h6 { font-size: 0.9375rem; font-weight: 500; letter-spacing: normal; }
+.v-application .v-card-title { font-size: 1.125rem; font-weight: 500; letter-spacing: normal; line-height: 1.5; }
+.v-application .v-card-subtitle { opacity: 1; color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 55%, rgb(var(--v-theme-surface))); }
+
+/* Surfaces: white cards on the grey page, no borders, one soft shadow. */
+.v-application .v-card:not(.v-card--variant-outlined):not(.v-card--variant-text):not(.v-card--variant-tonal):not(.v-card--flat) {
+  box-shadow: var(--freya-shadow);
+}
+.v-application .v-card,
+.v-application .v-overlay__content > .v-card,
+.v-application .v-menu > .v-overlay__content > .v-list {
+  border-radius: var(--freya-radius);
+}
+.v-application .v-menu > .v-overlay__content > .v-list,
+.v-application .v-overlay__content > .v-card {
+  box-shadow: var(--freya-shadow);
+}
+/* Outlined variants keep Materio's faint 12 % border instead of a solid currentColor line. */
+.v-application .v-card--variant-outlined {
+  background: rgb(var(--v-theme-surface));
+  border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.v-application .v-btn--variant-outlined { border-color: color-mix(in srgb, currentColor 50%, transparent); }
+.v-application .v-btn { letter-spacing: normal; text-transform: none; font-weight: 500; }
+.v-application .v-field--variant-outlined .v-field__outline { --v-field-border-opacity: 0.22; }
+.v-application .v-field--variant-outlined.v-field--focused .v-field__outline { --v-field-border-opacity: 1; }
+.v-application .v-table > .v-table__wrapper > table > thead > tr > th {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.0125rem;
+  text-transform: uppercase;
+  background: rgb(var(--v-theme-surface-light));
+}
+
+/* Vertical menu: blends with the page, links are right-rounded pills, the
+   active one carries the primary gradient with white text. */
+.freya-drawer.v-navigation-drawer {
+  border-inline-end: none;
+  background: rgb(var(--v-theme-background));
+  color: color-mix(in srgb, rgb(var(--v-theme-on-background)) calc(var(--v-high-emphasis-opacity) * 100%), transparent);
+}
+.freya-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.45rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+}
+.freya-brand__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--freya-radius);
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+  box-shadow: var(--freya-shadow-sm);
+}
+.freya-brand__text {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.freya-drawer .v-list--nav { padding-inline: 0; }
+.freya-drawer .v-list-item {
+  margin-inline-end: 1.125rem;
+  padding-inline: 1.45rem 1rem;
+  min-height: 2.625rem;
+  border-radius: 0 50rem 50rem 0 !important;
+  color: inherit;
+}
+.freya-drawer .v-list--nav .v-list-item:not(:first-child),
+.freya-drawer .v-list--nav .v-list-group:not(:first-child) > .v-list-item,
+.freya-drawer .v-list--nav .v-list-group__items > .v-list-item {
+  margin-top: 0.375rem;
+}
+.freya-drawer .v-list-item .v-list-item-title {
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.375;
+  color: inherit;
+}
+.freya-drawer .v-list-item__prepend > .v-icon {
+  font-size: 1.375rem;
+  margin-inline-end: 0.5rem;
+  opacity: 1;
+}
+.freya-drawer .v-list-item__spacer { width: 0; }
+.freya-drawer .v-list-group__items .v-list-item { padding-inline-start: 1.5rem; }
+.freya-drawer .v-list-group__items .v-list-item__prepend > .v-icon { font-size: 1.125rem; opacity: 0.7; }
+.freya-drawer .v-list-item--active > .v-list-item__overlay { opacity: 0; }
+.freya-drawer .v-list-item--active:not(.v-list-group__header) {
+  color: rgb(var(--v-theme-on-primary));
+  background: linear-gradient(270deg, rgb(var(--v-theme-primary)) 0%, color-mix(in srgb, rgb(var(--v-theme-primary)) 52%, #fff) 100%);
+  box-shadow: var(--freya-shadow-sm);
+}
+.freya-drawer .v-list-item--active:not(.v-list-group__header) .v-list-item-title,
+.freya-drawer .v-list-item--active:not(.v-list-group__header) .v-icon { color: rgb(var(--v-theme-on-primary)); opacity: 1; }
+.freya-drawer .v-list-group--open > .v-list-group__header {
+  background: color-mix(in srgb, rgb(var(--v-theme-on-background)) 6%, transparent);
+}
+.freya-drawer .v-list-group__header .v-list-item__append > .v-icon { font-size: 1.125rem; }
+
+/* Detached top bar: a white strip with rounded bottom corners inside the page gutters. */
+.freya-appbar.v-app-bar.v-toolbar {
+  background: transparent !important;
+  box-shadow: none;
+  padding-inline: var(--freya-gutter);
+}
+.freya-appbar .v-toolbar__content {
+  background: rgb(var(--v-theme-surface));
+  border-radius: 0 0 var(--freya-radius-lg) var(--freya-radius-lg);
+  box-shadow: var(--freya-shadow);
+  padding-inline: 0.5rem 1rem;
+  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) calc(var(--v-high-emphasis-opacity) * 100%), transparent);
+}
+.freya-avatar { position: relative; }
+.freya-avatar__status {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-success));
+  box-shadow: 0 0 0 2px rgb(var(--v-theme-surface));
+}
+
+/* Page content sits in the same gutters as the top bar, capped like Materio's container-xxl. */
+.freya-page.v-container {
+  max-width: 1440px;
+  padding: var(--freya-gutter);
+}
+
+@media (max-width: 959px) {
+  :root { --freya-gutter: 1rem; }
+}

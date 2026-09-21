@@ -1,0 +1,8 @@
+# Any platform service may call the demo (the end user is checked by authclient).
+version: downstream-dev-1
+rules:
+  - id: services-demo
+    from: ["spiffe://example.org/svc/*"]
+    to: ["downstream"]
+    operations: ["/demo.v1.Demo/WhoAmI", "/grpc.health.v1.Health/Check"]
+    effect: allow

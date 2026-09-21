@@ -1,0 +1,29 @@
+model
+  schema 1.1
+
+# Every object id is prefixed with the tenant id ("<tid>/..." or the tenant itself).
+# The service refuses any check or write whose object tenant differs from the
+# caller's verified tenant context; the model never spans tenants.
+
+type user
+
+type tenant
+  relations
+    define owner: [user]
+    define admin: [user] or owner
+    define member: [user] or admin
+
+type role
+  relations
+    define tenant: [tenant]
+    define assignee: [user]
+
+type permission
+  relations
+    define tenant: [tenant]
+    define granted: [role#assignee]
+
+# Examples
+#   user:U  assignee  role:T/auditor
+#   role:T/auditor#assignee  granted  permission:T/invoices:read
+#   Check(user:U, granted, permission:T/invoices:read) -> allowed

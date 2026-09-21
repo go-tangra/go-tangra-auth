@@ -1,0 +1,44 @@
+# Standalone console instance next to the gateway-mode one (same database and
+# Valkey): the console Playwright suite runs against it with
+#   AUTH_BASE_URL=https://127.0.0.1:8543 PW_CHANNEL=chrome npx playwright test
+# because a direct /console URL through the gateway loads the console standalone.
+# Development configuration for services/auth (workstation only).
+service_name: auth
+trust_domain: example.org
+env: dev
+identity:
+  provider: file
+  file: { cert: ../../.dev/ca/auth.pem, key: ../../.dev/ca/auth.key, bundle: ../../.dev/ca/ca.pem }
+authz: { source: file, path: deploy/policy.yaml }
+server: { grpc_addr: 127.0.0.1:9553 }
+admin: { addr: 127.0.0.1:9191 }
+edge:
+  addr: 127.0.0.1:8543
+  allowed_origins: ["https://localhost:8543", "https://127.0.0.1:8543"]
+issuer: https://localhost:8543
+db:
+  dsn: postgres://auth_app:dev@127.0.0.1:5432/auth?sslmode=disable
+  migrate_dsn: postgres://postgres:dev@127.0.0.1:5432/auth?sslmode=disable
+valkey:
+  addresses: ["127.0.0.1:6379"]
+  username: auth
+  password: dev
+  allow_plaintext: true
+openfga:
+  url: http://127.0.0.1:8080
+  preshared_key: dev-openfga-key
+  allow_plaintext: true
+kek:
+  source: file
+  path: deploy/dev-kek.b64
+email:
+  transport: smtp
+  host: 127.0.0.1
+  port: 1025
+  from: auth@example.org
+  allow_plaintext: true
+profile:
+  avatar_max_bytes: 2097152
+  avatar_size: 512
+limits:
+  max_request_bytes: 2162688 # avatar uploads (2 MiB + slack); JSON handlers keep their own 64 KiB cap

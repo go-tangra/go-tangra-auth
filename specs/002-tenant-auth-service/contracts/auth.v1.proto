@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "github.com/go-freya/freya/services/auth/api/proto/auth/v1;authv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Service-to-service API. Reached only over the Freya mTLS channel; the calling
+// service's SPIFFE identity is the actor. All methods are subject to the Freya
+// authorization policy of the auth service (policy.yaml) in addition to the
+// checks documented per method.
+
+service Keys {
+  // List returns the currently published verification keys (JWKS equivalent).
+  rpc List(ListKeysRequest) returns (ListKeysResponse);
+}
+
+service Sessions {
+  // RevokedSince returns revocation entries after the cursor (bounded delay
+  // feed for offline verifiers). Cursor "" = last 60 minutes.
+  rpc RevokedSince(RevokedSinceRequest) returns (RevokedSinceResponse);
+  // Watch streams revocation entries as they happen (optional fast path).
+  rpc Watch(WatchRequest) returns (stream Revocation);
+  // Introspect validates a token server-side (rare path; audited).
+  rpc Introspect(IntrospectRequest) returns (IntrospectResponse);
+}
+
+service Authorization {
+  // Check answers "may user perform action on resource in tenant".
+  rpc Check(CheckRequest) returns (CheckResponse);
+  // BatchCheck answers many questions for the same user/tenant.
+  rpc BatchCheck(BatchCheckRequest) returns (BatchCheckResponse);
+  // RegisterPermissions declares the resources/actions a service exposes
+  // (FR-015). Idempotent; the caller's SPIFFE ID is recorded as registrant.
+  rpc RegisterPermissions(RegisterPermissionsRequest) returns (RegisterPermissionsResponse);
+}
+
+message ListKeysRequest {}
+message ListKeysResponse { repeated Key keys = 1; }
+message Key {
+  string kid = 1;
+  string kty = 2;            // "OKP"
+  string crv = 3;            // "Ed25519"
+  bytes  public_key = 4;     // raw 32 bytes
+  string state = 5;          // active | retiring | retired
+  google.protobuf.Timestamp not_after = 6; // last moment a token signed with it can be valid
+}
+
+message RevokedSinceRequest { string cursor = 1; uint32 limit = 2; }
+message RevokedSinceResponse { repeated Revocation revocations = 1; string next_cursor = 2; }
+message WatchRequest { string cursor = 1; }
+message Revocation {
+  google.protobuf.Timestamp ts = 1;
+  string kind = 2;           // session | user | tenant
+  string subject_id = 3;
+  string tenant_id = 4;
+  string reason = 5;         // closed vocabulary
+}
+
+message IntrospectRequest { string token = 1; }
+message IntrospectResponse {
+  bool active = 1;
+  string reason = 2;         // expired | revoked | invalid | tenant_suspended | user_inactive
+  string user_id = 3;
+  string tenant_id = 4;
+  string session_id = 5;
+  repeated string roles = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message CheckRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  string resource = 3;       // e.g. "invoices"
+  string action = 4;         // e.g. "read"
+  map<string, string> context = 5; // reserved for conditions
+}
+message CheckResponse {
+  bool allowed = 1;
+  string reason = 2;         // role:<slug> | no_permission | user_inactive | tenant_suspended | unknown_permission
+  string policy_version = 3; // tenant version used for the decision
+}
+message BatchCheckRequest { string tenant_id = 1; string user_id = 2; repeated PermissionRef permissions = 3; }
+message PermissionRef { string resource = 1; string action = 2; }
+message BatchCheckResponse { repeated CheckResponse results = 1; }
+
+message RegisterPermissionsRequest {
+  repeated PermissionDef permissions = 1;
+  // tenant_ids empty = register for every tenant the service is entitled to serve.
+  repeated string tenant_ids = 2;
+  // builtin_grants adds the registrant's own permissions to built-in roles
+  // (owner, admin, member, auditor, operator) of every tenant; idempotent.
+  // Permissions not in this request are refused (feature 005).
+  repeated BuiltinGrant builtin_grants = 3;
+}
+message BuiltinGrant { string role = 1; repeated string permissions = 2; }
+message PermissionDef { string resource = 1; string action = 2; string description = 3; }
+message RegisterPermissionsResponse { uint32 registered = 1; }

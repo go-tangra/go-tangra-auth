@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+// Demo is the example downstream service: it accepts an end-user access token
+// over the Freya channel and echoes the verified identity.
+package demo.v1;
+
+option go_package = "github.com/go-freya/freya/services/auth/api/proto/demo/v1;demov1";
+
+service Demo {
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+message WhoAmIRequest {}
+message WhoAmIResponse {
+  string user_id = 1;
+  string tenant_id = 2;
+  string session_id = 3;
+  repeated string roles = 4;
+  repeated string amr = 5;
+  string caller_service = 6; // SPIFFE ID of the service that relayed the call
+}

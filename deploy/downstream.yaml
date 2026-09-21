@@ -1,0 +1,14 @@
+# Example downstream service (quickstart §4). Runs on the Freya channel next to
+# the auth service and verifies end-user tokens offline.
+service_name: downstream
+trust_domain: example.org
+env: dev
+identity:
+  provider: file
+  file: { cert: ../../.dev/ca/downstream.pem, key: ../../.dev/ca/downstream.key, bundle: ../../.dev/ca/ca.pem }
+authz: { source: file, path: deploy/downstream-policy.yaml }
+server: { grpc_addr: 127.0.0.1:9544 }
+admin: { addr: 127.0.0.1:9191 }
+discovery:
+  static:
+    auth: ["grpcs://127.0.0.1:9543"]

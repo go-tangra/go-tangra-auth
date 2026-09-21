@@ -1,0 +1,8 @@
+console/node_modules/
+console/dist/
+console/test-results/
+console/playwright-report/
+.artifacts/
+coverage.out
+deploy/dev-kek.b64
+console/dist-remote/

@@ -1,0 +1,219 @@
+# Delta to services/auth/api/openapi/console.yaml (feature 002 contract).
+# Paths below are ADDED; the "changed" block lists edits to existing schemas/paths.
+# Conventions unchanged: session cookie auth, CSRF header on mutations, errors are
+# {"reason": ...} from the closed vocabulary, cross-tenant ids are 404.
+openapi: 3.1.0
+info: { title: Freya Auth — Console API (groups & profiles delta), version: 1.1.0 }
+components:
+  schemas:
+    Name: { type: string, maxLength: 100, pattern: '^[^\p{Cc}]*$', description: 'trimmed; no control characters' }
+    Phone: { type: string, maxLength: 24, description: 'E.164 after normalisation (+[1-9][0-9]{6,14}); empty clears; PII — never logged' }
+    Profile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        first_name: { $ref: '#/components/schemas/Name' }
+        last_name: { $ref: '#/components/schemas/Name' }
+        phone: { $ref: '#/components/schemas/Phone' }
+        avatar_url: { type: string, description: 'content-addressed; empty when none' }
+        updated_at: { type: string, format: date-time, nullable: true }
+    ProfileUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        first_name: { $ref: '#/components/schemas/Name' }
+        last_name: { $ref: '#/components/schemas/Name' }
+        phone: { $ref: '#/components/schemas/Phone' }
+        display_name: { type: string, maxLength: 100, description: 'setting it makes it explicit; omit to keep deriving from first/last' }
+    PublicProfile:
+      type: object
+      description: 'what any member of the tenant may see about another member'
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        avatar_url: { type: string }
+    Group:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 64 }
+        description: { type: string, maxLength: 500 }
+        member_count: { type: integer }
+        roles: { type: array, items: { type: string }, description: 'role slugs' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    GroupInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64, pattern: '^[^\p{Cc}]+$' }
+        description: { type: string, maxLength: 500 }
+    GroupMember:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string }
+        display_name: { type: string }
+        avatar_url: { type: string }
+        status: { type: string }
+        added_at: { type: string, format: date-time }
+    EffectiveRole:
+      type: object
+      properties:
+        role_id: { type: string, format: uuid }
+        slug: { type: string }
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [direct, group] }
+              group_id: { type: string, format: uuid }
+              group_name: { type: string }
+    UserGroupRef:
+      type: object
+      properties: { id: { type: string, format: uuid }, name: { type: string } }
+
+paths:
+  # ---- self-service profile -------------------------------------------------
+  /api/v1/me/profile:
+    get:
+      operationId: getMyProfile
+      summary: Own profile including phone
+      responses: { '200': { description: profile, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } } }
+    put:
+      operationId: updateMyProfile
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Update own names/phone (audited: field names only); response carries X-Freya-Identity-Refresh
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProfileUpdate' } } } }
+      responses: { '200': { description: updated profile }, '400': { description: validation_failed (field in details) } }
+  /api/v1/me/avatar:
+    put:
+      operationId: uploadMyAvatar
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Replace own avatar (raw image body, PNG/JPEG/WebP, ≤ 2 MiB; re-encoded server-side)
+      x-freya-max-body-bytes: 2162688
+      requestBody: { required: true, content: { image/png: { schema: { type: string, format: binary } }, image/jpeg: { schema: { type: string, format: binary } }, image/webp: { schema: { type: string, format: binary } } } }
+      responses:
+        '200': { description: '{ "avatar_url": "..." }' }
+        '400': { description: validation_failed — reason detail one of unsupported_type | not_an_image | too_large_dimensions | decode_failed }
+        '413': { description: body_too_large }
+    delete:
+      operationId: removeMyAvatar
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      responses: { '204': { description: removed (idempotent) } }
+  # ---- avatar bytes & lookup (any signed-in member of the same tenant) ------
+  /api/v1/users/{id}/avatar/{avatar_id}:
+    get:
+      operationId: getAvatar
+      summary: Avatar bytes; image/jpeg; private immutable caching; 404 for other tenants, unknown ids and stale hashes
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }, { name: avatar_id, in: path, required: true, schema: { type: string, pattern: '^[a-f0-9]{64}$' } }]
+      responses: { '200': { description: image/jpeg with X-Content-Type-Options nosniff, CSP sandbox, Content-Disposition inline }, '404': { description: not_found } }
+  /api/v1/users/{id}:
+    get:
+      operationId: lookupUser
+      summary: Display name and avatar of a member of the caller's tenant (rate-limited; uniform 404)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: public profile, content: { application/json: { schema: { $ref: '#/components/schemas/PublicProfile' } } } }, '404': { description: not_found } }
+  /api/v1/users/lookup:
+    post:
+      operationId: lookupUsers
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Batch lookup (≤ 100 ids); unknown/cross-tenant ids are omitted
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [ids], properties: { ids: { type: array, maxItems: 100, items: { type: string, format: uuid } } } } } } }
+      responses: { '200': { description: list, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/PublicProfile' } } } } } } } }
+  # ---- admin: profiles & effective roles ------------------------------------
+  /api/v1/admin/users/{id}/profile:
+    get:
+      operationId: getUserProfile
+      summary: Any user's profile including phone (users:manage)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: profile, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } } }
+    put:
+      operationId: updateUserProfile
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProfileUpdate' } } } }
+      responses: { '200': { description: updated }, '400': { description: validation_failed } }
+  /api/v1/admin/users/{id}/avatar:
+    delete:
+      operationId: removeUserAvatar
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: removed } }
+  /api/v1/admin/users/{id}/effective-roles:
+    get:
+      operationId: effectiveRoles
+      summary: Roles a user holds with their sources (direct / groups)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: list, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/EffectiveRole' } } } } } } } }
+  /api/v1/admin/users/{id}/groups:
+    get:
+      operationId: userGroups
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: groups of the user, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/UserGroupRef' } } } } } } } }
+  # ---- admin: groups --------------------------------------------------------
+  /api/v1/admin/groups:
+    get:
+      operationId: listGroups
+      summary: Groups of the tenant with member counts and roles (users:manage)
+      parameters: [{ name: q, in: query, schema: { type: string, maxLength: 64 } }]
+      responses: { '200': { description: list, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Group' } } } } } } } }
+    post:
+      operationId: createGroup
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GroupInput' } } } }
+      responses: { '201': { description: created }, '400': { description: validation_failed }, '409': { description: name_taken } }
+  /api/v1/admin/groups/{id}:
+    get:
+      operationId: getGroup
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: group with members and roles } }
+    put:
+      operationId: updateGroup
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GroupInput' } } } }
+      responses: { '200': { description: updated }, '409': { description: name_taken } }
+  /api/v1/admin/groups/{id}/remove:
+    post:
+      operationId: deleteGroup
+      summary: Delete a group; member_count must equal the current count (confirmation)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [member_count], properties: { member_count: { type: integer, minimum: 0 } } } } } }
+      responses: { '204': { description: deleted; access withdrawn }, '409': { description: member_count_mismatch } }
+  /api/v1/admin/groups/{id}/members:
+    get:
+      operationId: listGroupMembers
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }, { name: cursor, in: query, schema: { type: string } }]
+      responses: { '200': { description: page of members, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/GroupMember' } }, next: { type: string } } } } } } }
+    post:
+      operationId: addGroupMembers
+      summary: Add users (≤ 100 per call); already-members are no-ops; escalation guard applies
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [user_ids], properties: { user_ids: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } } } } } } }
+      responses: { '200': { description: '{ "added": n }' }, '403': { description: self_escalation }, '404': { description: unknown or cross-tenant user } }
+  /api/v1/admin/groups/{id}/members/{user_id}/remove:
+    post:
+      operationId: removeGroupMember
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }, { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: removed (idempotent) } }
+  /api/v1/admin/groups/{id}/roles:
+    put:
+      operationId: setGroupRoles
+      summary: Replace the group's roles; cannot grant permissions the actor lacks (owners exempt)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [role_ids], properties: { role_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } } } } } } }
+      responses: { '200': { description: '{ "roles": [slugs] }' }, '403': { description: self_escalation } }
+
+changed:
+  - path: /api/v1/session (GET)
+    change: response gains display_name, first_name, last_name, avatar_url (never phone)
+  - path: /api/v1/admin/users (GET)
+    change: items gain first_name, last_name, avatar_url; query `q` also matches first/last name
+  - path: /api/v1/admin/invitations (POST)
+    change: body gains group_ids (uuid[], ≤ 50, must exist in tenant), first_name, last_name
+  - path: /api/v1/admin/users/{id} (GET)
+    change: response gains groups [UserGroupRef] and profile fields
+  - headers: X-Freya-Identity-Refresh
+    change: set to "1" on successful PUT /api/v1/me/profile, PUT/DELETE /api/v1/me/avatar; consumed and stripped by the gateway
