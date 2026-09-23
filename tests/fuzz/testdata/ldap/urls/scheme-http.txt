@@ -1,0 +1,1 @@
+http://ldap.example.org

@@ -1,0 +1,1 @@
+ldap://ldap.example.org:65536
