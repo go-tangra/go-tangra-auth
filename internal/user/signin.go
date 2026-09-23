@@ -124,7 +124,13 @@ func (s *Service) Start(ctx context.Context, in Input) (Result, error) {
 	if err == nil {
 		if t, err = s.st.TenantBySlug(ctx, slug); err == nil {
 			if u, err = s.st.UserByEmail(ctx, t.ID, email); err == nil {
-				known = true
+				// An imported account is indistinguishable from a
+				// non-existent one: no lockout, no locked oracle (SR-006).
+				if u.Status == "imported" {
+					u = store.User{}
+				} else {
+					known = true
+				}
 			}
 		}
 	}
