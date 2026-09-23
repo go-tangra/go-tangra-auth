@@ -89,3 +89,55 @@ func TestAdminOperations(t *testing.T) {
 		t.Fatalf("audit %v", types)
 	}
 }
+
+// Research D10: an imported account is neither deactivated nor reactivated —
+// deactivate → reactivate would otherwise turn a password-less, never-invited
+// row into an active account. The refusal leaves status and sessions alone.
+func TestAdminRefusesImported(t *testing.T) {
+	ctx := context.Background()
+	ms := memstore.New()
+	ms.AddTenant(store.Tenant{ID: tA, Slug: "acme", Status: "active", Kind: "customer", Policy: []byte("{}")})
+	ms.AddRole(store.Role{ID: "r-owner", TenantID: tA, Slug: "owner", Builtin: true})
+	ms.AddUser(store.User{ID: "u-owner", TenantID: tA, Email: "owner@x.test", Status: "active"})
+	ms.AddUser(store.User{ID: "u-imp", TenantID: tA, Email: "imp@x.test", DisplayName: "Imp", Status: "imported"})
+	_ = ms.ReplaceBindings(ctx, tA, "u-owner", "", []string{"r-owner"})
+	c := cache.New(cache.NewMemory())
+	aw := audit.NewWriter(ms, nil)
+	defer aw.Close()
+	sm := session.New(ms, c, aw)
+	admin := NewAdmin(ms, sm, aw)
+	actor := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-owner", TenantID: tA, Roles: []string{"owner"}}
+	actorCtx := tenantctx.WithActor(ctx, actor)
+
+	// A (stray) session proves the refusal happens before any revocation.
+	_, secret, err := sm.Create(ctx, session.CreateParams{TenantID: tA, UserID: "u-imp", Policy: tenant.DefaultPolicy()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, op := range map[string]func(context.Context, tenantctx.Actor, string) error{
+		"deactivate": admin.Deactivate,
+		"reactivate": admin.Reactivate,
+	} {
+		if err := op(actorCtx, actor, "u-imp"); !errors.Is(err, ErrInvalidState) {
+			t.Fatalf("%s imported: want ErrInvalidState, got %v", name, err)
+		}
+		if u, _ := ms.User(ctx, tA, "u-imp"); u.Status != "imported" {
+			t.Fatalf("%s imported changed status to %q", name, u.Status)
+		}
+		if _, err := sm.Resolve(ctx, secret); err != nil {
+			t.Fatalf("%s imported touched sessions: %v", name, err)
+		}
+	}
+	// Deactivate then reactivate in sequence must not reach active either.
+	_ = admin.Deactivate(actorCtx, actor, "u-imp")
+	_ = admin.Reactivate(actorCtx, actor, "u-imp")
+	if u, _ := ms.User(ctx, tA, "u-imp"); u.Status != "imported" {
+		t.Fatalf("deactivate→reactivate moved imported to %q", u.Status)
+	}
+	aw.Close()
+	for _, r := range ms.AuditRows {
+		if r.EventType == "session_revoked" || ((r.EventType == "user_deactivated" || r.EventType == "user_reactivated") && r.Outcome == "ok") {
+			t.Fatalf("refused operation audited as done: %+v", r)
+		}
+	}
+}

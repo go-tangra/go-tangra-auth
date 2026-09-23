@@ -196,6 +196,32 @@ func TestGroupRepos(t *testing.T) {
 	}); err == nil {
 		t.Fatal("member from another tenant must be refused")
 	}
+	// Research D10: an imported user is never added to a group (groups are
+	// chosen at activation); the refusal looks like "not a user".
+	uImp := NewID()
+	if err := st.Tx(ctx, Scope{System: true}, func(tx pgx.Tx) error {
+		return InsertUser(ctx, tx, User{ID: uImp, TenantID: tA, Email: "imported@x.test", Status: "imported"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Tx(ctx, Scope{TenantID: tA}, func(tx pgx.Tx) error {
+		_, err := AddGroupMembers(ctx, tx, tA, gid, "", []string{uImp})
+		return err
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("imported member must be refused as ErrNotFound, got %v", err)
+	}
+	if err := st.Tx(ctx, Scope{TenantID: tA}, func(tx pgx.Tx) error {
+		groups, err := UserGroups(ctx, tx, tA, uImp)
+		if err != nil {
+			return err
+		}
+		if len(groups) != 0 {
+			t.Fatalf("imported user became a member: %v", groups)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Role deletion cascades out of the group; group deletion cascades members.
 	if err := st.Tx(ctx, Scope{TenantID: tA}, func(tx pgx.Tx) error {
 		if err := RemoveRole(ctx, tx, tA, rInv); err != nil {
