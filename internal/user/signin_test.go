@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-freya/freya/services/auth/internal/audit"
 	"github.com/go-freya/freya/services/auth/internal/cache"
 	"github.com/go-freya/freya/services/auth/internal/memstore"
 	"github.com/go-freya/freya/services/auth/internal/password"
@@ -151,5 +152,91 @@ func TestMFAHandOff(t *testing.T) {
 	res, _ = svc.Start(ctx, Input{TenantSlug: "acme", Email: "mfa@x.test", Password: "correct horse battery", IP: "4"})
 	if _, err := svc.CompleteMFA(ctx, res.Challenge, "123456", "4", "ua"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatal(err)
+	}
+}
+
+// TestImportedIsUnknown (feature 016, SR-006/SC-002): an account imported from
+// a directory but never activated is indistinguishable from one that does not
+// exist — same refusal, same audit reason, no lockout counter, never locked,
+// and the dummy hash is verified rather than anything stored on the row.
+func TestImportedIsUnknown(t *testing.T) {
+	svc, ms, c := setup(t)
+	ctx := context.Background()
+	aw := audit.NewWriter(ms, nil)
+	defer aw.Close()
+	svc.audit = aw
+	ms.AddUser(store.User{ID: "u-imp", TenantID: tA, Email: "imported@x.test", Status: "imported"})
+	// A stray hash on an imported row must never be what gets verified.
+	h, _ := password.Hash("correct horse battery")
+	ms.AddUser(store.User{ID: "u-imp-hash", TenantID: tA, Email: "imported-hash@x.test", Status: "imported", PasswordHash: &h})
+
+	type observed struct {
+		err     error
+		attempt memstore.Attempt
+	}
+	try := func(email, pw, ip string) observed {
+		t.Helper()
+		_, err := svc.Start(ctx, Input{TenantSlug: "acme", Email: email, Password: pw, IP: ip, UserAgent: "ua"})
+		return observed{err: err, attempt: ms.Attempts[len(ms.Attempts)-1]}
+	}
+	unknown := try("ghost@x.test", "wrong", "10")
+	if !errors.Is(unknown.err, ErrInvalidCredentials) || unknown.attempt.Reason != "unknown_account" || unknown.attempt.UserID != "" {
+		t.Fatalf("baseline unknown: %+v", unknown)
+	}
+	for _, email := range []string{"imported@x.test", "Imported-Hash@X.test"} {
+		for _, pw := range []string{"wrong", "correct horse battery"} {
+			got := try(email, pw, "11")
+			if !errors.Is(got.err, ErrInvalidCredentials) {
+				t.Fatalf("%s/%s: %v", email, pw, got.err)
+			}
+			if got.attempt.Reason != unknown.attempt.Reason || got.attempt.Outcome != unknown.attempt.Outcome || got.attempt.UserID != "" || got.attempt.TenantID != tA {
+				t.Fatalf("%s: attempt %+v differs from unknown %+v", email, got.attempt, unknown.attempt)
+			}
+		}
+	}
+	// Ten wrong passwords (threshold is 3): no counter, no lock, no 423 oracle.
+	for i := 0; i < 10; i++ {
+		if got := try("imported@x.test", "wrong", "12"); !errors.Is(got.err, ErrInvalidCredentials) {
+			t.Fatalf("attempt %d: %v", i, got.err)
+		}
+	}
+	for _, uid := range []string{"u-imp", "u-imp-hash"} {
+		if _, ok, _ := c.KV().Get(ctx, cache.RateKey("fail", uid)); ok {
+			t.Fatalf("%s: lockout counter created", uid)
+		}
+		if locked, _ := c.Locked(ctx, uid); locked {
+			t.Fatalf("%s: imported account locked", uid)
+		}
+	}
+	if got := try("imported@x.test", "anything", "12"); errors.Is(got.err, ErrLocked) || got.attempt.Reason == "locked" {
+		t.Fatalf("imported account reported locked: %+v", got)
+	}
+	aw.Flush()
+	for _, r := range ms.AuditRows {
+		if r.EventType == string(audit.Lockout) {
+			t.Fatalf("lockout audited: %+v", r)
+		}
+		if r.EventType != string(audit.SigninFailed) {
+			continue
+		}
+		if r.ActorUserID != nil || r.Reason != "unknown_account" {
+			t.Fatalf("signin failure must look like an unknown account: reason=%q actor=%v", r.Reason, r.ActorUserID)
+		}
+	}
+	// The dummy verify runs: an imported account costs the same hash work as
+	// an unknown one (pad disabled, so only the verify is measured).
+	cost := func(email string) time.Duration {
+		best := time.Duration(1 << 62)
+		for i := 0; i < 3; i++ {
+			start := time.Now()
+			_, _ = svc.Start(ctx, Input{TenantSlug: "acme", Email: email, Password: "wrong", IP: "13"})
+			if d := time.Since(start); d < best {
+				best = d
+			}
+		}
+		return best
+	}
+	if ratio := float64(cost("imported@x.test")) / float64(cost("ghost@x.test")); ratio < 0.5 || ratio > 2 {
+		t.Fatalf("imported path skips or adds hash work: ratio %.2f", ratio)
 	}
 }

@@ -217,3 +217,34 @@ func TestInviteIntoGroups(t *testing.T) {
 		t.Fatalf("%+v %v", acc2.User, err)
 	}
 }
+
+// TestAcceptNeverActivatesImported (feature 016, SR-006): only an "invited"
+// row is activated by Accept. An imported row reached by a live token without
+// having been moved to "invited" is refused like a bad token and left as is.
+func TestAcceptNeverActivatesImported(t *testing.T) {
+	svc, ms, fga, _ := setup(t)
+	ctx := context.Background()
+	ms.AddUser(store.User{ID: "u-imp", TenantID: tid, Email: "imported@x.test", Status: "imported"})
+	tok, err := crypto.RandomToken(32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ms.InsertInvitation(ctx, store.Invitation{ID: "inv-imp", TenantID: tid, Email: "imported@x.test", RoleIDs: []string{"r-owner"},
+		TokenHash: crypto.HashToken(tok), ExpiresAt: time.Now().Add(Lifetime)})
+	if _, err := svc.Accept(ctx, tok, "Imported", "long-enough-password"); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("imported row accepted: %v", err)
+	}
+	u, err := ms.UserByEmail(ctx, tid, "imported@x.test")
+	if err != nil || u.Status != "imported" || u.PasswordHash != nil {
+		t.Fatalf("imported row changed: status=%q hash=%v err=%v", u.Status, u.PasswordHash != nil, err)
+	}
+	if ms.Invitations["inv-imp"].AcceptedAt != nil {
+		t.Fatal("invitation marked accepted")
+	}
+	if roles, _ := ms.Roles(ctx, tid, "u-imp"); len(roles) != 0 {
+		t.Fatalf("roles bound: %v", roles)
+	}
+	if ok, _ := fga.Check(ctx, authz.MembershipTuple(tid, "u-imp", "owner")); ok {
+		t.Fatal("membership tuple written")
+	}
+}
