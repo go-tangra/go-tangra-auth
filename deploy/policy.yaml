@@ -23,6 +23,11 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
     effect: allow
+  - id: ticket-directory
+    from: ["spiffe://example.org/svc/ticket"]
+    to: ["auth"]
+    operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
+    effect: allow
   - id: gateway-exchange
     from: ["spiffe://example.org/svc/gateway"]
     to: ["auth"]
