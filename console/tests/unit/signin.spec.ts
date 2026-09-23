@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
 import SignIn from '@/views/SignIn.vue'
 import MfaChallenge from '@/views/MfaChallenge.vue'
 import { router } from '@/router'
 import { safeNext, useSignin } from '@/stores/signin'
 import { useSession } from '@/stores/session'
+import { mountView, stubFetch } from './helpers'
 
 describe('safeNext', () => {
   it('accepts internal paths and rejects external, malformed or sign-in targets', () => {
@@ -25,26 +23,13 @@ describe('safeNext', () => {
   })
 })
 
-type Handler = (url: string, init?: RequestInit) => { status: number; body: unknown }
-
-function stubFetch(handler: Handler): ReturnType<typeof vi.fn> {
-  const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const { status, body } = handler(String(input), init)
-    return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-  })
-  vi.stubGlobal('fetch', fn)
-  return fn
-}
-
 async function mountSignIn(next?: string) {
-  const vuetify = createVuetify({ components, directives })
-  if (next) await router.push({ name: 'signin', query: { next } })
-  else await router.push({ name: 'signin' })
+  await router.push(next ? { name: 'signin', query: { next } } : { name: 'signin' })
   await router.isReady()
-  return mount(SignIn, { global: { plugins: [vuetify, router] }, attachTo: document.body })
+  return mountView(SignIn)
 }
-
-async function fill(w: ReturnType<typeof mount>, tenant: string, email: string, password: string) {
+type W = ReturnType<typeof mountView>
+async function fill(w: W, tenant: string, email: string, password: string) {
   await w.find('[data-test="tenant"] input').setValue(tenant)
   await w.find('[data-test="email"] input').setValue(email)
   await w.find('[data-test="password"] input').setValue(password)
@@ -56,17 +41,28 @@ describe('sign-in view', () => {
     useSession().status = 'anonymous'
   })
 
-  it('validates the form before enabling submit', async () => {
-    stubFetch(() => ({ status: 401, body: { reason: 'unauthenticated' } }))
+  it('validates the form with zod before posting anything', async () => {
+    const fetch = stubFetch(() => ({ status: 401, body: { reason: 'unauthenticated' } }))
+    const posted = () => fetch.mock.calls.filter((c) => String(c[0]).endsWith('/api/v1/signin')).length
     const w = await mountSignIn()
-    const submit = () => w.find('[data-test="submit"]').attributes('disabled')
-    expect(submit()).toBeDefined()
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(posted()).toBe(0)
+    expect(w.findAll('[role=alert]').length).toBeGreaterThanOrEqual(3)
     await fill(w, 'Acme Corp', 'alice@x.test', 'pw')
-    expect(submit()).toBeDefined() // slug grammar
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(posted()).toBe(0) // slug grammar
+    expect(w.find('[data-test="tenant"] [role=alert]').text()).toMatch(/lowercase/)
     await fill(w, 'acme', 'not-an-email', 'pw')
-    expect(submit()).toBeDefined()
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(posted()).toBe(0)
+    expect(w.find('[data-test="email"] [role=alert]').exists()).toBe(true)
     await fill(w, 'acme', 'alice@x.test', 'pw')
-    expect(submit()).toBeUndefined()
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(posted()).toBe(1)
     w.unmount()
   })
 
@@ -133,8 +129,7 @@ describe('sign-in view', () => {
       if (url.endsWith('/api/v1/session')) return { status: 200, body: { user: { id: 'u1', email: 'mfa@x.test' }, tenant: { id: 't1' }, roles: [] } }
       return { status: 404, body: {} }
     })
-    const vuetify = createVuetify({ components, directives })
-    const m = mount(MfaChallenge, { global: { plugins: [vuetify, router] }, attachTo: document.body })
+    const m = mountView(MfaChallenge)
     await m.find('[data-test="code"] input').setValue('123456')
     await m.find('form').trigger('submit')
     await flushPromises()

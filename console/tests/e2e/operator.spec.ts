@@ -14,7 +14,8 @@ test.describe('operator', () => {
     await page.getByTestId('tenant-row').first().locator('a').click()
     await expect(page.getByTestId('tenant-detail')).toBeVisible()
     await page.getByTestId('grant-open').click()
-    await expect(page.getByTestId('grant-create')).toBeDisabled()
+    await page.getByTestId('grant-dialog').getByRole('button', { name: 'Create grant' }).click()
+    await expect(page.getByTestId('grant-dialog').getByRole('alert')).toBeVisible() // zod: reason too short
     await expectAccessible(page)
   })
 

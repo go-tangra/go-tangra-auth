@@ -14,8 +14,8 @@ test.describe('groups', () => {
     await expect(page.getByTestId('groups')).toBeVisible()
     await expectAccessible(page)
     await page.getByTestId('new-group').click()
-    await page.getByTestId('group-name-input').locator('input').fill(name)
-    await page.getByTestId('save-group').click()
+    await page.getByTestId('group-dialog').locator('input[data-field=name]').fill(name)
+    await page.getByTestId('group-dialog').getByRole('button', { name: 'Save' }).click()
     const row = page.getByTestId('group-row').filter({ hasText: name })
     await expect(row).toBeVisible()
     await row.getByTestId('group-name').click()
@@ -24,7 +24,7 @@ test.describe('groups', () => {
     // Grant the first non-owner role.
     await page.getByTestId('group-role').first().locator('input').check()
     await page.getByTestId('save-roles').click()
-    await expect(page.getByTestId('notice')).toContainText('Roles updated')
+    await expect(page.getByRole('status').filter({ hasText: 'Roles updated' })).toBeVisible()
     // Add the signed-in owner as a member (any user of the tenant works).
     await page.getByTestId('add-member').locator('input').fill(process.env.E2E_EMAIL ?? 'owner@acme.test')
     await page.getByRole('option').first().click()

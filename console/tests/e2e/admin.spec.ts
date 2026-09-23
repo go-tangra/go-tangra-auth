@@ -13,10 +13,12 @@ test.describe('administration', () => {
     await expectAccessible(page)
     await page.getByTestId('invite-open').click()
     await expect(page.getByTestId('invite-dialog')).toBeVisible()
-    await expect(page.getByTestId('invite-send')).toBeDisabled()
+    // Zod refuses an empty address before anything is posted.
+    await page.getByTestId('invite-send').click()
+    await expect(page.getByTestId('invite-email').getByRole('alert')).toBeVisible()
     await page.getByTestId('invite-email').locator('input').fill(`e2e-${Date.now()}@acme.test`)
     await page.getByTestId('invite-send').click()
-    await expect(page.getByTestId('notice')).toContainText('queued')
+    await expect(page.getByRole('status').filter({ hasText: 'queued' })).toBeVisible()
     // The audit writer batches (500 ms); reload until the invitation shows up.
     await expect(async () => {
       await page.goto('/console/admin/audit')
@@ -46,19 +48,17 @@ test.describe('administration', () => {
     const stamp = Date.now()
     await page.goto('/console/admin/groups')
     await page.getByTestId('new-group').click()
-    await page.getByTestId('group-name-input').locator('input').fill(`Invited ${stamp}`)
-    await page.getByTestId('save-group').click()
+    await page.getByTestId('group-dialog').locator('input[data-field=name]').fill(`Invited ${stamp}`)
+    await page.getByTestId('group-dialog').getByRole('button', { name: 'Save' }).click()
     await expect(page.getByTestId('group-row').filter({ hasText: `Invited ${stamp}` })).toBeVisible()
     await page.goto('/console/admin/users')
     await page.getByTestId('invite-open').click()
     await page.getByTestId('invite-email').locator('input').fill(`e2e-${stamp}@acme.test`)
     await page.getByTestId('invite-first-name').locator('input').fill('Invited')
     await page.getByTestId('invite-last-name').locator('input').fill('Person')
-    await page.getByTestId('invite-groups').click()
-    await page.getByRole('option', { name: `Invited ${stamp}` }).click()
-    await page.keyboard.press('Escape')
+    await page.getByTestId('invite-groups').getByLabel(`Invited ${stamp}`).check()
     await page.getByTestId('invite-send').click()
-    await expect(page.getByTestId('notice')).toContainText('queued')
+    await expect(page.getByRole('status').filter({ hasText: 'queued' })).toBeVisible()
   })
 
   test('roles: built-ins locked, custom role editor accessible', async ({ page }) => {
@@ -67,7 +67,8 @@ test.describe('administration', () => {
     await expectAccessible(page)
     await page.getByTestId('new-role').click()
     await expect(page.getByTestId('role-editor')).toBeVisible()
-    await expect(page.getByTestId('save')).toBeDisabled()
+    await page.getByTestId('save').click()
+    await expect(page.getByTestId('slug').getByRole('alert')).toBeVisible() // zod refuses an empty slug
     await expectAccessible(page)
   })
 

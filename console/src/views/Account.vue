@@ -1,145 +1,143 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { UiPage, UiCard, UiForm, UiInput, UiSecretField, UiButton, UiAlert, UiIcon } from '@freya/ui'
+import { useZodForm } from '@freya/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useMfa } from '@/composables/useMfa'
 import { announceSessionChanged, useSession } from '@/stores/session'
+import { changePasswordSchema, mfaEnrolSchema, totpSchema } from '@/schemas'
 import ProfileForm from '@/components/ProfileForm.vue'
+import RecoveryCodes from '@/components/RecoveryCodes.vue'
 
 const session = useSession()
-
 async function profileChanged(): Promise<void> {
   await session.load(true)
   announceSessionChanged()
 }
-const current = ref('')
-const next = ref('')
-const confirmPw = ref('')
-const pwError = ref<string | null>(null)
+
+// --- password ---
 const pwDone = ref(false)
-const pwBusy = ref(false)
+const pwError = ref<string | null>(null)
+const password = useZodForm(changePasswordSchema(), {
+  initial: { current_password: '', new_password: '', confirm: '' },
+  onSubmit: async (v) => {
+    pwDone.value = false
+    pwError.value = null
+    try {
+      await api('POST', '/api/v1/me/password', { current_password: v.current_password, new_password: v.new_password })
+      pwDone.value = true
+    } catch (err) {
+      pwError.value = err instanceof ApiError ? (err.reason === 'invalid_credentials' ? 'Your current password was not accepted.' : reasonMessage(err.reason)) : 'Could not change the password.'
+      throw err
+    } finally {
+      password.reset({ current_password: '', new_password: '', confirm: '' })
+    }
+  },
+})
 
-async function changePassword(): Promise<void> {
-  pwError.value = null
-  pwDone.value = false
-  if (next.value !== confirmPw.value) {
-    pwError.value = 'The new passwords do not match.'
-    return
-  }
-  pwBusy.value = true
-  try {
-    await api('POST', '/api/v1/me/password', { current_password: current.value, new_password: next.value })
-    pwDone.value = true
-  } catch (err) {
-    pwError.value = err instanceof ApiError ? (err.reason === 'invalid_credentials' ? 'Your current password was not accepted.' : reasonMessage(err.reason)) : 'Could not change the password.'
-  } finally {
-    pwBusy.value = false
-    current.value = ''
-    next.value = ''
-    confirmPw.value = ''
-  }
-}
-
+// --- second factor ---
 const { enrolment, qr, recoveryCodes, error: mfaError, busy: mfaBusy, start, confirm } = useMfa()
-const code = ref('')
-const disableCode = ref('')
-const regenCode = ref('')
 const mfaNotice = ref<string | null>(null)
-
-async function confirmEnrolment(): Promise<void> {
-  if (await confirm(code.value)) {
-    code.value = ''
+const enrol = useZodForm(mfaEnrolSchema, {
+  initial: { code: '' },
+  onSubmit: async (v) => {
+    if (!(await confirm(v.code))) throw new Error('invalid_code')
+    enrol.values.code = ''
     await session.load(true)
-  }
-}
-
-async function disable(): Promise<void> {
-  mfaNotice.value = null
-  try {
-    await api('POST', '/api/v1/me/mfa/disable', { code: disableCode.value })
-    await session.load(true)
-    mfaNotice.value = 'Second factor disabled.'
-  } catch (err) {
-    mfaNotice.value = err instanceof ApiError ? (err.reason === 'mfa_required' ? 'Your organisation requires a second factor; it cannot be disabled.' : err.reason === 'invalid_code' ? 'That code was not accepted.' : reasonMessage(err.reason)) : 'Could not disable.'
-  } finally {
-    disableCode.value = ''
-  }
-}
-
-async function regenerate(): Promise<void> {
-  mfaNotice.value = null
-  try {
-    const res = await api<{ recovery_codes: string[] }>('POST', '/api/v1/me/mfa/recovery-codes', { code: regenCode.value })
-    recoveryCodes.value = res.recovery_codes
-  } catch (err) {
-    mfaNotice.value = err instanceof ApiError && err.reason === 'invalid_code' ? 'That code was not accepted.' : 'Could not regenerate the codes.'
-  } finally {
-    regenCode.value = ''
-  }
-}
+  },
+})
+const disableForm = useZodForm(totpSchema, {
+  initial: { code: '' },
+  onSubmit: async (v) => {
+    mfaNotice.value = null
+    try {
+      await api('POST', '/api/v1/me/mfa/disable', { code: v.code })
+      await session.load(true)
+      mfaNotice.value = 'Second factor disabled.'
+    } catch (err) {
+      mfaNotice.value = err instanceof ApiError ? (err.reason === 'mfa_required' ? 'Your organisation requires a second factor; it cannot be disabled.' : reasonMessage(err.reason)) : 'Could not disable.'
+      throw err
+    } finally {
+      disableForm.reset({ code: '' })
+    }
+  },
+})
+const regenForm = useZodForm(totpSchema, {
+  initial: { code: '' },
+  onSubmit: async (v) => {
+    mfaNotice.value = null
+    try {
+      const res = await api<{ recovery_codes: string[] }>('POST', '/api/v1/me/mfa/recovery-codes', { code: v.code })
+      recoveryCodes.value = res.recovery_codes
+    } catch (err) {
+      mfaNotice.value = err instanceof ApiError && err.reason === 'invalid_code' ? 'That code was not accepted.' : 'Could not regenerate the codes.'
+      throw err
+    } finally {
+      regenForm.reset({ code: '' })
+    }
+  },
+})
 </script>
 
 <template>
-  <v-row>
-    <v-col cols="12">
-      <v-card class="mb-4" data-test="profile-card">
-        <v-card-title>Profile</v-card-title>
-        <v-card-text>
-          <ProfileForm profile-path="/api/v1/me/profile" avatar-upload-path="/api/v1/me/avatar" avatar-remove-path="/api/v1/me/avatar" @changed="profileChanged" />
-        </v-card-text>
-      </v-card>
-    </v-col>
-    <v-col cols="12" md="6">
-      <v-card data-test="password-card">
-        <v-card-title>Change password</v-card-title>
-        <v-card-text>
-          <v-form @submit.prevent="changePassword">
-            <v-text-field v-model="current" label="Current password" type="password" autocomplete="current-password" data-test="current" />
-            <v-text-field v-model="next" label="New password" type="password" autocomplete="new-password" data-test="new" />
-            <v-text-field v-model="confirmPw" label="Confirm new password" type="password" autocomplete="new-password" data-test="confirm" />
-            <v-alert v-if="pwError" type="error" variant="tonal" density="compact" class="mb-4" data-test="pw-error">{{ pwError }}</v-alert>
-            <v-alert v-if="pwDone" type="success" variant="tonal" density="compact" class="mb-4" data-test="pw-done">Password changed. Other devices were signed out.</v-alert>
-            <v-btn type="submit" color="primary" :disabled="!current || next.length < 8 || pwBusy" :loading="pwBusy" data-test="pw-submit">Change password</v-btn>
-          </v-form>
-        </v-card-text>
-      </v-card>
-    </v-col>
-    <v-col cols="12" md="6">
-      <v-card data-test="mfa-card">
-        <v-card-title>Second factor</v-card-title>
-        <v-card-text>
-          <v-alert v-if="mfaNotice" type="info" variant="tonal" density="compact" class="mb-4" data-test="mfa-notice">{{ mfaNotice }}</v-alert>
-          <template v-if="recoveryCodes.length > 0">
-            <v-alert type="success" variant="tonal" class="mb-4">Save these recovery codes now — they are shown only once.</v-alert>
-            <ul class="mb-4" style="columns: 2; list-style: none; padding: 0" data-test="recovery-codes">
-              <li v-for="c in recoveryCodes" :key="c"><code>{{ c }}</code></li>
-            </ul>
-            <v-btn variant="text" data-test="codes-dismiss" @click="recoveryCodes = []">I have saved them</v-btn>
-          </template>
-          <template v-else-if="session.user?.mfa_enabled">
-            <p class="mb-4"><v-icon color="success" class="mr-1">mdi-shield-check</v-icon>Enabled with an authenticator app.</p>
-            <v-text-field v-model.trim="regenCode" label="Current code to regenerate recovery codes" data-test="regen-code" />
-            <v-btn variant="outlined" class="mb-6" :disabled="!/^\d{6}$/.test(regenCode)" data-test="regen" @click="regenerate">New recovery codes</v-btn>
-            <v-text-field v-model.trim="disableCode" label="Current code to disable" data-test="disable-code" />
-            <v-btn color="error" variant="outlined" :disabled="!/^\d{6}$/.test(disableCode)" data-test="disable" @click="disable">Disable second factor</v-btn>
-          </template>
-          <template v-else-if="enrolment">
-            <div class="text-center mb-4">
-              <img v-if="qr" :src="qr" alt="Authenticator enrolment QR code" width="192" height="192" data-test="qr">
-              <p class="text-caption mt-2">Manual key: <code data-test="secret">{{ enrolment.secret }}</code></p>
+  <UiPage title="Account">
+    <UiCard title="Profile" class="mb-4" data-test="profile-card">
+      <ProfileForm profile-path="/api/v1/me/profile" avatar-upload-path="/api/v1/me/avatar" avatar-remove-path="/api/v1/me/avatar" @changed="profileChanged" />
+    </UiCard>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <UiCard title="Change password" data-test="password-card">
+        <UiForm :form="password">
+          <div class="flex flex-col gap-3">
+            <UiSecretField v-bind="password.field('current_password')" label="Current password" autocomplete="current-password" required data-test="current" />
+            <UiSecretField v-bind="password.field('new_password')" label="New password" autocomplete="new-password" required data-test="new" />
+            <UiSecretField v-bind="password.field('confirm')" label="Confirm new password" autocomplete="new-password" required data-test="confirm" />
+            <UiAlert v-if="pwError" kind="error" data-test="pw-error">{{ pwError }}</UiAlert>
+            <UiAlert v-if="pwDone" kind="success" data-test="pw-done">Password changed. Other devices were signed out.</UiAlert>
+            <div><UiButton type="submit" :loading="password.submitting.value" data-test="pw-submit">Change password</UiButton></div>
+          </div>
+        </UiForm>
+      </UiCard>
+      <UiCard title="Second factor" data-test="mfa-card">
+        <UiAlert v-if="mfaNotice" kind="info" class="mb-4" data-test="mfa-notice">{{ mfaNotice }}</UiAlert>
+        <template v-if="recoveryCodes.length > 0">
+          <UiAlert kind="success" class="mb-4">Save these recovery codes now — they are shown only once.</UiAlert>
+          <RecoveryCodes :codes="recoveryCodes" class="mb-4" />
+          <UiButton variant="text" data-test="codes-dismiss" @click="recoveryCodes = []">I have saved them</UiButton>
+        </template>
+        <template v-else-if="session.user?.mfa_enabled">
+          <p class="mb-4 flex items-center gap-1"><UiIcon name="mdi-shield-check" class="text-success" />Enabled with an authenticator app.</p>
+          <UiForm :form="regenForm" class="mb-4">
+            <div class="flex flex-wrap items-end gap-2">
+              <UiInput v-bind="regenForm.field('code')" label="Current code to regenerate recovery codes" inputmode="numeric" class="grow" data-test="regen-code" />
+              <UiButton type="submit" variant="outline" :loading="regenForm.submitting.value" data-test="regen">New recovery codes</UiButton>
             </div>
-            <v-form @submit.prevent="confirmEnrolment">
-              <v-text-field v-model.trim="code" label="6-digit code" inputmode="numeric" autocomplete="one-time-code" data-test="code" />
-              <v-alert v-if="mfaError" type="error" variant="tonal" density="compact" class="mb-4" data-test="mfa-error">{{ mfaError }}</v-alert>
-              <v-btn type="submit" color="primary" :disabled="!/^\d{6}$/.test(code) || mfaBusy" :loading="mfaBusy" data-test="confirm-enrol">Confirm</v-btn>
-            </v-form>
-          </template>
-          <template v-else>
-            <p class="mb-4">Not enrolled. Add an authenticator app to protect your account.</p>
-            <v-btn color="primary" :loading="mfaBusy" data-test="enrol" @click="start">Set up authenticator</v-btn>
-          </template>
-        </v-card-text>
-      </v-card>
-    </v-col>
-  </v-row>
+          </UiForm>
+          <UiForm :form="disableForm">
+            <div class="flex flex-wrap items-end gap-2">
+              <UiInput v-bind="disableForm.field('code')" label="Current code to disable" inputmode="numeric" class="grow" data-test="disable-code" />
+              <UiButton type="submit" variant="outline" color="error" :loading="disableForm.submitting.value" data-test="disable">Disable second factor</UiButton>
+            </div>
+          </UiForm>
+        </template>
+        <template v-else-if="enrolment">
+          <div class="mb-4 text-center">
+            <img v-if="qr" :src="qr" alt="Authenticator enrolment QR code" width="192" height="192" class="mx-auto rounded-box" data-test="qr">
+            <p class="mt-2 text-xs">Manual key: <code class="select-all" data-test="secret">{{ enrolment.secret }}</code></p>
+          </div>
+          <UiForm :form="enrol">
+            <div class="flex flex-col gap-3">
+              <UiInput v-bind="enrol.field('code')" label="6-digit code" inputmode="numeric" autocomplete="one-time-code" required data-test="code" />
+              <UiAlert v-if="mfaError" kind="error" data-test="mfa-error">{{ mfaError }}</UiAlert>
+              <div><UiButton type="submit" :loading="mfaBusy" data-test="confirm-enrol">Confirm</UiButton></div>
+            </div>
+          </UiForm>
+        </template>
+        <template v-else>
+          <p class="mb-4">Not enrolled. Add an authenticator app to protect your account.</p>
+          <UiButton :loading="mfaBusy" data-test="enrol" @click="start">Set up authenticator</UiButton>
+        </template>
+      </UiCard>
+    </div>
+  </UiPage>
 </template>

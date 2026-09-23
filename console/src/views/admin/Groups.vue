@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
+import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiDataTable, UiDialog, UiRecordDrawer, type Column } from '@freya/ui'
+import { zodToFields } from '@freya/ui/forms'
 import { ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useGroups, type Group } from '@/stores/groups'
+import { groupSchema } from '@/schemas'
 
 const groups = useGroups()
 const q = ref('')
@@ -10,43 +14,22 @@ const error = ref<string | null>(null)
 const busy = ref(false)
 const dialog = ref(false)
 const editing = ref<Group | null>(null)
-const name = ref('')
-const description = ref('')
 const confirmDelete = ref<Group | null>(null)
+type Row = Group & Record<string, unknown> & { id: string }
+const rows = computed<Row[]>(() => groups.items.map((g) => ({ ...g, id: g.id ?? '' })))
+const fields = zodToFields(groupSchema, { description: { cols: 12 } })
 
 function openNew(): void {
   editing.value = null
-  name.value = ''
-  description.value = ''
   error.value = null
   dialog.value = true
 }
-
 function openEdit(g: Group): void {
   editing.value = g
-  name.value = g.name ?? ''
-  description.value = g.description ?? ''
   error.value = null
   dialog.value = true
 }
-
-const nameRules = [(v: string) => (v.trim().length > 0 && v.trim().length <= 64) || 'Between 1 and 64 characters']
-
-async function save(): Promise<void> {
-  if (nameRules[0]!(name.value) !== true) return
-  busy.value = true
-  error.value = null
-  try {
-    if (editing.value?.id) await groups.update(editing.value.id, name.value.trim(), description.value.trim())
-    else await groups.create(name.value.trim(), description.value.trim())
-    dialog.value = false
-  } catch (err) {
-    error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not save the group.'
-  } finally {
-    busy.value = false
-  }
-}
-
+const submit = (v: Record<string, unknown>) => (editing.value?.id ? groups.update(editing.value.id, String(v.name), String(v.description ?? '')) : groups.create(String(v.name), String(v.description ?? '')))
 async function remove(): Promise<void> {
   const g = confirmDelete.value
   if (!g?.id) return
@@ -62,86 +45,45 @@ async function remove(): Promise<void> {
     busy.value = false
   }
 }
-
 let timer: number | undefined
 watch(q, () => {
   window.clearTimeout(timer)
   timer = window.setTimeout(() => void groups.load(q.value), 250)
 })
 onMounted(() => groups.load())
+const columns: Column<Row>[] = [
+  { key: 'name', label: 'Group', sortable: true },
+  { key: 'member_count', label: 'Members', align: 'end', format: (g) => String(g.member_count ?? 0) },
+  { key: 'roles', label: 'Roles', format: (g) => (g.roles ?? []).join(', '), hideOnStack: true },
+]
 </script>
 
 <template>
-  <v-card data-test="groups">
-    <v-card-title class="d-flex align-center">
-      Groups
-      <v-spacer />
-      <v-btn color="primary" prepend-icon="mdi-plus" data-test="new-group" @click="openNew">New group</v-btn>
-    </v-card-title>
-    <v-card-text>
-      <v-text-field v-model="q" label="Search" prepend-inner-icon="mdi-magnify" density="compact" clearable data-test="search" />
-      <v-alert v-if="error && !dialog && !confirmDelete" type="error" variant="tonal" density="compact" class="mb-2" data-test="error">{{ error }}</v-alert>
-      <v-table>
-        <thead>
-          <tr>
-            <th>Group</th>
-            <th>Members</th>
-            <th>Roles</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="g in groups.items" :key="g.id ?? ''" data-test="group-row">
-            <td>
-              <router-link :to="{ name: 'admin-group', params: { id: g.id ?? '' } }" data-test="group-name">{{ g.name }}</router-link>
-              <div v-if="g.description" class="text-caption">{{ g.description }}</div>
-            </td>
-            <td data-test="member-count">{{ g.member_count }}</td>
-            <td>{{ (g.roles ?? []).join(', ') || '—' }}</td>
-            <td class="text-right text-no-wrap">
-              <v-btn size="small" variant="text" data-test="edit" @click="openEdit(g)">Rename</v-btn>
-              <v-btn size="small" variant="text" color="error" data-test="delete-group" @click="confirmDelete = g">Delete</v-btn>
-            </td>
-          </tr>
-          <tr v-if="groups.loaded && groups.items.length === 0">
-            <td colspan="4" class="text-caption">No groups yet.</td>
-          </tr>
-        </tbody>
-      </v-table>
-    </v-card-text>
-  </v-card>
-
-  <v-dialog v-model="dialog" max-width="480">
-    <v-card data-test="group-dialog">
-      <v-card-title>{{ editing ? 'Rename group' : 'New group' }}</v-card-title>
-      <v-card-text>
-        <v-text-field v-model="name" label="Name" :rules="nameRules" counter="64" maxlength="64" autofocus data-test="group-name-input" />
-        <v-text-field v-model="description" label="Description" counter="500" maxlength="500" data-test="group-description" />
-        <v-alert v-if="error" type="error" variant="tonal" density="compact" data-test="dialog-error">{{ error }}</v-alert>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn variant="text" @click="dialog = false">Cancel</v-btn>
-        <v-btn color="primary" :loading="busy" :disabled="busy" data-test="save-group" @click="save">Save</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-
-  <v-dialog :model-value="confirmDelete !== null" max-width="480" @update:model-value="confirmDelete = null">
-    <v-card v-if="confirmDelete" data-test="delete-dialog">
-      <v-card-title>Delete {{ confirmDelete.name }}?</v-card-title>
-      <v-card-text>
-        <p data-test="delete-summary">
-          {{ confirmDelete.member_count }} member{{ confirmDelete.member_count === 1 ? '' : 's' }} will lose the roles this group grants:
-          {{ (confirmDelete.roles ?? []).join(', ') || 'none' }}.
-        </p>
-        <v-alert v-if="error" type="error" variant="tonal" density="compact" data-test="dialog-error">{{ error }}</v-alert>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn variant="text" @click="confirmDelete = null">Cancel</v-btn>
-        <v-btn color="error" :loading="busy" :disabled="busy" data-test="confirm-delete" @click="remove">Delete group</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+  <UiPage title="Groups" data-test="groups">
+    <template #actions><UiButton icon="mdi-plus" data-test="new-group" @click="openNew">New group</UiButton></template>
+    <template #filters><UiInput id="group-search" v-model="q" label="Search" sr-only-label placeholder="Search groups" type="search" class="w-full md:max-w-sm" data-test="search" /></template>
+    <UiAlert v-if="error && !dialog && !confirmDelete" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
+    <UiCard :padded="false">
+      <UiDataTable :items="rows" :columns="columns" caption="Groups" empty-title="No groups yet" :row-attrs="() => ({ 'data-test': 'group-row' })">
+        <template #cell-name="{ row }">
+          <RouterLink :to="{ name: 'admin-group', params: { id: row.id } }" class="link link-primary" data-test="group-name">{{ row.name }}</RouterLink>
+          <div v-if="row.description" class="text-xs text-base-content/70">{{ row.description }}</div>
+        </template>
+        <template #cell-member_count="{ row }"><span data-test="member-count">{{ row.member_count }}</span></template>
+        <template #actions="{ row }">
+          <UiButton size="xs" variant="text" data-test="edit" @click="openEdit(row)">Rename</UiButton>
+          <UiButton size="xs" variant="text" color="error" data-test="delete-group" @click="confirmDelete = row">Delete</UiButton>
+        </template>
+      </UiDataTable>
+    </UiCard>
+    <UiRecordDrawer v-model="dialog" close-on-save :title="editing ? 'Rename group' : 'New group'" :schema="groupSchema" :fields="fields" :initial="editing ? { name: editing.name ?? '', description: editing.description ?? '' } : { name: '', description: '' }" :submit="submit" size="md" data-test="group-dialog" />
+    <UiDialog :model-value="confirmDelete !== null" :title="'Delete ' + (confirmDelete?.name ?? '') + '?'" size="sm" data-test="delete-dialog" @update:model-value="confirmDelete = null">
+      <p v-if="confirmDelete" class="text-sm" data-test="delete-summary">{{ confirmDelete.member_count }} member{{ confirmDelete.member_count === 1 ? '' : 's' }} will lose the roles this group grants: {{ (confirmDelete.roles ?? []).join(', ') || 'none' }}.</p>
+      <UiAlert v-if="error" kind="error" class="mt-2" data-test="dialog-error">{{ error }}</UiAlert>
+      <template #actions>
+        <UiButton variant="text" @click="confirmDelete = null">Cancel</UiButton>
+        <UiButton color="error" :loading="busy" data-test="confirm-delete" @click="remove">Delete group</UiButton>
+      </template>
+    </UiDialog>
+  </UiPage>
 </template>

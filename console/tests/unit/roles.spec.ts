@@ -1,23 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
 import Roles from '@/views/admin/Roles.vue'
 import RoleEditor from '@/views/admin/RoleEditor.vue'
 import { router } from '@/router'
 import { useSession } from '@/stores/session'
-
-type Reply = { status: number; body: unknown }
-function stubFetch(handler: (url: string, init?: RequestInit) => Reply) {
-  const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const { status, body } = handler(String(input), init)
-    return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-  })
-  vi.stubGlobal('fetch', fn)
-  return fn
-}
+import { body, mountView, stubFetch } from './helpers'
 
 const roles = [
   { id: 'r-owner', slug: 'owner', display_name: 'Owner', builtin: true, permissions: [] },
@@ -28,7 +16,6 @@ const perms = [
   { resource: 'invoices', action: 'read', description: '' },
   { resource: 'invoices', action: 'write', description: '' },
 ]
-const plugins = () => [createVuetify({ components, directives }), router]
 
 describe('roles console', () => {
   beforeEach(async () => {
@@ -38,9 +25,9 @@ describe('roles console', () => {
     await router.isReady()
   })
 
-  it('locks built-in roles and offers edit/remove for custom ones', async () => {
+  it('locks built-in roles and confirms before removing custom ones', async () => {
     const fetch = stubFetch((url) => (url.startsWith('/api/v1/admin/roles') && !url.includes('/remove') ? { status: 200, body: roles } : { status: 204, body: null }))
-    const w = mount(Roles, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(Roles)
     await flushPromises()
     const rows = w.findAll('[data-test="role-row"]')
     expect(rows.length).toBe(2)
@@ -49,36 +36,43 @@ describe('roles console', () => {
     expect(rows[1]!.find('[data-test="remove"]').exists()).toBe(true)
     await rows[1]!.find('[data-test="remove"]').trigger('click')
     await flushPromises()
+    expect(fetch.mock.calls.some((c) => String(c[0]).endsWith('/remove'))).toBe(false)
+    ;([...document.querySelectorAll('[role=dialog] button')].find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click()
+    await flushPromises()
     expect(fetch).toHaveBeenCalledWith('/api/v1/admin/roles/r-auditor/remove', expect.objectContaining({ method: 'POST' }))
     w.unmount()
   })
 
-  it('renders the permission matrix grouped by resource and posts the selection', async () => {
+  it('renders the permission matrix grouped by resource, validates the slug and posts the selection', async () => {
     const fetch = stubFetch((url, init) => {
       if (url.startsWith('/api/v1/admin/permissions')) return { status: 200, body: perms }
       if (url === '/api/v1/admin/roles' && init?.method === 'POST') return { status: 201, body: { id: 'r-new' } }
       return { status: 200, body: roles }
     })
     await router.push('/admin/roles/new')
-    const w = mount(RoleEditor, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(RoleEditor)
     await flushPromises()
     expect(w.findAll('[data-test="group"]').length).toBe(2)
     expect(w.findAll('[data-test="perm"]').length).toBe(3)
-    expect((w.find('[data-test="save"]').element as HTMLButtonElement).disabled).toBe(true)
+    const posted = () => fetch.mock.calls.filter((c) => String(c[0]) === '/api/v1/admin/roles' && (c[1] as RequestInit).method === 'POST')
+    await w.find('[data-test="save"]').trigger('click')
+    await flushPromises()
+    expect(posted().length).toBe(0)
     await w.find('[data-test="slug"] input').setValue('Owner')
     await w.find('[data-test="name"] input').setValue('Billing')
-    expect((w.find('[data-test="save"]').element as HTMLButtonElement).disabled).toBe(true) // reserved/invalid slug
+    await w.find('[data-test="save"]').trigger('click')
+    await flushPromises()
+    expect(posted().length).toBe(0) // reserved/invalid slug
+    expect(w.find('[data-test="slug"] [role=alert]').exists()).toBe(true)
     await w.find('[data-test="slug"] input').setValue('billing')
-    expect((w.find('[data-test="save"]').element as HTMLButtonElement).disabled).toBe(false)
     const boxes = w.findAll('[data-test="perm"] input')
     await boxes[1]!.setValue(true)
     await boxes[2]!.setValue(true)
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
-    const call = fetch.mock.calls.find((c) => String(c[0]) === '/api/v1/admin/roles' && (c[1] as RequestInit).method === 'POST')
-    const body = JSON.parse(String((call?.[1] as RequestInit).body))
-    expect(body.slug).toBe('billing')
-    expect(body.permissions.sort()).toEqual(['invoices:read', 'invoices:write'])
+    const b = body(posted()[0])
+    expect(b.slug).toBe('billing')
+    expect(b.permissions.sort()).toEqual(['invoices:read', 'invoices:write'])
     w.unmount()
   })
 
@@ -89,15 +83,15 @@ describe('roles console', () => {
       return { status: 200, body: roles }
     })
     await router.push('/admin/roles/r-auditor')
-    const w = mount(RoleEditor, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(RoleEditor)
     await flushPromises()
     expect(w.find('[data-test="name"] input').element.getAttribute('disabled')).toBeNull()
     await w.find('[data-test="save"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-test="error"]').text()).toMatch(/permissions you hold/i)
+    expect(w.text()).toMatch(/permissions you hold/i)
     w.unmount()
     await router.push('/admin/roles/r-owner')
-    const b = mount(RoleEditor, { global: { plugins: plugins() }, attachTo: document.body })
+    const b = mountView(RoleEditor)
     await flushPromises()
     expect(b.find('[data-test="builtin-lock"]').exists()).toBe(true)
     expect((b.find('[data-test="save"]').element as HTMLButtonElement).disabled).toBe(true)

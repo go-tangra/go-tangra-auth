@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { UiPage, UiCard, UiKeyValueTable, UiButton, UiAlert, UiTextarea } from '@freya/ui'
 import { api } from '@/api/client'
 import { useSession } from '@/stores/session'
 
 const session = useSession()
 const token = ref<{ access_token: string; expires_in: number } | null>(null)
 const error = ref<string | null>(null)
-
 async function mint(): Promise<void> {
   error.value = null
   try {
@@ -18,27 +18,20 @@ async function mint(): Promise<void> {
 </script>
 
 <template>
-  <v-row>
-    <v-col cols="12" md="6">
-      <v-card>
-        <v-card-title>Welcome{{ session.user ? ', ' + (session.user.display_name || session.user.email) : '' }}</v-card-title>
-        <v-card-text>
-          <div data-test="tenant">Organisation: {{ session.tenant?.display_name ?? session.tenant?.slug ?? '—' }}</div>
-          <div data-test="roles">Roles: {{ session.roles.join(', ') || 'none' }}</div>
-          <div data-test="mfa">Second factor: {{ session.user?.mfa_enabled ? 'enabled' : 'not enrolled' }}</div>
-        </v-card-text>
-      </v-card>
-    </v-col>
-    <v-col cols="12" md="6">
-      <v-card>
-        <v-card-title>Access token</v-card-title>
-        <v-card-text>
-          <p class="text-body-2 mb-4">Mint a short-lived token to call platform services on your behalf.</p>
-          <v-btn color="primary" data-test="mint" @click="mint">Get access token</v-btn>
-          <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-4">{{ error }}</v-alert>
-          <v-textarea v-if="token" class="mt-4" readonly auto-grow :model-value="token.access_token" :label="`Expires in ${token.expires_in}s`" data-test="token" />
-        </v-card-text>
-      </v-card>
-    </v-col>
-  </v-row>
+  <UiPage :title="'Welcome' + (session.user ? ', ' + (session.user.display_name || session.user.email) : '')">
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <UiCard title="Your account">
+        <UiKeyValueTable :items="[{ label: 'Organisation', value: session.tenant?.display_name ?? session.tenant?.slug ?? '' }, { label: 'Roles', value: session.roles.join(', ') || 'none' }, { label: 'Second factor', value: session.user?.mfa_enabled ? 'enabled' : 'not enrolled' }]" />
+        <span class="sr-only" data-test="tenant">Organisation: {{ session.tenant?.display_name ?? session.tenant?.slug ?? '—' }}</span>
+        <span class="sr-only" data-test="roles">Roles: {{ session.roles.join(', ') || 'none' }}</span>
+        <span class="sr-only" data-test="mfa">Second factor: {{ session.user?.mfa_enabled ? 'enabled' : 'not enrolled' }}</span>
+      </UiCard>
+      <UiCard title="Access token">
+        <p class="mb-4 text-sm text-base-content/70">Mint a short-lived token to call platform services on your behalf.</p>
+        <UiButton data-test="mint" @click="mint">Get access token</UiButton>
+        <UiAlert v-if="error" kind="error" class="mt-4">{{ error }}</UiAlert>
+        <UiTextarea v-if="token" id="access-token" class="mt-4" :model-value="token.access_token" :label="`Expires in ${token.expires_in}s`" :rows="4" disabled data-test="token" />
+      </UiCard>
+    </div>
+  </UiPage>
 </template>

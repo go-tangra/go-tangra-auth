@@ -11,9 +11,7 @@ const layout = computed(() => (route.meta.layout === 'bare' ? BareLayout : Defau
 </script>
 
 <template>
-  <v-app>
-    <component :is="layout">
-      <router-view />
-    </component>
-  </v-app>
+  <component :is="layout">
+    <router-view />
+  </component>
 </template>

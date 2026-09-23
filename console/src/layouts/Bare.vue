@@ -1,29 +1,14 @@
 <script setup lang="ts">
-// Centered card layout for unauthenticated flows (Materio's authentication-wrapper:
-// the page colour behind one 400px card).
+// Centered card layout for unauthenticated flows: the page colour behind one
+// 400px card, the platform theme applied through data-theme.
+import { UiToast, UiConfirm, useTheme } from '@freya/ui'
+useTheme()
 </script>
 
 <template>
-  <v-main>
-    <v-container class="bare" fluid>
-      <div class="bare__inner">
-        <slot />
-      </div>
-    </v-container>
-  </v-main>
+  <main class="bg-base-200 flex min-h-dvh items-center justify-center px-4 py-10 sm:px-6">
+    <div class="w-full sm:max-w-md [&_.card]:shadow-md [&_.card-body]:gap-6 [&_.card-body]:p-6 lg:[&_.card-body]:p-8"><slot /></div>
+    <UiToast />
+    <UiConfirm />
+  </main>
 </template>
-
-<style scoped>
-.bare {
-  display: flex;
-  min-height: 100dvh;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-}
-.bare__inner {
-  width: 100%;
-  max-width: 400px;
-  margin: auto;
-}
-</style>

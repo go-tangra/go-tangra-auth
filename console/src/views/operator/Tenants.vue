@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiStatusChip, UiRecordDrawer, type Column } from '@freya/ui'
+import { zodToFields } from '@freya/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
+import { tenantSchema } from '@/schemas'
 
-export interface Tenant {
+export interface Tenant extends Record<string, unknown> {
   id: string
   slug: string
   display_name: string
@@ -16,11 +19,7 @@ const tenants = ref<Tenant[]>([])
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const create = ref(false)
-const slug = ref('')
-const displayName = ref('')
-const ownerEmail = ref('')
-const busy = ref(false)
-const canCreate = computed(() => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug.value) && displayName.value.trim().length > 0 && /^[^\s@]+@[^\s@]+$/.test(ownerEmail.value) && !busy.value)
+const fields = zodToFields(tenantSchema, { slug: { hint: 'lowercase letters, digits and dashes', cols: 12 }, display_name: { cols: 12 }, owner_email: { label: 'Owner email', cols: 12 } })
 
 async function load(): Promise<void> {
   error.value = null
@@ -30,74 +29,33 @@ async function load(): Promise<void> {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load tenants.'
   }
 }
-
-async function submit(): Promise<void> {
-  if (!canCreate.value) return
-  busy.value = true
-  error.value = null
-  try {
-    await api('POST', '/api/v1/operator/tenants', { slug: slug.value, display_name: displayName.value.trim(), owner_email: ownerEmail.value })
-    notice.value = `Tenant ${slug.value} created; the owner invitation is on its way.`
-    create.value = false
-    slug.value = ''
-    displayName.value = ''
-    ownerEmail.value = ''
-    await load()
-  } catch (err) {
-    error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not create the tenant.'
-  } finally {
-    busy.value = false
-  }
+const submit = (v: Record<string, unknown>) => api('POST', '/api/v1/operator/tenants', v).then(() => v)
+async function saved(v: unknown): Promise<void> {
+  notice.value = `Tenant ${String((v as { slug: string }).slug)} created; the owner invitation is on its way.`
+  await load()
 }
-
 onMounted(load)
+const columns: Column<Tenant>[] = [
+  { key: 'display_name', label: 'Name', sortable: true },
+  { key: 'slug', label: 'Slug' },
+  { key: 'status', label: 'Status', width: 'sm' },
+  { key: 'kind', label: 'Kind', width: 'sm', hideOnStack: true },
+  { key: 'created_at', label: 'Created', format: (t) => new Date(t.created_at).toLocaleString(), hideOnStack: true },
+]
 </script>
 
 <template>
-  <v-card>
-    <v-card-title class="d-flex align-center">
-      Tenants
-      <v-spacer />
-      <v-btn color="primary" prepend-icon="mdi-domain-plus" data-test="create-open" @click="create = true">New tenant</v-btn>
-    </v-card-title>
-    <v-card-text>
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2" data-test="error">{{ error }}</v-alert>
-      <v-alert v-if="notice" type="success" variant="tonal" density="compact" class="mb-2" closable data-test="notice" @click:close="notice = null">{{ notice }}</v-alert>
-      <v-table data-test="tenants">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Slug</th>
-            <th>Status</th>
-            <th>Kind</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="t in tenants" :key="t.id" data-test="tenant-row">
-            <td><router-link :to="{ name: 'operator-tenant', params: { id: t.id } }">{{ t.display_name }}</router-link></td>
-            <td><code>{{ t.slug }}</code></td>
-            <td><v-chip size="small" :color="t.status === 'active' ? 'success' : 'error'" data-test="status">{{ t.status }}</v-chip></td>
-            <td>{{ t.kind }}</td>
-            <td>{{ t.created_at }}</td>
-          </tr>
-        </tbody>
-      </v-table>
-    </v-card-text>
-    <v-dialog v-model="create" max-width="480">
-      <v-card data-test="create-dialog">
-        <v-card-title>New tenant</v-card-title>
-        <v-card-text>
-          <v-text-field v-model.trim="slug" label="Slug" hint="lowercase letters, digits and dashes" persistent-hint data-test="slug" />
-          <v-text-field v-model="displayName" label="Display name" data-test="name" />
-          <v-text-field v-model.trim="ownerEmail" label="Owner email" type="email" data-test="owner" />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="create = false">Cancel</v-btn>
-          <v-btn color="primary" :disabled="!canCreate" :loading="busy" data-test="create" @click="submit">Create</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-  </v-card>
+  <UiPage title="Tenants">
+    <template #actions><UiButton icon="mdi-domain-plus" data-test="create-open" @click="create = true">New tenant</UiButton></template>
+    <UiAlert v-if="error" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
+    <UiAlert v-if="notice" kind="success" class="mb-3" dismissible data-test="notice" @dismiss="notice = null">{{ notice }}</UiAlert>
+    <UiCard :padded="false">
+      <UiDataTable :items="tenants" :columns="columns" caption="Tenants" empty-title="No tenants yet" :row-attrs="() => ({ 'data-test': 'tenant-row' })" data-test="tenants">
+        <template #cell-display_name="{ row }"><RouterLink class="link link-primary" :to="{ name: 'operator-tenant', params: { id: row.id } }">{{ row.display_name }}</RouterLink></template>
+        <template #cell-slug="{ row }"><code class="text-xs">{{ row.slug }}</code></template>
+        <template #cell-status="{ row }"><UiStatusChip :status="row.status" :colors="{ active: 'success', suspended: 'error' }" data-test="status" /></template>
+      </UiDataTable>
+    </UiCard>
+    <UiRecordDrawer v-model="create" close-on-save title="New tenant" :schema="tenantSchema" :fields="fields" :initial="{ slug: '', display_name: '', owner_email: '' }" :submit="submit" save-label="Create" size="md" data-test="create-dialog" @saved="saved" />
+  </UiPage>
 </template>

@@ -1,107 +1,73 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { UiCard, UiIcon, UiForm, UiInput, UiSecretField, UiButton, UiAlert } from '@freya/ui'
+import { useZodForm } from '@freya/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { safeNext, useSignin, type SignInResponse } from '@/stores/signin'
+import { signInSchema } from '@/schemas'
 
 const route = useRoute()
 const router = useRouter()
 const signin = useSignin()
-
-const tenant = ref(typeof route.query.tenant === 'string' ? route.query.tenant : '')
-const email = ref('')
-const password = ref('')
 const tenantName = ref<string | null>(null)
-const error = ref<string | null>(null)
-const busy = ref(false)
+const refusal = ref<string | null>(null)
+const passwordEl = ref<HTMLElement | null>(null)
 
-const slugOk = computed(() => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(tenant.value))
-const canSubmit = computed(() => slugOk.value && /^[^\s@]+@[^\s@]+$/.test(email.value) && password.value.length > 0 && !busy.value)
-
+const form = useZodForm(signInSchema, {
+  initial: { tenant: typeof route.query.tenant === 'string' ? route.query.tenant : '', email: '', password: '' },
+  onSubmit: async (v) => {
+    refusal.value = null
+    try {
+      const res = await api<SignInResponse>('POST', '/api/v1/signin', v)
+      signin.next = safeNext(route.query.next)
+      if (res.mfa_required && res.challenge) {
+        signin.challenge = res.challenge
+        await router.push({ name: 'signin-mfa' })
+        return
+      }
+      await signin.finish(res, (to) => router.push(to))
+    } catch (err) {
+      // One shared refusal message (no account enumeration); the password field is cleared and refocused.
+      refusal.value = signin.messageFor(err)
+      throw err
+    } finally {
+      form.values.password = ''
+      passwordEl.value?.querySelector('input')?.focus()
+    }
+  },
+})
 async function resolveTenant(): Promise<void> {
   tenantName.value = null
-  if (!slugOk.value) return
+  const t = signInSchema.shape.tenant.safeParse(form.values.tenant)
+  if (!t.success) return
   try {
-    const t = await api<{ display_name: string }>('GET', '/api/v1/tenants/resolve', undefined, { query: { slug: tenant.value } })
-    tenantName.value = t.display_name
+    tenantName.value = (await api<{ display_name: string }>('GET', '/api/v1/tenants/resolve', undefined, { query: { slug: t.data } })).display_name
   } catch (err) {
     if (!(err instanceof ApiError)) throw err
-  }
-}
-
-async function submit(): Promise<void> {
-  if (!canSubmit.value) return
-  error.value = null
-  busy.value = true
-  try {
-    const res = await api<SignInResponse>('POST', '/api/v1/signin', { tenant: tenant.value, email: email.value, password: password.value })
-    signin.next = safeNext(route.query.next)
-    if (res.mfa_required && res.challenge) {
-      signin.challenge = res.challenge
-      await router.push({ name: 'signin-mfa' })
-      return
-    }
-    await signin.finish(res, (to) => router.push(to))
-  } catch (err) {
-    error.value = signin.messageFor(err)
-  } finally {
-    password.value = ''
-    busy.value = false
   }
 }
 </script>
 
 <template>
-  <v-card class="pa-6 pa-sm-8" data-test="signin">
-    <div class="brand mb-6" aria-hidden="true">
-      <span class="brand__mark"><v-icon icon="mdi-shield-half-full" size="20" /></span>
-      <span class="brand__text">Freya</span>
+  <UiCard data-test="signin">
+    <div class="flex items-center gap-3" aria-hidden="true">
+      <span class="rounded-field bg-primary text-primary-content flex size-9 items-center justify-center"><UiIcon name="mdi-shield-half-full" /></span>
+      <span class="text-base-content text-xl font-bold tracking-tight">Freya</span>
     </div>
-    <v-card-title class="text-h4 pa-0 mb-1">Welcome to Freya! 👋</v-card-title>
-    <p class="mb-6">Sign in to your organisation to continue.</p>
-    <v-form @submit.prevent="submit">
-      <v-text-field
-        v-model.trim="tenant"
-        label="Organisation"
-        autocomplete="organization"
-        data-test="tenant"
-        :hint="tenantName ?? undefined"
-        persistent-hint
-        class="mb-2"
-        @blur="resolveTenant"
-      />
-      <v-text-field v-model.trim="email" label="Email" type="email" autocomplete="username" data-test="email" class="mb-2" />
-      <v-text-field v-model="password" label="Password" type="password" autocomplete="current-password" data-test="password" />
-      <div class="d-flex justify-end mb-4">
-        <router-link :to="{ name: 'forgot' }" class="text-primary text-body-2 text-decoration-none" data-test="forgot">Forgot your password?</router-link>
+    <div>
+      <h1 class="text-base-content mb-1.5 text-2xl font-semibold">Welcome to Freya! 👋</h1>
+      <p class="text-base-content/80">Sign in to your organisation to continue.</p>
+    </div>
+    <UiForm :form="form">
+      <div class="space-y-4">
+        <UiInput v-bind="form.field('tenant')" label="Organisation" placeholder="acme" autocomplete="organization" :hint="tenantName ?? undefined" required data-test="tenant" @blur="form.blur('tenant'); resolveTenant()" />
+        <UiInput v-bind="form.field('email')" label="Email" type="email" placeholder="you@example.org" autocomplete="username" required data-test="email" />
+        <div ref="passwordEl"><UiSecretField v-bind="form.field('password')" label="Password" placeholder="············" autocomplete="current-password" :revealable="false" required data-test="password" /></div>
+        <div class="flex justify-end"><RouterLink :to="{ name: 'forgot' }" class="link link-animated link-primary text-sm font-normal" data-test="forgot">Forgot your password?</RouterLink></div>
+        <UiAlert v-if="refusal" kind="error" role="alert" data-test="error">{{ refusal }}</UiAlert>
+        <UiButton type="submit" size="lg" block :loading="form.submitting.value" data-test="submit">Sign in</UiButton>
       </div>
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-4" role="alert" data-test="error">{{ error }}</v-alert>
-      <v-btn type="submit" color="primary" size="large" block :disabled="!canSubmit" :loading="busy" data-test="submit">Sign in</v-btn>
-    </v-form>
-  </v-card>
+    </UiForm>
+  </UiCard>
 </template>
-
-<style scoped>
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-.brand__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--freya-radius);
-  background: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
-  box-shadow: var(--freya-shadow-sm);
-}
-.brand__text {
-  font-size: 1.375rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) calc(var(--v-high-emphasis-opacity) * 100%), transparent);
-}
-</style>

@@ -1,29 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createVuetify } from 'vuetify'
-import * as components from 'vuetify/components'
-import * as directives from 'vuetify/directives'
 import Tenants from '@/views/operator/Tenants.vue'
 import TenantDetail from '@/views/operator/TenantDetail.vue'
 import Clients from '@/views/admin/Clients.vue'
 import { router } from '@/router'
 import { useSession } from '@/stores/session'
+import { body, click, mountView, q, stubFetch, type } from './helpers'
 
-type Reply = { status: number; body: unknown }
-function stubFetch(handler: (url: string, init?: RequestInit) => Reply) {
-  const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const { status, body } = handler(String(input), init)
-    return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-  })
-  vi.stubGlobal('fetch', fn)
-  return fn
-}
 const tenants = [
   { id: 't-platform', slug: 'platform', display_name: 'Platform', status: 'active', kind: 'platform', created_at: '2026-01-01T00:00:00Z' },
   { id: 't-acme', slug: 'acme', display_name: 'Acme', status: 'active', kind: 'customer', created_at: '2026-01-02T00:00:00Z' },
 ]
-const plugins = () => [createVuetify({ components, directives }), router]
+const dialogButton = (label: string) => [...document.querySelectorAll('[role=dialog] button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement
 
 describe('operator console', () => {
   beforeEach(async () => {
@@ -38,29 +27,26 @@ describe('operator console', () => {
       if (url === '/api/v1/operator/tenants' && init?.method === 'POST') return { status: 201, body: { tenant: { id: 't-new' }, invitation_id: 'i1' } }
       return { status: 200, body: { items: tenants } }
     })
-    const w = mount(Tenants, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(Tenants)
     await flushPromises()
     expect(w.findAll('[data-test="tenant-row"]').length).toBe(2)
     await w.find('[data-test="create-open"]').trigger('click')
     await flushPromises()
-    const q = (sel: string) => document.querySelector(sel) as HTMLInputElement
-    const set = async (sel: string, v: string) => {
-      q(sel).value = v
-      q(sel).dispatchEvent(new Event('input'))
-      await flushPromises()
-    }
-    const btn = () => document.querySelector('[data-test="create"]') as HTMLButtonElement
-    expect(btn().disabled).toBe(true)
-    await set('[data-test="slug"] input', 'Globex Inc')
-    await set('[data-test="name"] input', 'Globex')
-    await set('[data-test="owner"] input', 'owner@globex.test')
-    expect(btn().disabled).toBe(true)
-    await set('[data-test="slug"] input', 'globex')
-    expect(btn().disabled).toBe(false)
-    btn().click()
+    const posted = () => fetch.mock.calls.filter((c) => String(c[0]) === '/api/v1/operator/tenants' && (c[1] as RequestInit).method === 'POST')
+    dialogButton('Create').click()
     await flushPromises()
-    const call = fetch.mock.calls.find((c) => String(c[0]) === '/api/v1/operator/tenants' && (c[1] as RequestInit).method === 'POST')
-    expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({ slug: 'globex', display_name: 'Globex', owner_email: 'owner@globex.test' })
+    expect(posted().length).toBe(0)
+    await type('[data-test="create-dialog"] input[data-field="slug"]', 'Globex Inc')
+    await type('[data-test="create-dialog"] input[data-field="display_name"]', 'Globex')
+    await type('[data-test="create-dialog"] input[data-field="owner_email"]', 'owner@globex.test')
+    dialogButton('Create').click()
+    await flushPromises()
+    expect(posted().length).toBe(0)
+    expect(q('[data-test="create-dialog"] [role=alert]').textContent).toMatch(/lowercase/)
+    await type('[data-test="create-dialog"] input[data-field="slug"]', 'globex')
+    dialogButton('Create').click()
+    await flushPromises()
+    expect(body(posted()[0])).toEqual({ slug: 'globex', display_name: 'Globex', owner_email: 'owner@globex.test' })
     expect(w.find('[data-test="notice"]').text()).toContain('globex')
     w.unmount()
   })
@@ -73,55 +59,53 @@ describe('operator console', () => {
       return { status: 404, body: {} }
     })
     await router.push('/operator/tenants/t-acme')
-    const w = mount(TenantDetail, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(TenantDetail)
     await flushPromises()
     await w.find('[data-test="suspend-open"]').trigger('click')
     await flushPromises()
     expect(fetch.mock.calls.some((c) => String(c[0]).endsWith('/suspend'))).toBe(false)
-    ;(document.querySelector('[data-test="suspend-confirm"]') as HTMLButtonElement).click()
+    dialogButton('Suspend').click()
     await flushPromises()
     expect(fetch).toHaveBeenCalledWith('/api/v1/operator/tenants/t-acme/suspend', expect.objectContaining({ method: 'POST' }))
     await w.find('[data-test="grant-open"]').trigger('click')
     await flushPromises()
-    const reason = document.querySelector('[data-test="reason"] textarea') as HTMLTextAreaElement
-    const create = () => document.querySelector('[data-test="grant-create"]') as HTMLButtonElement
-    reason.value = 'short'
-    reason.dispatchEvent(new Event('input'))
+    const posted = () => fetch.mock.calls.filter((c) => String(c[0]).endsWith('/operator/grants'))
+    await type('[data-test="grant-dialog"] textarea[data-field="reason"]', 'short')
+    dialogButton('Create grant').click()
     await flushPromises()
-    expect(create().disabled).toBe(true)
-    reason.value = 'incident INC-4242 investigation'
-    reason.dispatchEvent(new Event('input'))
+    expect(posted().length).toBe(0)
+    expect(q('[data-test="grant-dialog"] [role=alert]').textContent).toMatch(/10 characters/)
+    await type('[data-test="grant-dialog"] textarea[data-field="reason"]', 'incident INC-4242 investigation')
+    dialogButton('Create grant').click()
     await flushPromises()
-    expect(create().disabled).toBe(false)
-    create().click()
-    await flushPromises()
-    const call = fetch.mock.calls.find((c) => String(c[0]).endsWith('/operator/grants'))
-    expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({ tenant_id: 't-acme', reason: 'incident INC-4242 investigation', duration: '1h' })
+    expect(body(posted()[0])).toEqual({ tenant_id: 't-acme', reason: 'incident INC-4242 investigation', duration: '1h' })
     expect(w.find('[data-test="grant"]').text()).toContain('audited')
     w.unmount()
   })
 
-  it('shows a client secret exactly once', async () => {
+  it('shows a client secret exactly once, masked with a reveal toggle', async () => {
     stubFetch((url, init) => {
       if (url.endsWith('/admin/clients') && init?.method === 'POST') return { status: 201, body: { client_id: 'c1', display_name: 'Backend', redirect_uris: ['https://x/cb'], public: false, client_secret: 'S3CRET' } }
       return { status: 200, body: [] }
     })
     await router.push('/admin/clients')
-    const w = mount(Clients, { global: { plugins: plugins() }, attachTo: document.body })
+    const w = mountView(Clients)
     await flushPromises()
     await w.find('[data-test="client-open"]').trigger('click')
     await flushPromises()
-    const q = (sel: string) => document.querySelector(sel) as HTMLInputElement | HTMLTextAreaElement
-    q('[data-test="client-name"] input').value = 'Backend'
-    q('[data-test="client-name"] input').dispatchEvent(new Event('input'))
-    q('[data-test="client-uris"] textarea').value = 'https://x/cb'
-    q('[data-test="client-uris"] textarea').dispatchEvent(new Event('input'))
+    await type('[data-test="client-dialog"] input[data-field="display_name"]', 'Backend')
+    await type('[data-test="client-dialog"] textarea[data-field="redirect_uris"]', 'ftp://x/cb')
+    dialogButton('Register').click()
     await flushPromises()
-    ;(document.querySelector('[data-test="client-create"]') as HTMLButtonElement).click()
+    expect(q('[data-test="client-dialog"] [role=alert]').textContent).toMatch(/https/)
+    await type('[data-test="client-dialog"] textarea[data-field="redirect_uris"]', 'https://x/cb')
+    dialogButton('Register').click()
     await flushPromises()
-    expect(w.find('[data-test="client-secret"]').text()).toBe('S3CRET')
-    await w.find('[data-test="created-dismiss"]').trigger('click')
-    await flushPromises()
+    const secret = w.find('[data-test="client-secret"] input')
+    expect((secret.element as HTMLInputElement).value).toBe('S3CRET')
+    expect(secret.attributes('type')).toBe('password')
+    expect(w.text()).not.toContain('S3CRET')
+    await click('[data-test="created-dismiss"]')
     expect(w.find('[data-test="client-secret"]').exists()).toBe(false)
     w.unmount()
   })

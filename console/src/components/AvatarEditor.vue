@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+// Avatar upload/remove (raw PUT of the picture). Console-unique: the auth
+// service stores the 512×512 picture and serves it from the profile.
+import { ref } from 'vue'
+import { UiAvatar, UiButton, UiAlert } from '@freya/ui'
 import { api, ApiError, upload } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
+import { avatarSchema, AVATAR_TYPES } from '@/schemas'
 
 const props = withDefaults(defineProps<{
   /** Current avatar address (empty for none). */
@@ -14,37 +18,22 @@ const props = withDefaults(defineProps<{
   removePath: string
 }>(), { name: '', uploadPath: '' })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; changed: [] }>()
-
-const MAX_BYTES = 2 * 1024 * 1024
-const ACCEPT = ['image/png', 'image/jpeg', 'image/webp']
 const error = ref<string | null>(null)
 const busy = ref(false)
 const preview = ref<string | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 
-const initials = computed(() =>
-  props.name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join(''),
-)
-
 function pick(): void {
   input.value?.click()
 }
-
 async function onFile(ev: Event): Promise<void> {
   const file = (ev.target as HTMLInputElement).files?.[0]
   if (!file) return
   error.value = null
-  if (!ACCEPT.includes(file.type)) {
-    error.value = reasonMessage('unsupported_type')
-    return
-  }
-  if (file.size > MAX_BYTES) {
-    error.value = reasonMessage('body_too_large')
+  const checked = avatarSchema.safeParse(file)
+  if (!checked.success) {
+    error.value = checked.error.issues[0]?.message ?? reasonMessage('unsupported_type')
+    if (input.value) input.value.value = ''
     return
   }
   busy.value = true
@@ -63,7 +52,6 @@ async function onFile(ev: Event): Promise<void> {
     if (input.value) input.value.value = ''
   }
 }
-
 async function remove(): Promise<void> {
   error.value = null
   busy.value = true
@@ -80,19 +68,16 @@ async function remove(): Promise<void> {
 </script>
 
 <template>
-  <div class="d-flex align-center ga-4" data-test="avatar-editor">
-    <v-avatar size="72" color="surface-variant" data-test="avatar-preview">
-      <v-img v-if="preview || modelValue" :src="preview || modelValue" alt="Avatar" cover />
-      <span v-else class="text-h6" aria-hidden="true">{{ initials || '?' }}</span>
-    </v-avatar>
+  <div class="flex items-center gap-4" data-test="avatar-editor">
+    <span data-test="avatar-preview"><UiAvatar :name="name || '?'" :src="preview || modelValue || undefined" size="lg" /></span>
     <div>
-      <input ref="input" type="file" :accept="ACCEPT.join(',')" class="d-none" data-test="avatar-file" @change="onFile">
-      <v-btn v-if="uploadPath" size="small" color="primary" variant="tonal" :loading="busy" :disabled="busy" data-test="avatar-upload" @click="pick">
-        {{ modelValue ? 'Change picture' : 'Upload picture' }}
-      </v-btn>
-      <v-btn v-if="modelValue" size="small" variant="text" class="ml-2" :disabled="busy" data-test="avatar-remove" @click="remove">Remove</v-btn>
-      <div class="text-caption mt-1">PNG, JPEG or WebP, up to 2 MB. Stored as a 512 × 512 picture.</div>
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mt-2" data-test="avatar-error">{{ error }}</v-alert>
+      <input ref="input" type="file" :accept="AVATAR_TYPES.join(',')" class="sr-only" aria-label="Choose a picture" data-test="avatar-file" @change="onFile">
+      <div class="flex flex-wrap gap-2">
+        <UiButton v-if="uploadPath" size="sm" variant="soft" :loading="busy" :disabled="busy" data-test="avatar-upload" @click="pick">{{ modelValue ? 'Change picture' : 'Upload picture' }}</UiButton>
+        <UiButton v-if="modelValue" size="sm" variant="text" :disabled="busy" data-test="avatar-remove" @click="remove">Remove</UiButton>
+      </div>
+      <p class="mt-1 text-xs text-base-content/70">PNG, JPEG or WebP, up to 2 MB. Stored as a 512 × 512 picture.</p>
+      <UiAlert v-if="error" kind="error" class="mt-2" data-test="avatar-error">{{ error }}</UiAlert>
     </div>
   </div>
 </template>

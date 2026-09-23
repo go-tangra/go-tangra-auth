@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import '@/remote.css'
 import { routes as consoleRoutes } from '@/router/routes'
 
 // The console as a federated remote: the same route records, mounted by the

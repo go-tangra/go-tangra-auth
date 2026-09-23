@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { UiAlert } from '@freya/ui'
 import { useI18n } from '@/plugins/i18n'
 const { t } = useI18n()
 </script>
 
 <template>
-  <v-alert type="info" variant="tonal" :title="t('notfound.title')" />
+  <UiAlert kind="info" :title="t('notfound.title')" />
 </template>

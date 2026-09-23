@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { UiPage, UiCard, UiAlert, UiButton, UiForm, UiInput, UiSelect, UiDataTable, UiStatusChip, type Column, type SelectOption } from '@freya/ui'
+import { useZodForm } from '@freya/ui/forms'
 import { api, ApiError } from '@/api/client'
-import { auditEventTypes, reasonMessage, type AuditEventType } from '@/api/vocab'
+import { auditEventTypes, reasonMessage } from '@/api/vocab'
+import { auditFilterSchema } from '@/schemas'
+
 /** One row of GET /api/v1/admin/audit (internal/audit.Item). */
 interface AuditEvent {
   ts: string
@@ -15,76 +19,57 @@ interface AuditEvent {
   correlation_id?: string
   details: unknown
 }
-
 const items = ref<AuditEvent[]>([])
 const next = ref<string | undefined>(undefined)
-const eventType = ref<AuditEventType | null>(null)
-const userId = ref('')
-const from = ref('')
-const to = ref('')
 const error = ref<string | null>(null)
-
-function query(cursor?: string): Record<string, string | undefined> {
-  return {
-    event_type: eventType.value ?? undefined,
-    user_id: userId.value || undefined,
-    from: from.value ? new Date(from.value).toISOString() : undefined,
-    to: to.value ? new Date(to.value).toISOString() : undefined,
-    cursor,
-  }
-}
-
-async function load(more = false): Promise<void> {
+const eventOptions: SelectOption[] = auditEventTypes.map((t) => ({ title: t, value: t }))
+const filter = useZodForm(auditFilterSchema, { initial: { user_id: '', from: '', to: '' }, onSubmit: (f) => load(f, false) })
+type Filter = ReturnType<typeof auditFilterSchema.parse>
+async function load(f: Filter, more: boolean): Promise<void> {
   error.value = null
   try {
-    const page = await api<{ items: AuditEvent[]; next_cursor?: string }>('GET', '/api/v1/admin/audit', undefined, { query: query(more ? next.value : undefined) })
+    const page = await api<{ items: AuditEvent[]; next_cursor?: string }>('GET', '/api/v1/admin/audit', undefined, { query: { event_type: f.event_type, user_id: f.user_id || undefined, from: f.from, to: f.to, cursor: more ? next.value : undefined } })
     items.value = more ? [...items.value, ...page.items] : page.items
     next.value = page.next_cursor
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load the audit trail.'
   }
 }
-
-onMounted(() => load())
+const apply = () => void filter.submit()
+const loadMore = () => {
+  const f = filter.validate()
+  if (f) void load(f, true)
+}
+onMounted(apply)
+const rows = computed(() => items.value.map((e, i) => ({ ...e, id: e.ts + ':' + i })))
+const columns: Column<(typeof rows.value)[number]>[] = [
+  { key: 'ts', label: 'Time', format: (e) => new Date(e.ts).toLocaleString() },
+  { key: 'event_type', label: 'Event' },
+  { key: 'actor', label: 'Actor', format: (e) => [e.actor_kind, e.actor_user_id ?? ''].filter(Boolean).join(' '), hideOnStack: true },
+  { key: 'subject', label: 'Subject', format: (e) => [e.subject_kind ?? '', e.subject_id ?? ''].filter(Boolean).join(' ') },
+  { key: 'outcome', label: 'Outcome', width: 'sm' },
+  { key: 'reason', label: 'Reason', hideOnStack: true },
+]
 </script>
 
 <template>
-  <v-card>
-    <v-card-title>Audit trail</v-card-title>
-    <v-card-text>
-      <v-row dense>
-        <v-col cols="12" md="3"><v-select v-model="eventType" :items="[...auditEventTypes]" label="Event" clearable data-test="filter-event" /></v-col>
-        <v-col cols="12" md="3"><v-text-field v-model.trim="userId" label="Actor user id" clearable data-test="filter-user" /></v-col>
-        <v-col cols="6" md="2"><v-text-field v-model="from" label="From" type="datetime-local" data-test="filter-from" /></v-col>
-        <v-col cols="6" md="2"><v-text-field v-model="to" label="To" type="datetime-local" data-test="filter-to" /></v-col>
-        <v-col cols="12" md="2" class="d-flex align-center"><v-btn color="primary" block data-test="apply" @click="load()">Apply</v-btn></v-col>
-      </v-row>
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mb-2" data-test="error">{{ error }}</v-alert>
-      <v-table density="compact" data-test="audit">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Event</th>
-            <th>Actor</th>
-            <th>Subject</th>
-            <th>Outcome</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(e, i) in items" :key="i" data-test="audit-row">
-            <td>{{ e.ts }}</td>
-            <td>{{ e.event_type }}</td>
-            <td>{{ e.actor_kind }} {{ e.actor_user_id ?? '' }}</td>
-            <td>{{ e.subject_kind ?? '' }} {{ e.subject_id ?? '' }}</td>
-            <td><v-chip size="x-small" :color="e.outcome === 'ok' ? 'success' : 'error'">{{ e.outcome }}</v-chip></td>
-            <td>{{ e.reason ?? '' }}</td>
-          </tr>
-        </tbody>
-      </v-table>
-    </v-card-text>
-    <v-card-actions>
-      <v-btn v-if="next" variant="text" data-test="more" @click="load(true)">Load more</v-btn>
-    </v-card-actions>
-  </v-card>
+  <UiPage title="Audit trail">
+    <template #filters>
+      <UiForm :form="filter" class="w-full">
+        <div class="grid grid-cols-2 gap-2 md:grid-cols-12 md:items-end">
+          <div class="col-span-2 md:col-span-3"><UiSelect v-bind="filter.field('event_type')" label="Event" :options="eventOptions" size="sm" data-test="filter-event" /></div>
+          <div class="col-span-2 md:col-span-3"><UiInput v-bind="filter.field('user_id')" label="Actor user id" size="sm" data-test="filter-user" @enter="apply" /></div>
+          <div class="md:col-span-2"><UiInput v-bind="filter.field('from')" label="From" type="datetime-local" size="sm" data-test="filter-from" /></div>
+          <div class="md:col-span-2"><UiInput v-bind="filter.field('to')" label="To" type="datetime-local" size="sm" data-test="filter-to" /></div>
+          <div class="col-span-2 md:col-span-2"><UiButton block size="sm" data-test="apply" @click="apply">Apply</UiButton></div>
+        </div>
+      </UiForm>
+    </template>
+    <UiAlert v-if="error" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
+    <UiCard :padded="false">
+      <UiDataTable :items="rows" :columns="columns" caption="Audit events" empty-title="No events" :has-more="!!next" :row-attrs="() => ({ 'data-test': 'audit-row' })" data-test="audit" @load-more="loadMore">
+        <template #cell-outcome="{ row }"><UiStatusChip :status="row.outcome" :colors="{ ok: 'success', refused: 'error', denied: 'error' }" /></template>
+      </UiDataTable>
+    </UiCard>
+  </UiPage>
 </template>

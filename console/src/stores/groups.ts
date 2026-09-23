@@ -14,7 +14,7 @@ export const useGroups = defineStore('groups', {
     async load(q = ''): Promise<void> {
       try {
         const page = await api<{ items: Group[] }>('GET', '/api/v1/admin/groups', undefined, { query: { q: q || undefined } })
-        this.items = page.items
+        this.items = page.items ?? []
       } catch (err) {
         if (!(err instanceof ApiError)) throw err
         this.items = []

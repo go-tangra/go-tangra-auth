@@ -1,0 +1,10 @@
+/* Federated remote inside the platform shell: only the utilities and FlyonUI
+ * component classes the console's own templates use. Theme tokens, preflight
+ * and the kit's component CSS come from the shell. */
+@import "tailwindcss/theme.css" reference;
+@import "tailwindcss/utilities.css";
+@plugin "flyonui" {
+  themes: false;
+  exclude: rootcolor, rootscrollgutter, scrollbar, svg, properties;
+}
+@plugin "@iconify/tailwind4";
