@@ -180,7 +180,7 @@ func TestControlRefusesResolvedAddress(t *testing.T) {
 	if err != nil {
 		t.Skipf("no loopback listener: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	accepted := make(chan struct{}, 1)
 	go func() {
 		if c, err := ln.Accept(); err == nil {
