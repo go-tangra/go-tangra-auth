@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -31,6 +32,30 @@ type Config struct {
 	Session Session `yaml:"session"`
 	Gateway Gateway `yaml:"gateway"`
 	Profile Profile `yaml:"profile"`
+	// Directory bounds the LDAP directory import (feature 016).
+	Directory Directory `yaml:"directory"`
+}
+
+// Directory configures outbound LDAP connections used for directory import
+// (research D5, D15). Validated even when disabled.
+type Directory struct {
+	Enabled                 bool             `yaml:"enabled"`         // false removes the routes and the nav entry
+	AllowPlaintext          bool             `yaml:"allow_plaintext"` // ldap:// without StartTLS; development only
+	Targets                 DirectoryTargets `yaml:"targets"`
+	DialTimeout             time.Duration    `yaml:"dial_timeout"`               // (0, 30s], default 5s
+	MaxSizeLimit            int              `yaml:"max_size_limit"`             // [1, 1000] entries per search
+	MaxTimeLimit            time.Duration    `yaml:"max_time_limit"`             // [1s, 60s] per search
+	RatePerMinute           int              `yaml:"rate_per_minute"`            // per-tenant test/search rate (default 30)
+	MaxConnectionsPerTenant int              `yaml:"max_connections_per_tenant"` // default 10
+}
+
+// DirectoryTargets is the dial-time address policy. The always-denied set
+// (loopback, link-local incl. cloud metadata, unspecified, multicast) is
+// enforced in code and cannot be overridden here.
+type DirectoryTargets struct {
+	DenyCIDRs    []string `yaml:"deny_cidrs"`    // platform-internal networks, operator-extensible
+	AllowCIDRs   []string `yaml:"allow_cidrs"`   // overrides deny_cidrs only
+	AllowedPorts []int    `yaml:"allowed_ports"` // default 389, 636, 3268, 3269
 }
 
 // Gateway enables gateway mode: the browser API and console are served on the
@@ -128,6 +153,15 @@ func Default() Config {
 		Session: Session{RevocationPoll: 5 * time.Second},
 		Gateway: Gateway{Service: "gateway"},
 		Profile: Profile{AvatarMaxBytes: 2 << 20, AvatarMaxPixels: 4096 * 4096, AvatarSize: 512, AvatarDecodeConcurrency: 4, LookupRatePerMinute: 120},
+		Directory: Directory{
+			Enabled:                 true,
+			Targets:                 DirectoryTargets{AllowedPorts: []int{389, 636, 3268, 3269}},
+			DialTimeout:             5 * time.Second,
+			MaxSizeLimit:            1000,
+			MaxTimeLimit:            60 * time.Second,
+			RatePerMinute:           30,
+			MaxConnectionsPerTenant: 10,
+		},
 	}
 }
 
@@ -241,6 +275,46 @@ func (c Config) Validate() error {
 	if c.Session.RevocationPoll <= 0 || c.Session.RevocationPoll > 30*time.Second {
 		return errors.New("config: session.revocation_poll must be within 1s..30s")
 	}
+	return c.Directory.validate(prod)
+}
+
+func (d *Directory) validate(prod bool) error {
+	if prod && d.AllowPlaintext {
+		return errors.New("config: directory.allow_plaintext is not permitted in production")
+	}
+	for _, s := range d.Targets.DenyCIDRs {
+		if _, err := netip.ParsePrefix(s); err != nil {
+			return fmt.Errorf("config: directory.targets.deny_cidrs: %q is not a CIDR", s)
+		}
+	}
+	for _, s := range d.Targets.AllowCIDRs {
+		if _, err := netip.ParsePrefix(s); err != nil {
+			return fmt.Errorf("config: directory.targets.allow_cidrs: %q is not a CIDR", s)
+		}
+	}
+	if len(d.Targets.AllowedPorts) == 0 {
+		return errors.New("config: directory.targets.allowed_ports must list at least one port")
+	}
+	for _, p := range d.Targets.AllowedPorts {
+		if p < 1 || p > 65535 {
+			return fmt.Errorf("config: directory.targets.allowed_ports: %d is outside 1..65535", p)
+		}
+	}
+	if d.DialTimeout <= 0 || d.DialTimeout > 30*time.Second {
+		return errors.New("config: directory.dial_timeout must be within (0, 30s]")
+	}
+	if d.MaxSizeLimit < 1 || d.MaxSizeLimit > 1000 {
+		return errors.New("config: directory.max_size_limit must be within [1, 1000]")
+	}
+	if d.MaxTimeLimit < time.Second || d.MaxTimeLimit > 60*time.Second {
+		return errors.New("config: directory.max_time_limit must be within [1s, 60s]")
+	}
+	if d.RatePerMinute <= 0 {
+		return errors.New("config: directory.rate_per_minute must be positive")
+	}
+	if d.MaxConnectionsPerTenant <= 0 {
+		return errors.New("config: directory.max_connections_per_tenant must be positive")
+	}
 	return nil
 }
 
@@ -263,6 +337,12 @@ func (c Config) Warnings() []string {
 	}
 	if !strings.Contains(c.DB.DSN, "sslmode=verify-full") && !strings.Contains(c.DB.DSN, "sslmode=verify-ca") {
 		w = append(w, "db.dsn sslmode is weaker than verify-full")
+	}
+	if c.Directory.AllowPlaintext {
+		w = append(w, "directory connections may use ldap:// without TLS (directory.allow_plaintext)")
+	}
+	if len(c.Directory.Targets.AllowCIDRs) > 0 {
+		w = append(w, "directory.targets.allow_cidrs overrides deny_cidrs for: "+strings.Join(c.Directory.Targets.AllowCIDRs, ", "))
 	}
 	return w
 }
