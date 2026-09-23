@@ -52,6 +52,44 @@ func TestGroupAndProfileEvents(t *testing.T) {
 	}
 }
 
+// Feature 016: directory events are registered with their exact wire names,
+// and the D14 detail keys (ids, counts, filter) survive redaction.
+func TestDirectoryEvents(t *testing.T) {
+	want := map[EventType]string{
+		DirectoryConnectionCreated: "directory_connection_created",
+		DirectoryConnectionUpdated: "directory_connection_updated",
+		DirectoryConnectionDeleted: "directory_connection_deleted",
+		DirectoryConnectionTested:  "directory_connection_tested",
+		DirectorySearched:          "directory_searched",
+		DirectoryImported:          "directory_imported",
+		ImportedUserDeleted:        "imported_user_deleted",
+	}
+	for typ, name := range want {
+		if string(typ) != name {
+			t.Fatalf("%s: wire name %q", name, typ)
+		}
+		for _, outcome := range []string{"ok", "refused", "failed"} {
+			if err := Validate(Event{Type: typ, TenantID: "t1", ActorKind: "user", Outcome: outcome}); err != nil {
+				t.Fatalf("%s/%s: %v", typ, outcome, err)
+			}
+		}
+	}
+	r, err := Row(Event{Type: DirectorySearched, TenantID: "t1", ActorKind: "user", ActorUserID: "u1", Outcome: "ok", SubjectKind: "directory_connection", SubjectID: "c1",
+		Details: map[string]any{"connection_id": "c1", "filter": "(department=eng)", "scope": "sub", "count": 3, "truncated": false, "bind_password": "LDAP-MARKER-PW-1"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(r.Details)
+	if strings.Contains(js, "LDAP-MARKER-PW-") {
+		t.Fatalf("bind password leaked: %s", js)
+	}
+	for _, keep := range []string{`"connection_id":"c1"`, `"filter":"(department=eng)"`, `"count":3`, `"truncated":false`} {
+		if !strings.Contains(js, keep) {
+			t.Fatalf("missing %s in %s", keep, js)
+		}
+	}
+}
+
 func TestValidateAndRow(t *testing.T) {
 	good := Event{Type: SigninFailed, TenantID: "t1", ActorKind: "user", ActorUserID: "u1", Outcome: "refused", Reason: "invalid_credentials",
 		CorrelationID: "c1", Details: map[string]any{"attempt": 3, "password": "hunter2", "reset_token": "abc", "api_key": "k", "ip": "hashed"}}
