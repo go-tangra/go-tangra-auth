@@ -249,7 +249,7 @@ func TestNewTLSConfigAllowTLS12(t *testing.T) {
 		if !approvedTLS12[id] || insecure[id] {
 			t.Errorf("suite %s is not an approved AEAD ECDHE suite", name)
 		}
-		if !strings.Contains(name, "ECDHE") || !(strings.Contains(name, "GCM") || strings.Contains(name, "CHACHA20_POLY1305")) {
+		if !strings.Contains(name, "ECDHE") || (!strings.Contains(name, "GCM") && !strings.Contains(name, "CHACHA20_POLY1305")) {
 			t.Errorf("suite %s is not ECDHE+AEAD", name)
 		}
 	}
@@ -315,11 +315,11 @@ func TestNewTLSConfigReturnsFreshConfig(t *testing.T) {
 
 // handshake runs a client handshake with clientCfg against a server that
 // presents pki.server and speaks at most serverMax.
-func handshake(t *testing.T, pki testPKI, clientCfg *tls.Config, serverMax uint16) (tls.ConnectionState, error) {
+func handshake(t *testing.T, pki *testPKI, clientCfg *tls.Config, serverMax uint16) (tls.ConnectionState, error) {
 	t.Helper()
 	cConn, sConn := net.Pipe()
-	defer cConn.Close()
-	defer sConn.Close()
+	defer func() { _ = cConn.Close() }()
+	defer func() { _ = sConn.Close() }()
 	srv := tls.Server(sConn, &tls.Config{
 		Certificates: []tls.Certificate{pki.server},
 		MinVersion:   tls.VersionTLS12,
@@ -344,7 +344,7 @@ func TestHandshakeBehaviour(t *testing.T) {
 	pki := newTestPKI(t)
 
 	t.Run("trusted CA over TLS 1.3", func(t *testing.T) {
-		st, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, pki.caPEM, false), tls.VersionTLS13)
+		st, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, pki.caPEM, false), tls.VersionTLS13)
 		if err != nil {
 			t.Fatalf("handshake: %v", err)
 		}
@@ -355,38 +355,38 @@ func TestHandshakeBehaviour(t *testing.T) {
 
 	t.Run("IP literal verified against SAN", func(t *testing.T) {
 		ep := Endpoint{Scheme: "ldaps", Host: "192.0.2.10", Port: 636}
-		if _, err := handshake(t, pki, mustTLSConfig(t, ep, pki.caPEM, false), tls.VersionTLS13); err != nil {
+		if _, err := handshake(t, &pki, mustTLSConfig(t, ep, pki.caPEM, false), tls.VersionTLS13); err != nil {
 			t.Fatalf("handshake: %v", err)
 		}
 	})
 
 	t.Run("hostname mismatch refused", func(t *testing.T) {
 		ep := Endpoint{Scheme: "ldaps", Host: "other.example.test", Port: 636}
-		if _, err := handshake(t, pki, mustTLSConfig(t, ep, pki.caPEM, false), tls.VersionTLS13); err == nil {
+		if _, err := handshake(t, &pki, mustTLSConfig(t, ep, pki.caPEM, false), tls.VersionTLS13); err == nil {
 			t.Fatal("handshake succeeded with a certificate for another name")
 		}
 	})
 
 	t.Run("untrusted CA refused", func(t *testing.T) {
-		if _, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, pki.otherPEM, false), tls.VersionTLS13); err == nil {
+		if _, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, pki.otherPEM, false), tls.VersionTLS13); err == nil {
 			t.Fatal("handshake succeeded with a CA that did not issue the server cert")
 		}
 	})
 
 	t.Run("system roots do not trust a private CA", func(t *testing.T) {
-		if _, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, "", false), tls.VersionTLS13); err == nil {
+		if _, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, "", false), tls.VersionTLS13); err == nil {
 			t.Fatal("handshake succeeded against a private CA with system roots")
 		}
 	})
 
 	t.Run("TLS 1.2 server refused by default", func(t *testing.T) {
-		if _, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, pki.caPEM, false), tls.VersionTLS12); err == nil {
+		if _, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, pki.caPEM, false), tls.VersionTLS12); err == nil {
 			t.Fatal("TLS 1.2 negotiated without allow_tls12")
 		}
 	})
 
 	t.Run("TLS 1.2 server accepted with allow_tls12", func(t *testing.T) {
-		st, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, pki.caPEM, true), tls.VersionTLS12)
+		st, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, pki.caPEM, true), tls.VersionTLS12)
 		if err != nil {
 			t.Fatalf("handshake: %v", err)
 		}
@@ -396,7 +396,7 @@ func TestHandshakeBehaviour(t *testing.T) {
 	})
 
 	t.Run("allow_tls12 still prefers TLS 1.3", func(t *testing.T) {
-		st, err := handshake(t, pki, mustTLSConfig(t, ldapsEP, pki.caPEM, true), tls.VersionTLS13)
+		st, err := handshake(t, &pki, mustTLSConfig(t, ldapsEP, pki.caPEM, true), tls.VersionTLS13)
 		if err != nil {
 			t.Fatalf("handshake: %v", err)
 		}
