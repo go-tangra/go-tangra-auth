@@ -14,6 +14,9 @@ import (
 var (
 	ErrLastOwner = errors.New("last_owner")
 	ErrNotFound  = store.ErrNotFound
+	// ErrInvalidState refuses an operation the user's status does not allow:
+	// an imported user is only activated (invitation) or removed (feature 016).
+	ErrInvalidState = errors.New("invalid_state")
 )
 
 // AdminStore is what administration needs from persistence.
@@ -135,6 +138,9 @@ func (a *Admin) Deactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 	if err != nil {
 		return err
 	}
+	if u.Status == "imported" {
+		return ErrInvalidState
+	}
 	if last, err := a.isLastOwner(ctx, actor.TenantID, uid); err != nil {
 		return err
 	} else if last {
@@ -158,6 +164,9 @@ func (a *Admin) Reactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 	u, err := a.lookup(ctx, actor, uid)
 	if err != nil {
 		return err
+	}
+	if u.Status == "imported" {
+		return ErrInvalidState
 	}
 	if u.Status != "deactivated" {
 		return nil

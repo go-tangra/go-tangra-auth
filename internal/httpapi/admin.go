@@ -30,6 +30,7 @@ var (
 	errSelfEscalation = &Error{http.StatusForbidden, "self_escalation"}
 	errInvalidToken   = &Error{http.StatusBadRequest, "invalid_token"}
 	errPasswordPolicy = &Error{http.StatusBadRequest, "password_policy"}
+	errInvalidState   = &Error{http.StatusConflict, "invalid_state"}
 )
 
 func adminError(err error) error {
@@ -38,6 +39,8 @@ func adminError(err error) error {
 		return ErrNotFound
 	case errors.Is(err, user.ErrLastOwner), errors.Is(err, authz.ErrLastOwner):
 		return errLastOwner
+	case errors.Is(err, user.ErrInvalidState):
+		return errInvalidState
 	case errors.Is(err, authz.ErrSelfEscalation):
 		return errSelfEscalation
 	case errors.Is(err, invite.ErrInvalidToken):
@@ -113,8 +116,14 @@ func (s *Server) setUserRoles(d US2Deps) http.HandlerFunc {
 			return
 		}
 		uid := r.PathValue("id")
-		if _, err := d.Admin.Lookup(r.Context(), a, uid); err != nil {
+		target, err := d.Admin.Lookup(r.Context(), a, uid)
+		if err != nil {
 			Fail(w, r, nil, adminError(err))
+			return
+		}
+		// Roles of an imported user are chosen at activation (feature 016).
+		if target.Status == "imported" {
+			Fail(w, r, nil, adminError(user.ErrInvalidState))
 			return
 		}
 		slugs, err := d.Assigner.AssignRoles(r.Context(), a.TenantID, uid, in.RoleIDs)
