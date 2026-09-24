@@ -551,3 +551,131 @@ func arrayItems(ref *openapi3.SchemaRef) *openapi3.Schema {
 	}
 	return ref.Value.Items.Value
 }
+
+// activateRoutes are the activation and removal routes of imported users
+// (feature 016 US3, contract A).
+var activateRoutes = []httpapi.Route{
+	{Method: "POST", Path: "/api/v1/admin/users/activate"},
+	{Method: "POST", Path: "/api/v1/admin/users/{id}/remove-imported"},
+}
+
+// TestOpenAPIActivate pins the activation surface: both routes carry CSRF,
+// activate takes a closed ActivateRequest (1..100 unique uuid user ids,
+// optional uuid role ids, at most 50 uuid group ids) and answers 200
+// ActivateResult with per-user items; removal is 204 with 404/409 refusals;
+// the invitation gate's 403 (forbidden and self_escalation) is declared.
+func TestOpenAPIActivate(t *testing.T) {
+	doc, err := httpapi.LoadDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCodes := map[string][]string{activateRoutes[0].Path: {"200", "400", "403"}, activateRoutes[1].Path: {"204", "403", "404", "409"}}
+	for _, r := range activateRoutes {
+		op := operation(doc, r)
+		if op == nil {
+			t.Errorf("%s: not declared", r)
+			continue
+		}
+		if !hasCSRF(op) {
+			t.Errorf("%s: mutation without the required X-CSRF-Token header", r)
+		}
+		for _, code := range wantCodes[r.Path] {
+			if op.Responses.Value(code) == nil {
+				t.Errorf("%s: response %s not declared", r, code)
+			}
+		}
+	}
+	if op := operation(doc, activateRoutes[0]); op != nil {
+		if ref := bodyRef(op); ref != "#/components/schemas/ActivateRequest" {
+			t.Errorf("%s: request body must be ActivateRequest, got %q", activateRoutes[0], ref)
+		}
+		if op.RequestBody == nil || op.RequestBody.Value == nil || !op.RequestBody.Value.Required {
+			t.Errorf("%s: request body must be required", activateRoutes[0])
+		}
+		if ref := responseRef(op, "200"); ref != "#/components/schemas/ActivateResult" {
+			t.Errorf("%s: 200 must be ActivateResult, got %q", activateRoutes[0], ref)
+		}
+	}
+	if op := operation(doc, activateRoutes[1]); op != nil {
+		if op.RequestBody != nil {
+			t.Errorf("%s: takes no body", activateRoutes[1])
+		}
+		if resp := op.Responses.Value("204"); resp != nil && resp.Value != nil && len(resp.Value.Content) != 0 {
+			t.Errorf("%s: 204 has no content", activateRoutes[1])
+		}
+		found := false
+		for _, p := range op.Parameters {
+			if v := p.Value; v != nil && v.In == "path" && v.Name == "id" && v.Required {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: path parameter id must be required", activateRoutes[1])
+		}
+	}
+
+	schemas := doc.Components.Schemas
+	if req := schemaValue(t, schemas, "ActivateRequest"); req != nil {
+		assertClosed(t, "ActivateRequest", req, map[*openapi3.Schema]bool{})
+		assertProps(t, "ActivateRequest", req, "user_ids", "role_ids", "group_ids")
+		if !slices.Equal(req.Required, []string{"user_ids"}) {
+			t.Errorf("ActivateRequest: only user_ids is required, got %v", req.Required)
+		}
+		for f, limits := range map[string]struct {
+			min    uint64
+			max    uint64
+			unique bool
+		}{"user_ids": {1, 100, true}, "role_ids": {0, 0, false}, "group_ids": {0, 50, false}} {
+			p := req.Properties[f]
+			if p == nil || p.Value == nil || !p.Value.Type.Is("array") {
+				t.Errorf("ActivateRequest.%s must be an array", f)
+				continue
+			}
+			v := p.Value
+			if v.MinItems != limits.min {
+				t.Errorf("ActivateRequest.%s: minItems %d, want %d", f, v.MinItems, limits.min)
+			}
+			if limits.max != 0 && (v.MaxItems == nil || *v.MaxItems != limits.max) {
+				t.Errorf("ActivateRequest.%s: maxItems must be %d, got %v", f, limits.max, v.MaxItems)
+			}
+			if limits.unique && !v.UniqueItems {
+				t.Errorf("ActivateRequest.%s must be uniqueItems", f)
+			}
+			if v.Items == nil || v.Items.Value == nil || !v.Items.Value.Type.Is("string") || v.Items.Value.Format != "uuid" {
+				t.Errorf("ActivateRequest.%s[] must be uuid strings", f)
+			}
+		}
+	}
+	if res := schemaValue(t, schemas, "ActivateResult"); res != nil {
+		assertProps(t, "ActivateResult", res, "items")
+		if !slices.Contains(res.Required, "items") {
+			t.Error("ActivateResult.items must be required")
+		}
+		it := arrayItems(res.Properties["items"])
+		if it == nil {
+			t.Fatal("ActivateResult.items must be an array of objects")
+		}
+		assertProps(t, "ActivateResult.items[]", it, "user_id", "outcome", "invitation_id", "reason")
+		for _, f := range []string{"user_id", "outcome", "invitation_id", "reason"} {
+			if !slices.Contains(it.Required, f) {
+				t.Errorf("ActivateResult.items[].%s must be required (null, not absent)", f)
+			}
+		}
+		assertEnum(t, "ActivateResult.items[].outcome", it.Properties["outcome"], "invited", "failed")
+		if p := it.Properties["user_id"]; p == nil || p.Value == nil || p.Value.Format != "uuid" || p.Value.Nullable {
+			t.Error("ActivateResult.items[].user_id must be a non-null uuid")
+		}
+		if p := it.Properties["invitation_id"]; p == nil || p.Value == nil || !p.Value.Nullable || p.Value.Format != "uuid" {
+			t.Error("ActivateResult.items[].invitation_id must be a nullable uuid")
+		}
+		if p := it.Properties["reason"]; p == nil || p.Value == nil || !p.Value.Nullable || !p.Value.Type.Is("string") {
+			t.Error("ActivateResult.items[].reason must be a nullable string")
+		}
+		assertNoPassword(t, "ActivateResult", res, map[*openapi3.Schema]bool{})
+		for _, f := range []string{"email", "token"} {
+			if it.Properties[f] != nil {
+				t.Errorf("ActivateResult.items[] must not expose %s", f)
+			}
+		}
+	}
+}
