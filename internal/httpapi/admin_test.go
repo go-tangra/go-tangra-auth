@@ -36,7 +36,9 @@ func withUS2(t *testing.T, u *us1) (*audit.Writer, *email.Outbox) {
 	ob := email.NewOutbox(env, nullSender{}, nil, 3, nil)
 	az := authz.New(authz.NewFake(), c, nil)
 	sm := u.sessions
-	u.srv.RegisterUS2(US2Deps{Invites: invite.New(u.ms, ob, az, aw, "https://auth.example.org"), Admin: user.NewAdmin(u.ms, sm, aw), Assigner: authz.NewAssigner(u.ms, az, aw), Audit: u.ms, Sessions: sm})
+	as := authz.NewAssigner(u.ms, az, aw)
+	inv := invite.New(u.ms, ob, az, aw, "https://auth.example.org").WithEscalation(authz.InviteEscalation{Assigner: as, Groups: authz.NewGroups(u.ms, az, aw)})
+	u.srv.RegisterUS2(US2Deps{Invites: inv, Admin: user.NewAdmin(u.ms, sm, aw), Assigner: as, Audit: u.ms, Sessions: sm})
 	return aw, ob
 }
 

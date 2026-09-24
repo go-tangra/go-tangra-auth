@@ -465,6 +465,11 @@ func (m *Store) User(_ context.Context, tid, uid string) (store.User, error) {
 	return store.User{}, store.ErrNotFound
 }
 
+// UserByID is User under the name the invite Tx uses (feature 016).
+func (m *Store) UserByID(ctx context.Context, tid, uid string) (store.User, error) {
+	return m.User(ctx, tid, uid)
+}
+
 // UserAnyTenant finds a user id across tenants (system scope; used only to
 // audit cross-tenant attempts).
 func (m *Store) UserAnyTenant(_ context.Context, uid string) (store.User, error) {

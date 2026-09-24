@@ -337,6 +337,29 @@ func (g *Groups) roleGrants(ctx context.Context, tenantID string, roles []store.
 	return perms, privileged, nil
 }
 
+// MayJoin returns ErrSelfEscalation unless the actor may grant everything
+// the groups grant (owners and system actors always may), the check
+// AddMembers makes, for groups an invitation names (feature 016). It writes
+// nothing and emits no audit event; an unknown or foreign group is
+// store.ErrNotFound.
+func (g *Groups) MayJoin(ctx context.Context, actor tenantctx.Actor, tenantID string, groupIDs []string) error {
+	var perms []PermissionRef
+	for _, id := range dedupe(groupIDs) {
+		if _, err := g.st.GetGroup(ctx, tenantID, id); err != nil {
+			return err
+		}
+		ps, privileged, err := g.groupGrants(ctx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if privileged && !actor.IsOwner() && actor.Kind != tenantctx.KindSystem {
+			return ErrSelfEscalation
+		}
+		perms = append(perms, ps...)
+	}
+	return g.esc.MayGrant(ctx, actor, tenantID, perms)
+}
+
 // AddMembers adds users to the group. The actor must be able to grant
 // everything the group grants (owners always can); existing members are
 // silent no-ops; a user outside the tenant is not found. Returns the number

@@ -239,6 +239,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	roleStore := authzdb.DBRoleStore{St: a.Store}
 	a.Groups = authz.NewGroups(authzdb.DBGroupStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
 	a.HTTP.RegisterGroups(httpapi.GroupDeps{Groups: a.Groups})
+	a.Invites.WithEscalation(authz.InviteEscalation{Assigner: a.Assigner, Groups: a.Groups})
 	a.Registry = authz.NewRegistry(authzdb.DBPermissionStore{St: a.Store}, a.Authz, a.Audit)
 	a.Roles = authz.NewRoles(authzdb.DBRoleCRUDStore{DBRoleStore: roleStore}, a.Authz, authz.NewEscalation(a.Authz), a.Audit)
 	a.Decider = authz.NewDecider(authzdb.DBStatusStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
