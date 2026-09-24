@@ -24,6 +24,7 @@ import (
 	"github.com/go-freya/freya/services/auth/internal/config"
 	"github.com/go-freya/freya/services/auth/internal/crypto"
 	"github.com/go-freya/freya/services/auth/internal/directory"
+	"github.com/go-freya/freya/services/auth/internal/directory/directorydb"
 	"github.com/go-freya/freya/services/auth/internal/email"
 	"github.com/go-freya/freya/services/auth/internal/email/emaildb"
 	"github.com/go-freya/freya/services/auth/internal/grpcapi"
@@ -322,42 +323,9 @@ func (a *App) buildDirectory() error {
 	if err != nil {
 		return err
 	}
-	a.Directories = directory.New(directory.Deps{Store: directoryStore{st: a.Store}, Directory: ldapdir.NewClient(pol), Envelope: a.Envelope,
+	a.Directories = directory.New(directory.Deps{Store: directorydb.DBStore{St: a.Store}, Directory: ldapdir.NewClient(pol), Envelope: a.Envelope,
 		Policy: pol, Config: cfg, Production: a.Cfg.IsProduction(), Cache: a.Cache, Audit: a.Audit})
 	return nil
-}
-
-// directoryStore adapts directory connections, tenant scoped; the any-tenant
-// lookup (cross-tenant audit only) runs under the system scope.
-type directoryStore struct{ st *store.Store }
-
-func (d directoryStore) InsertDirectoryConnection(ctx context.Context, c store.DirectoryConnection) error { //nolint:gocritic // value signature fixed by directory.Store
-	return d.st.Tx(ctx, store.Scope{TenantID: c.TenantID}, func(tx pgx.Tx) error { return store.InsertDirectoryConnection(ctx, tx, c) })
-}
-func (d directoryStore) GetDirectoryConnection(ctx context.Context, tid, id string) (out store.DirectoryConnection, err error) {
-	err = d.st.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.GetDirectoryConnection(ctx, tx, tid, id); return err })
-	return
-}
-func (d directoryStore) GetDirectoryConnectionAnyTenant(ctx context.Context, id string) (out store.DirectoryConnection, err error) {
-	err = d.st.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { out, err = store.GetDirectoryConnectionAnyTenant(ctx, tx, id); return err })
-	return
-}
-func (d directoryStore) ListDirectoryConnections(ctx context.Context, tid string) (out []store.DirectoryConnection, err error) {
-	err = d.st.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListDirectoryConnections(ctx, tx, tid); return err })
-	return
-}
-func (d directoryStore) CountDirectoryConnections(ctx context.Context, tid string) (n int, err error) {
-	err = d.st.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { n, err = store.CountDirectoryConnections(ctx, tx, tid); return err })
-	return
-}
-func (d directoryStore) UpdateDirectoryConnection(ctx context.Context, c store.DirectoryConnection) error { //nolint:gocritic // value signature fixed by directory.Store
-	return d.st.Tx(ctx, store.Scope{TenantID: c.TenantID}, func(tx pgx.Tx) error { return store.UpdateDirectoryConnection(ctx, tx, c) })
-}
-func (d directoryStore) SetDirectoryConnectionTest(ctx context.Context, tid, id, outcome string, at time.Time) error {
-	return d.st.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.SetDirectoryConnectionTest(ctx, tx, tid, id, outcome, at) })
-}
-func (d directoryStore) DeleteDirectoryConnection(ctx context.Context, tid, id string) error {
-	return d.st.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.DeleteDirectoryConnection(ctx, tx, tid, id) })
 }
 
 // activeTenantIDs lists tenants a service may register permissions for.
