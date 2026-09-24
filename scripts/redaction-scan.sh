@@ -5,7 +5,11 @@
 # it, and write what they observed (responses, errors, logs, audit rows) to
 # $FREYA_CAPTURE_DIR; the suite log is captured as well.
 set -euo pipefail
-ART="${ARTIFACTS:-.artifacts}"; export FREYA_CAPTURE_DIR="$ART/capture"; mkdir -p "$FREYA_CAPTURE_DIR"
+ART="${ARTIFACTS:-.artifacts}"
+mkdir -p "$ART/capture"
+# Absolute: package tests run with their own working directory, so a
+# relative capture path cannot be opened from inside capture() (T063).
+export FREYA_CAPTURE_DIR="$(cd "$ART/capture" && pwd)"
 go test -count=1 -tags integration ./tests/integration/... -run 'Test' -v > "$ART/integration.log" 2>&1 || { tail -50 "$ART/integration.log"; exit 1; }
 cp "$ART/integration.log" "$FREYA_CAPTURE_DIR/suite.log"
 go test -count=1 ./internal/ldapdir/... ./internal/directory/... -v > "$ART/ldap.log" 2>&1 || { tail -50 "$ART/ldap.log"; exit 1; }

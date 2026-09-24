@@ -707,7 +707,9 @@ func TestSearchAudit(t *testing.T) {
 
 	t.Run("filter capped at 1 KiB", func(t *testing.T) {
 		f := stSetup(t, ttOpts{})
-		long := "(|" + strings.Repeat("(cn=abcdefghijklmnopqrstuvwxyz)", 100) + ")" // ~3 KiB, valid
+		// ~2.5 KiB and valid under the filter policy (D6: ≤ 64 components,
+		// depth ≤ 16): 41 components, depth 2.
+		long := "(|" + strings.Repeat("(cn="+strings.Repeat("x", 55)+")", 40) + ")"
 		f.mustSearch(t, SearchRequest{Filter: long})
 		rows := f.searched(t)
 		if len(rows) != 1 {
