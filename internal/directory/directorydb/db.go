@@ -85,3 +85,31 @@ func (d DBStore) SetDirectoryConnectionTest(ctx context.Context, tenantID, id, o
 func (d DBStore) DeleteDirectoryConnection(ctx context.Context, tenantID, id string) error {
 	return d.Atomic(ctx, tenantID, func(tx pgx.Tx) error { return store.DeleteDirectoryConnection(ctx, tx, tenantID, id) })
 }
+
+// UsersByEmails returns the tenant's users for the given e-mails, keyed by
+// the stored e-mail (case-insensitive match).
+func (d DBStore) UsersByEmails(ctx context.Context, tenantID string, emails []string) (out map[string]store.User, err error) {
+	err = d.Atomic(ctx, tenantID, func(tx pgx.Tx) error {
+		out, err = store.UsersByEmails(ctx, tx, tenantID, emails)
+		return err
+	})
+	return out, err
+}
+
+// LinksByUIDs returns one connection's links for the given directory uids.
+func (d DBStore) LinksByUIDs(ctx context.Context, tenantID, connID string, uids []string) (out map[string]store.DirectoryLink, err error) {
+	err = d.Atomic(ctx, tenantID, func(tx pgx.Tx) error {
+		out, err = store.LinksByUIDs(ctx, tx, tenantID, connID, uids)
+		return err
+	})
+	return out, err
+}
+
+// User reads one user of the tenant.
+func (d DBStore) User(ctx context.Context, tenantID, id string) (out store.User, err error) {
+	err = d.Atomic(ctx, tenantID, func(tx pgx.Tx) error {
+		out, err = store.GetUser(ctx, tx, tenantID, id)
+		return err
+	})
+	return out, err
+}

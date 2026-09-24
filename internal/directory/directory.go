@@ -77,6 +77,11 @@ type Store interface {
 	UpdateDirectoryConnection(ctx context.Context, c store.DirectoryConnection) error
 	SetDirectoryConnectionTest(ctx context.Context, tenantID, id, outcome string, at time.Time) error
 	DeleteDirectoryConnection(ctx context.Context, tenantID, id string) error
+
+	// Preview status (search).
+	UsersByEmails(ctx context.Context, tenantID string, emails []string) (map[string]store.User, error)
+	LinksByUIDs(ctx context.Context, tenantID, connID string, uids []string) (map[string]store.DirectoryLink, error)
+	User(ctx context.Context, tenantID, id string) (store.User, error)
 }
 
 // Deps wires the service.
