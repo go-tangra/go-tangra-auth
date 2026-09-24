@@ -57,6 +57,19 @@ type UserView struct {
 	LastName  string     `json:"last_name"`
 	AvatarURL string     `json:"avatar_url"`
 	Groups    []GroupRef `json:"groups"`
+	// Feature 016: the directory origin of an imported user (never the DN)
+	// and the pending invitation of an invited one; both null otherwise.
+	Directory    *DirectoryOrigin `json:"directory"`
+	InvitationID *string          `json:"invitation_id"`
+}
+
+// DirectoryOrigin labels where a user was imported from. ConnectionID is nil
+// once the connection was deleted; ConnectionName keeps the label.
+type DirectoryOrigin struct {
+	ConnectionID   *string `json:"connection_id"`
+	ConnectionName string  `json:"connection_name"`
+	DirectoryUID   string  `json:"directory_uid"`
+	LastImportedAt string  `json:"last_imported_at"`
 }
 
 // GroupRef names a group a user belongs to.
@@ -75,7 +88,12 @@ func (a *Admin) List(ctx context.Context, actor tenantctx.Actor, q, status strin
 	for _, u := range users {
 		roles, _ := a.st.Roles(ctx, actor.TenantID, u.ID)
 		v := UserView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Status: u.Status, MFAEnabled: u.MFAEnabled, Roles: nonNilStrings(roles),
-			FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{}}
+			FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{},
+			InvitationID: u.InvitationID}
+		if l := u.Directory; l != nil {
+			v.Directory = &DirectoryOrigin{ConnectionID: l.ConnectionID, ConnectionName: l.ConnectionName, DirectoryUID: l.DirectoryUID,
+				LastImportedAt: l.LastImportedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+		}
 		if groups, err := a.st.UserGroups(ctx, actor.TenantID, u.ID); err == nil {
 			for _, g := range groups {
 				v.Groups = append(v.Groups, GroupRef{ID: g.ID, Name: g.Name})
