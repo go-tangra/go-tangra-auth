@@ -883,6 +883,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** LDAP directory connections of the tenant (directory:manage) */
+        get: operations["listDirectories"];
+        put?: never;
+        /** Create a connection; the bind password is sealed and never returned (directory:manage) */
+        post: operations["createDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test unsaved settings; connection_id without bind_password reuses that connection's stored password (directory:manage) */
+        post: operations["testDirectoryInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One connection including ca_pem (directory:manage) */
+        get: operations["getDirectory"];
+        /** Partial update; an omitted bind_password keeps the stored one (directory:manage) */
+        put: operations["updateDirectory"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete a connection; users already imported stay (directory:manage) */
+        post: operations["deleteDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test a saved connection and record last_test (directory:manage) */
+        post: operations["testDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/authorize": {
         parameters: {
             query?: never;
@@ -1071,6 +1158,109 @@ export interface components {
             /** @enum {string} */
             token_type?: "Bearer";
             expires_in?: number;
+        };
+        /** @description LDAP attribute names; omitted or empty ones default from the kind */
+        DirectoryAttributes: {
+            uid?: components["schemas"]["DirectoryAttributeName"];
+            email?: components["schemas"]["DirectoryAttributeName"];
+            display_name?: components["schemas"]["DirectoryAttributeName"];
+            first_name?: components["schemas"]["DirectoryAttributeName"];
+            last_name?: components["schemas"]["DirectoryAttributeName"];
+        };
+        DirectoryAttributeName: string;
+        /** @description A tenant's LDAP connection. Never carries the bind password, only bind_password_set. */
+        DirectoryConnection: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            ca_pem_set?: boolean;
+            /** @description PEM of the trusted CA (public data); only GET /api/v1/admin/directories/{id} fills it */
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password_set?: boolean;
+            base_dn?: string;
+            /** @description canonical form */
+            base_filter?: string;
+            attributes?: {
+                uid?: string;
+                email?: string;
+                display_name?: string;
+                first_name?: string;
+                last_name?: string;
+            };
+            size_limit?: number;
+            time_limit_seconds?: number;
+            last_test?: {
+                /** Format: date-time */
+                at?: string;
+                outcome?: string;
+            } | null;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /** @description Create (name, kind, url, tls_mode, bind_dn, bind_password and base_dn required) or partial update (omitted bind_password keeps the stored one) */
+        DirectoryConnectionInput: {
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            /** @description ldap:// or ldaps:// URL; host name only, no IP literal */
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            /** @description "" clears */
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password?: string;
+            base_dn?: string;
+            /** @description RFC 4515 filter always ANDed into every search */
+            base_filter?: string;
+            attributes?: components["schemas"]["DirectoryAttributes"];
+            size_limit?: number;
+            time_limit_seconds?: number;
+        };
+        /** @description DirectoryConnectionInput plus connection_id; with connection_id and no bind_password the stored password of that connection (same tenant) is used */
+        DirectoryTestInput: {
+            /** Format: uuid */
+            connection_id?: string;
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password?: string;
+            base_dn?: string;
+            base_filter?: string;
+            attributes?: components["schemas"]["DirectoryAttributes"];
+            size_limit?: number;
+            time_limit_seconds?: number;
+        };
+        /** @description ok:false is still 200; reason is the closed vocabulary, never server text */
+        TestResult: {
+            ok?: boolean;
+            /**
+             * @description failing step
+             * @enum {string|null}
+             */
+            step?: "connect" | "tls" | "bind" | "search_base" | null;
+            reason?: string | null;
+            tls?: {
+                version?: string;
+                peer_subject?: string;
+            } | null;
+            duration_ms?: number;
         };
     };
     responses: never;
@@ -2742,6 +2932,295 @@ export interface operations {
             };
             /** @description self_escalation */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDirectories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["DirectoryConnection"][];
+                    };
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description duplicate | limit_reached */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testDirectoryInput: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryTestInput"];
+            };
+        };
+        responses: {
+            /** @description result (ok false is still 200) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown or cross-tenant connection_id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description duplicate */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description result (ok false is still 200) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

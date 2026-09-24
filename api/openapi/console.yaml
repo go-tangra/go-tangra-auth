@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Freya Auth — Console & Public API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Browser-facing API served on the edge listener. All state-changing requests need
     the CSRF header. Errors are `{"reason": "<closed vocabulary>"}`. Every response
@@ -143,6 +143,93 @@ components:
     TokenResponse:
       type: object
       properties: { access_token: { type: string }, token_type: { type: string, enum: [Bearer] }, expires_in: { type: integer } }
+    DirectoryAttributes:
+      type: object
+      additionalProperties: false
+      description: LDAP attribute names; omitted or empty ones default from the kind
+      properties:
+        uid: { $ref: '#/components/schemas/DirectoryAttributeName' }
+        email: { $ref: '#/components/schemas/DirectoryAttributeName' }
+        display_name: { $ref: '#/components/schemas/DirectoryAttributeName' }
+        first_name: { $ref: '#/components/schemas/DirectoryAttributeName' }
+        last_name: { $ref: '#/components/schemas/DirectoryAttributeName' }
+    DirectoryAttributeName: { type: string, maxLength: 64, pattern: '^([A-Za-z][A-Za-z0-9-]{0,63})?$' }
+    DirectoryConnection:
+      type: object
+      description: A tenant's LDAP connection. Never carries the bind password, only bind_password_set.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { type: string, enum: [active_directory, openldap, other] }
+        url: { type: string }
+        tls_mode: { type: string, enum: [ldaps, starttls, plain] }
+        allow_tls12: { type: boolean }
+        ca_pem_set: { type: boolean }
+        ca_pem: { type: string, description: 'PEM of the trusted CA (public data); only GET /api/v1/admin/directories/{id} fills it' }
+        bind_dn: { type: string }
+        bind_password_set: { type: boolean }
+        base_dn: { type: string }
+        base_filter: { type: string, description: canonical form }
+        attributes:
+          type: object
+          properties: { uid: { type: string }, email: { type: string }, display_name: { type: string }, first_name: { type: string }, last_name: { type: string } }
+        size_limit: { type: integer, minimum: 1, maximum: 1000 }
+        time_limit_seconds: { type: integer, minimum: 1, maximum: 60 }
+        last_test:
+          type: object
+          nullable: true
+          properties: { at: { type: string, format: date-time }, outcome: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DirectoryConnectionInput:
+      type: object
+      additionalProperties: false
+      description: Create (name, kind, url, tls_mode, bind_dn, bind_password and base_dn required) or partial update (omitted bind_password keeps the stored one)
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80, pattern: '^[^\p{Cc}]+$' }
+        kind: { type: string, enum: [active_directory, openldap, other] }
+        url: { type: string, maxLength: 512, description: 'ldap:// or ldaps:// URL; host name only, no IP literal' }
+        tls_mode: { type: string, enum: [ldaps, starttls, plain] }
+        allow_tls12: { type: boolean }
+        ca_pem: { type: string, maxLength: 65536, description: '"" clears' }
+        bind_dn: { type: string, maxLength: 1024 }
+        bind_password: { type: string, minLength: 1, maxLength: 1024, writeOnly: true }
+        base_dn: { type: string, maxLength: 1024 }
+        base_filter: { type: string, maxLength: 4096, description: RFC 4515 filter always ANDed into every search }
+        attributes: { $ref: '#/components/schemas/DirectoryAttributes' }
+        size_limit: { type: integer, minimum: 1, maximum: 1000 }
+        time_limit_seconds: { type: integer, minimum: 1, maximum: 60 }
+    DirectoryTestInput:
+      type: object
+      additionalProperties: false
+      description: DirectoryConnectionInput plus connection_id; with connection_id and no bind_password the stored password of that connection (same tenant) is used
+      properties:
+        connection_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80, pattern: '^[^\p{Cc}]+$' }
+        kind: { type: string, enum: [active_directory, openldap, other] }
+        url: { type: string, maxLength: 512 }
+        tls_mode: { type: string, enum: [ldaps, starttls, plain] }
+        allow_tls12: { type: boolean }
+        ca_pem: { type: string, maxLength: 65536 }
+        bind_dn: { type: string, maxLength: 1024 }
+        bind_password: { type: string, minLength: 1, maxLength: 1024, writeOnly: true }
+        base_dn: { type: string, maxLength: 1024 }
+        base_filter: { type: string, maxLength: 4096 }
+        attributes: { $ref: '#/components/schemas/DirectoryAttributes' }
+        size_limit: { type: integer, minimum: 1, maximum: 1000 }
+        time_limit_seconds: { type: integer, minimum: 1, maximum: 60 }
+    TestResult:
+      type: object
+      description: ok:false is still 200; reason is the closed vocabulary, never server text
+      properties:
+        ok: { type: boolean }
+        step: { type: string, nullable: true, enum: [connect, tls, bind, search_base], description: failing step }
+        reason: { type: string, nullable: true }
+        tls:
+          type: object
+          nullable: true
+          properties: { version: { type: string }, peer_subject: { type: string } }
+        duration_ms: { type: integer }
 paths:
   /.well-known/jwks.json:
     get:
@@ -517,6 +604,70 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [role_ids], properties: { role_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } } } } } } }
       responses: { '200': { description: role slugs }, '403': { description: self_escalation } }
+  /api/v1/admin/directories:
+    get:
+      operationId: listDirectories
+      summary: LDAP directory connections of the tenant (directory:manage)
+      responses:
+        '200': { description: list, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/DirectoryConnection' } } } } } } }
+        '403': { description: forbidden }
+    post:
+      operationId: createDirectory
+      summary: Create a connection; the bind password is sealed and never returned (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnectionInput' } } } }
+      responses:
+        '201': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnection' } } } }
+        '400': { description: validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport }
+        '403': { description: forbidden }
+        '409': { description: duplicate | limit_reached }
+        '422': { description: target_refused }
+  /api/v1/admin/directories/test:
+    post:
+      operationId: testDirectoryInput
+      summary: Test unsaved settings; connection_id without bind_password reuses that connection's stored password (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryTestInput' } } } }
+      responses:
+        '200': { description: result (ok false is still 200), content: { application/json: { schema: { $ref: '#/components/schemas/TestResult' } } } }
+        '400': { description: validation_failed | invalid_url | invalid_ca | insecure_transport }
+        '404': { description: unknown or cross-tenant connection_id }
+        '422': { description: target_refused }
+        '429': { description: rate_limited }
+  /api/v1/admin/directories/{id}:
+    get:
+      operationId: getDirectory
+      summary: One connection including ca_pem (directory:manage)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: connection, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnection' } } } }
+        '404': { description: not_found }
+    put:
+      operationId: updateDirectory
+      summary: Partial update; an omitted bind_password keeps the stored one (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnectionInput' } } } }
+      responses:
+        '200': { description: updated, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnection' } } } }
+        '400': { description: validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport }
+        '404': { description: not_found }
+        '409': { description: duplicate }
+        '422': { description: target_refused }
+  /api/v1/admin/directories/{id}/remove:
+    post:
+      operationId: deleteDirectory
+      summary: Delete a connection; users already imported stay (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: deleted }, '404': { description: not_found } }
+  /api/v1/admin/directories/{id}/test:
+    post:
+      operationId: testDirectory
+      summary: Test a saved connection and record last_test (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: result (ok false is still 200), content: { application/json: { schema: { $ref: '#/components/schemas/TestResult' } } } }
+        '404': { description: not_found }
+        '429': { description: rate_limited }
   /authorize:
     get:
       operationId: authorize
