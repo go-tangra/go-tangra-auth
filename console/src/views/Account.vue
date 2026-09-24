@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { UiPage, UiCard, UiForm, UiInput, UiSecretField, UiButton, UiAlert, UiIcon } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiPage, UiCard, UiForm, UiInput, UiSecretField, UiButton, UiAlert, UiIcon } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useMfa } from '@/composables/useMfa'

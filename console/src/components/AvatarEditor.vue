@@ -2,7 +2,7 @@
 // Avatar upload/remove (raw PUT of the picture). Console-unique: the auth
 // service stores the 512×512 picture and serves it from the profile.
 import { ref } from 'vue'
-import { UiAvatar, UiButton, UiAlert } from '@freya/ui'
+import { UiAvatar, UiButton, UiAlert } from '@go-tangra/ui'
 import { api, ApiError, upload } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { avatarSchema, AVATAR_TYPES } from '@/schemas'

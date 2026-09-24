@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { UiCard, UiForm, UiInput, UiButton, UiAlert, UiCheckbox } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiCard, UiForm, UiInput, UiButton, UiAlert, UiCheckbox } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { leaveTo } from '@/base'
 import { useMfa } from '@/composables/useMfa'
 import { useSession } from '@/stores/session'

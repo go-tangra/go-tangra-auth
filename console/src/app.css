@@ -1,6 +1,5 @@
 /* Standalone console (served by the auth service at /console/): the full
  * platform theme. Compiled at build time; served from 'self' (strict CSP). */
 @import "tailwindcss";
-@import "@freya/ui/theme.css";
-@source "../node_modules/@freya/ui/dist";
-@source "../../../../ui/kit/dist";
+@import "@go-tangra/ui/theme.css";
+@import "@go-tangra/ui/sources.css";

@@ -2,8 +2,8 @@
 // Invite a person: email, optional names, roles and groups. Console-unique
 // (multi-select of roles/groups on top of the kit dialog).
 import { computed, watch } from 'vue'
-import { UiForm, UiInput, UiButton, UiDrawer } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiForm, UiInput, UiButton, UiDrawer } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api } from '@/api/client'
 import type { Role } from '@/composables/useRoles'
 import { useGroups } from '@/stores/groups'

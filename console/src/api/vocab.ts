@@ -1,4 +1,4 @@
-import { describeReason } from '@freya/ui/forms'
+import { describeReason } from '@go-tangra/ui/forms'
 
 /** Closed vocabulary of application audit events (data-model.md). */
 export const auditEventTypes = [

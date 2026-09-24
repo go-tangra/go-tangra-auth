@@ -7,9 +7,9 @@ export const shared = {
   'vue-router': { singleton: true, requiredVersion: '^5.0.0', ...hostOnly },
   pinia: { singleton: true, requiredVersion: '^4.0.0', ...hostOnly },
   zod: { singleton: true, requiredVersion: '^4.0.0', strictVersion: true, ...hostOnly },
-  '@freya/ui': { singleton: true, requiredVersion: '^1.0.0', strictVersion: true, ...hostOnly },
-  '@freya/ui/forms': { singleton: true, requiredVersion: '^1.0.0', strictVersion: true, ...hostOnly },
-  '@freya/ui/api': { singleton: true, requiredVersion: '^1.0.0', strictVersion: true, ...hostOnly },
+  '@go-tangra/ui': { singleton: true, requiredVersion: '^4.0.0', strictVersion: true, ...hostOnly },
+  '@go-tangra/ui/forms': { singleton: true, requiredVersion: '^4.0.0', strictVersion: true, ...hostOnly },
+  '@go-tangra/ui/api': { singleton: true, requiredVersion: '^4.0.0', strictVersion: true, ...hostOnly },
 }
 
 export const remoteConfig = {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, UiCheckbox, useToast, useConfirm, type Column, type SelectOption } from '@freya/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, UiCheckbox, useToast, useConfirm, type Column, type SelectOption } from '@go-tangra/ui'
 import type { components } from '@/api/schema'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage, userStatuses } from '@/api/vocab'

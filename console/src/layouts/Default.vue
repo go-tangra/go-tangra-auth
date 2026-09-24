@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { UiAppShell, UiNavDrawer, UiButton, UiToast, UiConfirm, useTheme, type NavGroup } from '@freya/ui'
+import { UiAppShell, UiNavDrawer, UiButton, UiToast, UiConfirm, useTheme, type NavGroup } from '@go-tangra/ui'
 import { useSession } from '@/stores/session'
 import { useI18n } from '@/plugins/i18n'
 import type { MessageKey } from '@/plugins/i18n'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { UiDrawer, UiForm, UiInput, UiSelect, UiTextarea, UiCheckbox, UiButton, UiAlert } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiDrawer, UiForm, UiInput, UiSelect, UiTextarea, UiCheckbox, UiButton, UiAlert } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { directoryConnectionSchema, directoryCreateSchema, type DirectoryConnection, type DirectoryTestResult, type DirectoryInput } from '@/schemas/directory'

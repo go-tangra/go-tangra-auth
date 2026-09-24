@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { UiPage, UiCard, UiKeyValueTable, UiButton, UiAlert, UiTextarea } from '@freya/ui'
+import { UiPage, UiCard, UiKeyValueTable, UiButton, UiAlert, UiTextarea } from '@go-tangra/ui'
 import { api } from '@/api/client'
 import { useSession } from '@/stores/session'
 

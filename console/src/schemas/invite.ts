@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalString } from '@freya/ui/forms'
+import { optionalString } from '@go-tangra/ui/forms'
 import { signInEmail } from './common'
 
 export const inviteSchema = z.object({

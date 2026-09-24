@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Centered card layout for unauthenticated flows: the page colour behind one
 // 400px card, the platform theme applied through data-theme.
-import { UiToast, UiConfirm, useTheme } from '@freya/ui'
+import { UiToast, UiConfirm, useTheme } from '@go-tangra/ui'
 useTheme()
 </script>
 

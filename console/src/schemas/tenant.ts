@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { nonEmpty } from '@freya/ui/forms'
+import { nonEmpty } from '@go-tangra/ui/forms'
 import { signInEmail, tenantSlug } from './common'
 
 export const tenantSchema = z.object({

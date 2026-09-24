@@ -2,8 +2,8 @@
 // Profile (names, phone, display name) with the avatar editor; used by the
 // person's own account page and by the admin user page (different endpoints).
 import { onMounted, ref } from 'vue'
-import { UiForm, UiInput, UiButton, UiAlert } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiForm, UiInput, UiButton, UiAlert } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import type { components } from '@/api/schema'

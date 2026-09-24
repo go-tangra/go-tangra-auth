@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isoDate } from '@freya/ui/forms'
+import { isoDate } from '@go-tangra/ui/forms'
 import { auditEventTypes } from '@/api/vocab'
 
 export const auditFilterSchema = z.object({

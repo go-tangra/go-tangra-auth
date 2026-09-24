@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiCheckbox } from '@freya/ui'
+import { UiCheckbox } from '@go-tangra/ui'
 import type { Role } from '@/composables/useRoles'
 import type { Group } from '@/stores/groups'
 

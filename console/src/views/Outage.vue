@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { UiCard, UiIcon, UiButton } from '@freya/ui'
+import { UiCard, UiIcon, UiButton } from '@go-tangra/ui'
 import { useSession } from '@/stores/session'
 import { useI18n } from '@/plugins/i18n'
 

@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { Component } from 'vue'
-import { UiToast, UiConfirm } from '@freya/ui'
+import { UiToast, UiConfirm } from '@go-tangra/ui'
 import { router } from '@/router'
 
 export type Reply = { status: number; body: unknown }

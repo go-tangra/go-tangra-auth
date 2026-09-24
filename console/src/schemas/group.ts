@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalString } from '@freya/ui/forms'
+import { optionalString } from '@go-tangra/ui/forms'
 
 export const groupSchema = z.object({
   name: z.string().trim().min(1, 'Between 1 and 64 characters.').max(64, 'Between 1 and 64 characters.'),

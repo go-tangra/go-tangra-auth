@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiBadge, useConfirm, type Column } from '@freya/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiBadge, useConfirm, type Column } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useRoles, type Role } from '@/composables/useRoles'

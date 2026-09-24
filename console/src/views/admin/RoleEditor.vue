@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiForm, UiInput, UiCheckbox, UiSection } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiPage, UiCard, UiAlert, UiButton, UiForm, UiInput, UiCheckbox, UiSection } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useRoles, type Role } from '@/composables/useRoles'

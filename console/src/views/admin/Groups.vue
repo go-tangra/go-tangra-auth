@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiDataTable, UiDialog, UiRecordDrawer, type Column } from '@freya/ui'
-import { zodToFields } from '@freya/ui/forms'
+import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiDataTable, UiDialog, UiRecordDrawer, type Column } from '@go-tangra/ui'
+import { zodToFields } from '@go-tangra/ui/forms'
 import { ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useGroups, type Group } from '@/stores/groups'

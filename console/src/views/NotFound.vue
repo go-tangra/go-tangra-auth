@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiAlert } from '@freya/ui'
+import { UiAlert } from '@go-tangra/ui'
 import { useI18n } from '@/plugins/i18n'
 const { t } = useI18n()
 </script>

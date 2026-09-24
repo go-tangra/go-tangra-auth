@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { nonEmpty } from '@freya/ui/forms'
+import { nonEmpty } from '@go-tangra/ui/forms'
 
 const redirectUri = z.string().trim().regex(/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)/, 'Redirect URIs must be https (http only for localhost).')
 

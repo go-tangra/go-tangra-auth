@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UiCard, UiForm, UiSecretField, UiButton, UiAlert } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiCard, UiForm, UiSecretField, UiButton, UiAlert } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api } from '@/api/client'
 import { resetSchema } from '@/schemas'
 

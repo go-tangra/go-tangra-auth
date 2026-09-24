@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { email } from '@freya/ui/forms'
+import { email } from '@go-tangra/ui/forms'
 
 /** Tenant slug: lowercase letters, digits and dashes, 1–63 characters. */
 export const tenantSlug = z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/, 'Use lowercase letters, digits and dashes.')

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { UiForm, UiAlert, UiButton, UiDrawer } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiForm, UiAlert, UiButton, UiDrawer } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api } from '@/api/client'
 import type { Role } from '@/composables/useRoles'
 import { useGroups } from '@/stores/groups'

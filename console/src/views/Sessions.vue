@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiBadge, useConfirm, type Column } from '@freya/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiBadge, useConfirm, type Column } from '@go-tangra/ui'
 import { api } from '@/api/client'
 import type { components } from '@/api/schema'
 

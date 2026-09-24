@@ -8,14 +8,14 @@
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "build:remote": "vue-tsc --noEmit -p tsconfig.app.json && VITE_REMOTE=1 vite build",
     "preview": "vite preview",
-    "lint": "eslint . && vue-tsc --noEmit -p tsconfig.app.json && node ../../../ui/scripts/check-no-legacy.mjs --frontends services/auth/console",
+    "lint": "eslint . && vue-tsc --noEmit -p tsconfig.app.json && go-tangra-ui-check-no-legacy",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "gen:api": "openapi-typescript ../api/openapi/console.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
-    "@freya/ui": "1.0.0",
+    "@go-tangra/ui": "^4.0.0",
     "@types/qrcode": "^1.5.6",
     "pinia": "^4.0.3",
     "qrcode": "^1.5.4",

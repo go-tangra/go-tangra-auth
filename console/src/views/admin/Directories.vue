@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
-import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiDialog, UiBadge, type Column } from '@freya/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiDialog, UiBadge, type Column } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import type { DirectoryConnection } from '@/schemas/directory'

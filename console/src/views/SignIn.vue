@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UiCard, UiIcon, UiForm, UiInput, UiSecretField, UiButton, UiAlert } from '@freya/ui'
-import { useZodForm } from '@freya/ui/forms'
+import { UiCard, UiIcon, UiForm, UiInput, UiSecretField, UiButton, UiAlert } from '@go-tangra/ui'
+import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { safeNext, useSignin, type SignInResponse } from '@/stores/signin'
 import { signInSchema } from '@/schemas'

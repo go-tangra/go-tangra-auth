@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One-time recovery codes: legible (monospace, two columns) and copyable as a
 // block. Console-unique: shown once after enrolment or regeneration.
-import { UiCopyButton } from '@freya/ui'
+import { UiCopyButton } from '@go-tangra/ui'
 defineProps<{ codes: string[] }>()
 </script>
 

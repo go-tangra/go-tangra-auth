@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiStatusChip, UiRecordDrawer, useConfirm } from '@freya/ui'
-import { zodToFields } from '@freya/ui/forms'
+import { UiPage, UiCard, UiAlert, UiButton, UiStatusChip, UiRecordDrawer, useConfirm } from '@go-tangra/ui'
+import { zodToFields } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { GRANT_DURATIONS, grantSchema } from '@/schemas'

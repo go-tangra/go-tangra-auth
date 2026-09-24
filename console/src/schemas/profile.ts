@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { optionalString } from '@freya/ui/forms'
+import { optionalString } from '@go-tangra/ui/forms'
 
 export const profileSchema = z.object({
   first_name: optionalString(100),
