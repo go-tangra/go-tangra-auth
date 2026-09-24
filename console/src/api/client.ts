@@ -13,6 +13,7 @@ export type ApiPath = keyof paths
 
 // Wording for the console's own closed-vocabulary reasons (api/openapi/console.yaml).
 registerReasons({
+  invalid_state: 'That operation is not possible in the current state.',
   no_email: 'The directory entry has no email address.',
   invalid_email: 'The directory entry has an invalid email address.',
   email_in_use: 'That email address already belongs to a user.',

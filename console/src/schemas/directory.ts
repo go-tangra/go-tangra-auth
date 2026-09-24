@@ -47,3 +47,10 @@ export const directoryImportSchema = z.object({
 export type DirectorySearchInput = z.output<typeof directorySearchSchema>
 export type DirectorySearchResult = components['schemas']['SearchResult']
 export type DirectoryImportResult = components['schemas']['ImportResult']
+
+export const activateSchema = z.object({
+  user_ids: z.array(z.string().min(1)).min(1, 'Select at least one person.').max(100, 'Select at most 100 people.').refine((ids) => new Set(ids).size === ids.length, 'Select each person only once.'),
+  role_ids: z.array(z.string().min(1)).optional(),
+  group_ids: z.array(z.string().min(1)).max(50, 'Select at most 50 groups.').optional(),
+})
+export type ActivateResult = components['schemas']['ActivateResult']
