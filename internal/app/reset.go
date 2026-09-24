@@ -9,10 +9,12 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/go-freya/freya/services/auth/internal/audit"
+	"github.com/go-freya/freya/services/auth/internal/authz"
 	"github.com/go-freya/freya/services/auth/internal/crypto"
 	"github.com/go-freya/freya/services/auth/internal/email"
 	"github.com/go-freya/freya/services/auth/internal/httpapi"
 	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-freya/freya/services/auth/internal/tenantctx"
 )
 
 // ResetResult is what `authsvc reset-user` prints. The accept link is the only
@@ -43,6 +45,7 @@ func (a *App) ResetUser(ctx context.Context, tenantSlug, userEmail string) (Rese
 	}
 	res := ResetResult{Email: userEmail}
 	now := store.Now()
+	var wasActive bool
 	err := a.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
 		t, err := store.GetTenantBySlug(ctx, tx, tenantSlug)
 		if err != nil {
@@ -56,6 +59,7 @@ func (a *App) ResetUser(ctx context.Context, tenantSlug, userEmail string) (Rese
 			return err
 		}
 		res.UserID = u.ID
+		wasActive = u.Status == "active"
 		// Keep the user's roles: accepting an invitation replaces bindings with
 		// the invitation's role set.
 		if res.Roles, err = store.UserRoleSlugs(ctx, tx, t.ID, u.ID); err != nil {
@@ -109,6 +113,24 @@ func (a *App) ResetUser(ctx context.Context, tenantSlug, userEmail string) (Rese
 	})
 	if err != nil {
 		return ResetResult{}, err
+	}
+	// An accepted user holds tenant-membership and role-assignment tuples. The
+	// invited state carries no authorization, and accepting the new invitation
+	// writes these tuples again (OpenFGA refuses to write a duplicate), so
+	// remove them now. A never-accepted invited user has none to remove.
+	if wasActive {
+		var removes []authz.Tuple
+		removes = append(removes, authz.MembershipTuple(res.TenantID, res.UserID, "member"))
+		for _, slug := range res.Roles {
+			removes = append(removes, authz.RoleAssignmentTuple(res.TenantID, slug, res.UserID))
+			if slug == "owner" {
+				removes = append(removes, authz.MembershipTuple(res.TenantID, res.UserID, "owner"))
+			}
+		}
+		sys := tenantctx.WithActor(ctx, tenantctx.Actor{Kind: tenantctx.KindSystem})
+		if err := a.Authz.Write(sys, res.TenantID, nil, removes); err != nil {
+			return ResetResult{}, fmt.Errorf("reset: credentials cleared but authorization tuples not removed (accepting the invitation will fail until they are): %w", err)
+		}
 	}
 	_ = a.Audit.Emit(audit.Event{Type: audit.MFARemoved, TenantID: res.TenantID, ActorKind: "system", Outcome: "ok", Reason: "cli_reset", SubjectKind: "user", SubjectID: res.UserID})
 	_ = a.Audit.Emit(audit.Event{Type: audit.SessionRevoked, TenantID: res.TenantID, ActorKind: "system", Outcome: "ok", Reason: "cli_reset", SubjectKind: "user", SubjectID: res.UserID})

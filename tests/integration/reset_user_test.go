@@ -12,7 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/go-freya/freya/services/auth/internal/app"
+	"github.com/go-freya/freya/services/auth/internal/authz"
 	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-freya/freya/services/auth/internal/tenantctx"
 )
 
 // TestResetUser covers `authsvc reset-user`: credentials, MFA, recovery codes
@@ -36,6 +38,12 @@ func TestResetUser(t *testing.T) {
 		}
 		return store.ReplaceRecoveryCodes(ctx, tx, tid, uid, []string{"h1", "h2"})
 	}); err != nil {
+		t.Fatal(err)
+	}
+	// An accepted user holds these tuples; accepting the reset invitation must
+	// not fail on writing them again.
+	sys := tenantctx.WithActor(ctx, tenantctx.Actor{Kind: tenantctx.KindSystem})
+	if err := e.App.Authz.Write(sys, tid, []authz.Tuple{authz.MembershipTuple(tid, uid, "member"), authz.RoleAssignmentTuple(tid, "auditor", uid)}, nil); err != nil {
 		t.Fatal(err)
 	}
 
