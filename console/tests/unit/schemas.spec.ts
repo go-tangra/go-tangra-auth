@@ -8,6 +8,8 @@ describe('console schemas (T034)', () => {
     expect(signInSchema.parse({ tenant: ' Acme ', email: 'a@x.test', password: 'pw' })).toEqual({ tenant: 'acme', email: 'a@x.test', password: 'pw' })
     expect(bad(signInSchema.safeParse({ tenant: 'Acme Corp', email: 'nope', password: '' }))).toEqual(expect.arrayContaining([expect.stringMatching(/^tenant:/), expect.stringMatching(/^email:/), expect.stringMatching(/^password:/)]))
     expect(signInSchema.safeParse({ tenant: '-acme', email: 'a@x.test', password: 'pw' }).success).toBe(false)
+    // Blank organisation is allowed: the server takes it from the e-mail domain.
+    expect(signInSchema.parse({ tenant: '  ', email: 'a@acme.test', password: 'pw' }).tenant).toBe('')
   })
   it('MFA: six digits or a XXXXX-XXXXX recovery code; strict TOTP elsewhere', () => {
     expect(mfaChallengeSchema.safeParse({ code: ' 123456 ' }).success).toBe(true)

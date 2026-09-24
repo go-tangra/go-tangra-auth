@@ -73,6 +73,23 @@ func TestSigninMatrix(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+	// No tenant given: it is taken from the email domain (x.test → "x").
+	ms.AddTenant(store.Tenant{ID: "t-x", Slug: "x", Status: "active", Kind: "customer", Policy: []byte("{}")})
+	h, _ := password.Hash("correct horse battery")
+	ms.AddUser(store.User{ID: "u6", TenantID: "t-x", Email: "carol@x.test", Status: "active", PasswordHash: &h})
+	if res, err := svc.Start(ctx, Input{Email: "Carol@X.test", Password: "correct horse battery", IP: "3"}); err != nil || res.Session.UserID != "u6" {
+		t.Fatalf("tenant from email domain: %+v %v", res, err)
+	}
+	// An explicit tenant still wins over the domain, and a domain without a
+	// matching tenant is the same refusal as any other failure.
+	if res, err := svc.Start(ctx, Input{TenantSlug: "acme", Email: "alice@x.test", Password: "correct horse battery", IP: "3"}); err != nil || res.Session.UserID != "u1" {
+		t.Fatalf("explicit tenant: %+v %v", res, err)
+	}
+	for _, e := range []string{"dave@nowhere.test", "carol@", "carol"} {
+		if _, err := svc.Start(ctx, Input{Email: e, Password: "correct horse battery", IP: "3"}); !errors.Is(err, ErrInvalidCredentials) {
+			t.Errorf("%s: %v", e, err)
+		}
+	}
 	// Same email in another tenant is a separate account.
 	if _, err := svc.Start(ctx, Input{TenantSlug: "acme", Email: "alice@x.test", Password: "correct horse battery", IP: "2"}); err != nil {
 		t.Fatal(err)

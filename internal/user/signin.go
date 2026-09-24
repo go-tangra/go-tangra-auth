@@ -117,6 +117,11 @@ func (s *Service) Start(ctx context.Context, in Input) (Result, error) {
 		s.attempt(ctx, "", "", emailHash, ipHash, "refused", "rate_limited")
 		return Result{}, ErrRateLimited
 	}
+	// No tenant given: take it from the e-mail domain. An underivable or
+	// unknown tenant is the same refusal as any other failure (no oracle).
+	if strings.TrimSpace(in.TenantSlug) == "" {
+		in.TenantSlug, _ = tenant.SlugFromEmail(email)
+	}
 	slug, err := tenant.ParseSlug(in.TenantSlug)
 	var t store.Tenant
 	var u store.User

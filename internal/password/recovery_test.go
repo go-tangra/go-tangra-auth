@@ -61,3 +61,26 @@ func TestRecoveryImportedIsUnknown(t *testing.T) {
 		t.Fatalf("want 3 unknown_account events, got %d", refused)
 	}
 }
+
+// A blank tenant is taken from the e-mail domain, as at sign-in.
+func TestRecoveryTenantFromEmailDomain(t *testing.T) {
+	ms, sm, ob := setup(t)
+	ctx := context.Background()
+	h, _ := Hash("old-password-1")
+	ms.AddTenant(store.Tenant{ID: "t-x", Slug: "x", Status: "active", Kind: "customer", Policy: []byte("{}")})
+	ms.AddUser(store.User{ID: "u-x", TenantID: "t-x", Email: "carol@x.test", Status: "active", PasswordHash: &h})
+	aw := audit.NewWriter(ms, nil)
+	defer aw.Close()
+	rec := NewRecovery(ms, ob, sm, aw, "https://auth.example.org")
+	rec.SetPad(func(time.Time) {})
+	if err := rec.Request(ctx, "", "Carol@X.test", "ip"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ms.Recoveries) != 1 || len(ms.Outbox) != 1 {
+		t.Fatalf("blank tenant should resolve to x: recoveries=%d outbox=%d", len(ms.Recoveries), len(ms.Outbox))
+	}
+	// A domain with no matching tenant is the same silent acknowledgement.
+	if err := rec.Request(ctx, "", "dave@nowhere.test", "ip"); err != nil || len(ms.Recoveries) != 1 {
+		t.Fatalf("unknown domain: %v recoveries=%d", err, len(ms.Recoveries))
+	}
+}

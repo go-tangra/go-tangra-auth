@@ -48,7 +48,8 @@ describe('sign-in view', () => {
     await w.find('form').trigger('submit')
     await flushPromises()
     expect(posted()).toBe(0)
-    expect(w.findAll('[role=alert]').length).toBeGreaterThanOrEqual(3)
+    // Email and password; a blank organisation is allowed (taken from the email domain).
+    expect(w.findAll('[role=alert]').length).toBeGreaterThanOrEqual(2)
     await fill(w, 'Acme Corp', 'alice@x.test', 'pw')
     await w.find('form').trigger('submit')
     await flushPromises()

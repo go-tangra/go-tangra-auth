@@ -124,7 +124,8 @@ describe('console views on the kit (T060)', () => {
     await f.find('form').trigger('submit')
     await flushPromises()
     expect(fetch).not.toHaveBeenCalled()
-    expect(f.findAll('[role=alert]').length).toBe(2)
+    // Only the email: a blank organisation is taken from the email domain.
+    expect(f.findAll('[role=alert]').length).toBe(1)
     await f.find('[data-test="tenant"] input').setValue('acme')
     await f.find('[data-test="email"] input').setValue('a@x.test')
     await f.find('form').trigger('submit')

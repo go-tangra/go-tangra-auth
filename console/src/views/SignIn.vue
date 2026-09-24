@@ -40,7 +40,7 @@ const form = useZodForm(signInSchema, {
 async function resolveTenant(): Promise<void> {
   tenantName.value = null
   const t = signInSchema.shape.tenant.safeParse(form.values.tenant)
-  if (!t.success) return
+  if (!t.success || t.data === '') return
   try {
     tenantName.value = (await api<{ display_name: string }>('GET', '/api/v1/tenants/resolve', undefined, { query: { slug: t.data } })).display_name
   } catch (err) {
@@ -61,7 +61,7 @@ async function resolveTenant(): Promise<void> {
     </div>
     <UiForm :form="form">
       <div class="space-y-4">
-        <UiInput v-bind="form.field('tenant')" label="Organisation" placeholder="acme" autocomplete="organization" :hint="tenantName ?? undefined" required data-test="tenant" @blur="form.blur('tenant'); resolveTenant()" />
+        <UiInput v-bind="form.field('tenant')" label="Organisation" placeholder="acme" autocomplete="organization" :hint="tenantName ?? 'Optional — leave blank to use your email domain'" data-test="tenant" @blur="form.blur('tenant'); resolveTenant()" />
         <UiInput v-bind="form.field('email')" label="Email" type="email" placeholder="you@example.org" autocomplete="username" required data-test="email" />
         <div ref="passwordEl"><UiSecretField v-bind="form.field('password')" label="Password" placeholder="············" autocomplete="current-password" :revealable="false" required data-test="password" /></div>
         <div class="flex justify-end"><RouterLink :to="{ name: 'forgot' }" class="link link-animated link-primary text-sm font-normal" data-test="forgot">Forgot your password?</RouterLink></div>

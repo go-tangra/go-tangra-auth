@@ -60,6 +60,10 @@ func (r *Recovery) Request(ctx context.Context, tenantSlug, emailAddr, ipHash st
 	start := r.now()
 	defer r.pad(start)
 	addr := strings.ToLower(strings.TrimSpace(emailAddr))
+	// No tenant given: take it from the e-mail domain, as sign-in does.
+	if strings.TrimSpace(tenantSlug) == "" {
+		tenantSlug, _ = tenant.SlugFromEmail(addr)
+	}
 	slug, err := tenant.ParseSlug(tenantSlug)
 	if err != nil {
 		return nil

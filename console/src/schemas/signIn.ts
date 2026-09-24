@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { signInEmail, tenantSlug } from './common'
+import { signInEmail, optionalTenantSlug } from './common'
 
 export const signInSchema = z.object({
-  tenant: tenantSlug,
+  tenant: optionalTenantSlug,
   email: signInEmail,
   password: z.string().min(1, 'Enter your password.').max(1024),
 })

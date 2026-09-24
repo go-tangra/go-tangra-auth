@@ -29,7 +29,7 @@ const form = useZodForm(forgotSchema, {
     </template>
     <UiForm v-else :form="form">
       <div class="flex flex-col gap-3">
-        <UiInput v-bind="form.field('tenant')" label="Organisation" autocomplete="organization" required data-test="tenant" />
+        <UiInput v-bind="form.field('tenant')" label="Organisation" autocomplete="organization" hint="Optional — leave blank to use your email domain" data-test="tenant" />
         <UiInput v-bind="form.field('email')" label="Email" type="email" autocomplete="username" required data-test="email" />
         <UiButton type="submit" block :loading="form.submitting.value" data-test="submit">Send reset link</UiButton>
       </div>

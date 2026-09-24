@@ -3,6 +3,9 @@ import { email } from '@freya/ui/forms'
 
 /** Tenant slug: lowercase letters, digits and dashes, 1–63 characters. */
 export const tenantSlug = z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/, 'Use lowercase letters, digits and dashes.')
+// Sign-in / forgot-password: blank means "use my e-mail domain" (the server
+// derives the tenant, e.g. jane@acme.com → acme).
+export const optionalTenantSlug = z.string().trim().toLowerCase().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$/, 'Use lowercase letters, digits and dashes.')
 
 export const signInEmail = email
 
