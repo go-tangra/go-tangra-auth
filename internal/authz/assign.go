@@ -56,34 +56,17 @@ func (a *Assigner) AssignRoles(ctx context.Context, tenantID, userID string, rol
 	if err != nil {
 		return nil, err
 	}
-	if !hasSlug(actor.Roles, "owner") {
-		var granting []PermissionRef
-		for _, r := range want {
-			if containsRole(have, r.ID) {
-				continue
-			}
-			if r.Slug == "owner" || r.Slug == "admin" {
-				return nil, a.refuse(actor, tenantID, userID, ErrSelfEscalation)
-			}
-			perms, err := a.st.RolePermissions(ctx, tenantID, r.ID)
-			if err != nil {
-				return nil, err
-			}
-			for _, p := range perms {
-				granting = append(granting, PermissionRef{Resource: p[0], Action: p[1]})
-			}
+	var adding []string
+	for _, r := range want {
+		if !containsRole(have, r.ID) {
+			adding = append(adding, r.ID)
 		}
-		if len(granting) > 0 {
-			held, err := a.authz.AllowedMany(ctx, tenantID, actor.UserID, granting)
-			if err != nil {
-				return nil, err
-			}
-			for _, ok := range held {
-				if !ok {
-					return nil, a.refuse(actor, tenantID, userID, ErrSelfEscalation)
-				}
-			}
+	}
+	if err := a.MayAssign(ctx, actor, tenantID, adding); err != nil {
+		if errors.Is(err, ErrSelfEscalation) {
+			return nil, a.refuse(actor, tenantID, userID, err)
 		}
+		return nil, err
 	}
 	if containsSlug(have, "owner") && !containsSlug(want, "owner") {
 		n, err := a.st.CountWithRole(ctx, tenantID, "owner")
@@ -132,6 +115,41 @@ func (a *Assigner) AssignRoles(ctx context.Context, tenantID, userID string, rol
 		}
 	}
 	return slugs, nil
+}
+
+// MayAssign reports whether actor may grant roleIDs in tenantID. It is a
+// pure check shared by AssignRoles and invitations: every role counts as new,
+// nothing is written. Owners may grant anything; everyone else is refused
+// owner/admin and any role carrying a permission they do not hold
+// (ErrSelfEscalation). Unknown role ids fail with store.ErrNotFound.
+func (a *Assigner) MayAssign(ctx context.Context, actor tenantctx.Actor, tenantID string, roleIDs []string) error {
+	if err := a.authz.guard.Require(ctx, tenantID); err != nil {
+		return err
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	roles, err := a.st.RolesByID(ctx, tenantID, dedupe(roleIDs))
+	if err != nil {
+		return err
+	}
+	if hasSlug(actor.Roles, "owner") {
+		return nil
+	}
+	var granting []PermissionRef
+	for _, r := range roles {
+		if r.Slug == "owner" || r.Slug == "admin" {
+			return ErrSelfEscalation
+		}
+		perms, err := a.st.RolePermissions(ctx, tenantID, r.ID)
+		if err != nil {
+			return err
+		}
+		for _, p := range perms {
+			granting = append(granting, PermissionRef{Resource: p[0], Action: p[1]})
+		}
+	}
+	return NewEscalation(a.authz).MayGrant(ctx, actor, tenantID, granting)
 }
 
 func (a *Assigner) refuse(actor tenantctx.Actor, tenantID, userID string, err error) error {
