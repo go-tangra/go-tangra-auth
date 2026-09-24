@@ -28,6 +28,11 @@ type DirectoryService interface {
 	// the stored connection and persists last_test; otherwise connID only
 	// supplies the stored password when in carries none.
 	Test(ctx context.Context, a tenantctx.Actor, tenantID string, in directory.Input, connID string) (directory.TestResult, error)
+	// Search previews the entries under the connection base; nothing is written.
+	Search(ctx context.Context, a tenantctx.Actor, tenantID, connID string, q directory.SearchRequest) (directory.SearchResult, error)
+	// Import re-fetches each uid under the base and creates or refreshes
+	// imported users; per-entry outcomes are in the result.
+	Import(ctx context.Context, a tenantctx.Actor, tenantID, connID string, uids []string) (directory.ImportResult, error)
 }
 
 // PermissionChecker answers FGA permission checks (*authz.Client).
@@ -135,6 +140,8 @@ func (s *Server) RegisterDirectory(d DirectoryDeps) {
 	s.MustHandle("PUT", "/api/v1/admin/directories/{id}", s.directoryRoute(d, s.updateDirectory))
 	s.MustHandle("POST", "/api/v1/admin/directories/{id}/remove", s.directoryRoute(d, s.removeDirectory))
 	s.MustHandle("POST", "/api/v1/admin/directories/{id}/test", s.directoryRoute(d, s.testSavedDirectory))
+	s.MustHandle("POST", "/api/v1/admin/directories/{id}/search", s.directoryRoute(d, s.searchDirectory))
+	s.MustHandle("POST", "/api/v1/admin/directories/{id}/import", s.directoryRoute(d, s.importDirectory))
 }
 
 type directoryHandler func(w http.ResponseWriter, r *http.Request, d DirectoryDeps, a *tenantctx.Actor)
@@ -243,4 +250,69 @@ func (s *Server) testSavedDirectory(w http.ResponseWriter, r *http.Request, d Di
 		return
 	}
 	WriteJSON(w, http.StatusOK, res)
+}
+
+// searchDirectory previews directory entries. A filter the parser refused
+// answers 400 invalid_filter with the parser's position message, which is
+// built only from what the caller typed.
+func (s *Server) searchDirectory(w http.ResponseWriter, r *http.Request, d DirectoryDeps, a *tenantctx.Actor) {
+	var q directory.SearchRequest
+	if err := DecodeJSON(r, &q); err != nil {
+		Fail(w, r, nil, err)
+		return
+	}
+	res, err := d.Directories.Search(r.Context(), *a, a.TenantID, r.PathValue("id"), q)
+	if err != nil {
+		var fe *ldapdir.FilterError
+		if errors.As(err, &fe) {
+			WriteJSON(w, http.StatusBadRequest, map[string]string{"reason": errDirInvalidFilter.Reason, "message": fe.Detail})
+			return
+		}
+		Fail(w, r, s.rt.Logger(), directoryError(err))
+		return
+	}
+	if res.Items == nil {
+		res.Items = []directory.SearchItem{}
+	}
+	WriteJSON(w, http.StatusOK, res)
+}
+
+// importRequest is the import body: 1..MaxImportUIDs unique uids, passed to
+// the service verbatim (escaping them is the service's job).
+type importRequest struct {
+	UIDs []string `json:"uids"`
+}
+
+func (s *Server) importDirectory(w http.ResponseWriter, r *http.Request, d DirectoryDeps, a *tenantctx.Actor) {
+	var in importRequest
+	if err := DecodeJSON(r, &in); err != nil {
+		Fail(w, r, nil, err)
+		return
+	}
+	if !validImportUIDs(in.UIDs) {
+		Fail(w, r, nil, ErrValidation)
+		return
+	}
+	res, err := d.Directories.Import(r.Context(), *a, a.TenantID, r.PathValue("id"), in.UIDs)
+	if err != nil {
+		Fail(w, r, s.rt.Logger(), directoryError(err))
+		return
+	}
+	WriteJSON(w, http.StatusOK, res)
+}
+
+// validImportUIDs mirrors ImportRequest (1..500 unique items) for callers
+// that bypass the OpenAPI validator.
+func validImportUIDs(uids []string) bool {
+	if len(uids) == 0 || len(uids) > directory.MaxImportUIDs {
+		return false
+	}
+	seen := make(map[string]struct{}, len(uids))
+	for _, u := range uids {
+		if _, dup := seen[u]; dup {
+			return false
+		}
+		seen[u] = struct{}{}
+	}
+	return true
 }

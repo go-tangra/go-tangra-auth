@@ -34,10 +34,20 @@ components:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         display_name: { type: string }
-        status: { type: string, enum: [invited, active, deactivated, locked] }
+        status: { type: string, enum: [invited, active, deactivated, locked, imported] }
         mfa_enabled: { type: boolean }
         roles: { type: array, items: { type: string } }
         last_signin_at: { type: string, format: date-time, nullable: true }
+        directory:
+          type: object
+          nullable: true
+          description: Directory origin of an imported user; null for users that never came from a directory. Never carries the DN.
+          properties:
+            connection_id: { type: string, format: uuid, nullable: true, description: null once the connection is deleted }
+            connection_name: { type: string }
+            directory_uid: { type: string }
+            last_imported_at: { type: string, format: date-time }
+        invitation_id: { type: string, format: uuid, nullable: true, description: pending invitation of an invited user (enables resend) }
     Role:
       type: object
       properties:
@@ -230,6 +240,66 @@ components:
           nullable: true
           properties: { version: { type: string }, peer_subject: { type: string } }
         duration_ms: { type: integer }
+    SearchRequest:
+      type: object
+      additionalProperties: false
+      description: Every field is optional; {} searches the whole connection base with (objectClass=*)
+      properties:
+        filter: { type: string, maxLength: 4096, description: 'RFC 4515 filter, ANDed after the connection base_filter; empty = (objectClass=*)' }
+        base: { type: string, maxLength: 1024, description: must lie within the connection base_dn }
+        scope: { type: string, enum: [one, sub], description: default sub }
+    SearchResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              uid: { type: string }
+              dn: { type: string }
+              email: { type: string, nullable: true }
+              display_name: { type: string }
+              first_name: { type: string }
+              last_name: { type: string }
+              status: { type: string, enum: [new, existing_user, imported, invalid] }
+              user_id: { type: string, format: uuid, nullable: true, description: for existing_user and imported }
+              reason: { type: string, nullable: true, description: 'for invalid: no_email | invalid_email | value_too_long | multi_valued_uid | invalid_uid' }
+        truncated: { type: boolean, description: size or time limit hit }
+        out_of_scope: { type: integer, description: entries dropped because their DN left the base }
+        effective_filter: { type: string, description: 'canonical (&<base_filter><filter>) actually sent' }
+    SearchError:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, description: invalid_filter | invalid_base | validation_failed }
+        message: { type: string, description: 'invalid_filter only: the parser position message, built from the submitted filter' }
+    ImportRequest:
+      type: object
+      additionalProperties: false
+      required: [uids]
+      properties:
+        uids: { type: array, minItems: 1, maxItems: 500, uniqueItems: true, items: { type: string } }
+    ImportResult:
+      type: object
+      description: Partial success is still 200; every list is present (possibly empty)
+      properties:
+        created: { type: array, items: { $ref: '#/components/schemas/ImportItem' } }
+        updated: { type: array, items: { $ref: '#/components/schemas/ImportItem' } }
+        skipped:
+          type: array
+          description: 'no_email | invalid_email | email_in_use | duplicate_email | already_active | not_found_in_directory | value_too_long | multi_valued_uid | invalid_uid'
+          items: { $ref: '#/components/schemas/ImportIssue' }
+        failed:
+          type: array
+          description: directory_error | timeout | internal
+          items: { $ref: '#/components/schemas/ImportIssue' }
+    ImportItem:
+      type: object
+      properties: { uid: { type: string }, user_id: { type: string, format: uuid } }
+    ImportIssue:
+      type: object
+      properties: { uid: { type: string }, reason: { type: string } }
 paths:
   /.well-known/jwks.json:
     get:
@@ -363,7 +433,7 @@ paths:
   /api/v1/admin/users:
     get:
       operationId: listUsers
-      summary: List users (admin); q matches email, first or last name; items carry avatar_url and groups
+      summary: List users (admin); q matches email, first or last name; status=imported lists imported users; items carry avatar_url, groups, directory and invitation_id
       parameters: [{ name: q, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: cursor, in: query, schema: { type: string } }]
       responses: { '200': { description: page of users }, '403': { description: denied } }
   /api/v1/admin/invitations:
@@ -384,17 +454,17 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
       summary: Replace a user's roles (admin; cannot grant permissions the actor lacks; last-owner protected)
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, properties: { role_ids: { type: array, items: { type: string } } } } } } }
-      responses: { '200': { description: updated }, '403': { description: denied | self_escalation | last_owner } }
+      responses: { '200': { description: updated }, '403': { description: denied | self_escalation | last_owner }, '409': { description: 'invalid_state (imported user)' } }
   /api/v1/admin/users/{id}/deactivate:
     post:
       operationId: deactivateUser
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
-      responses: { '204': { description: deactivated; sessions revoked }, '403': { description: last_owner } }
+      responses: { '204': { description: deactivated; sessions revoked }, '403': { description: last_owner }, '409': { description: 'invalid_state (imported user)' } }
   /api/v1/admin/users/{id}/reactivate:
     post:
       operationId: reactivateUser
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
-      responses: { '204': { description: reactivated } }
+      responses: { '204': { description: reactivated }, '409': { description: 'invalid_state (imported user)' } }
   /api/v1/admin/users/{id}/sessions/revoke:
     post:
       operationId: revokeUserSessions
@@ -668,6 +738,33 @@ paths:
         '200': { description: result (ok false is still 200), content: { application/json: { schema: { $ref: '#/components/schemas/TestResult' } } } }
         '404': { description: not_found }
         '429': { description: rate_limited }
+  /api/v1/admin/directories/{id}/search:
+    post:
+      operationId: searchDirectory
+      summary: Preview directory entries under the connection base with their import status; nothing is written (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SearchRequest' } } } }
+      responses:
+        '200': { description: preview, content: { application/json: { schema: { $ref: '#/components/schemas/SearchResult' } } } }
+        '400': { description: 'invalid_filter (with message, before any network call) | invalid_base | validation_failed', content: { application/json: { schema: { $ref: '#/components/schemas/SearchError' } } } }
+        '403': { description: forbidden }
+        '404': { description: not_found }
+        '429': { description: rate_limited }
+        '502': { description: unreachable | tls_failed | invalid_credentials | base_not_found | directory_error }
+        '504': { description: timeout }
+  /api/v1/admin/directories/{id}/import:
+    post:
+      operationId: importDirectory
+      summary: Import the chosen entries (re-fetched by uid under the base) as inactive users (directory:manage)
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImportRequest' } } } }
+      responses:
+        '200': { description: per-entry outcomes (partial success), content: { application/json: { schema: { $ref: '#/components/schemas/ImportResult' } } } }
+        '400': { description: validation_failed }
+        '403': { description: forbidden }
+        '404': { description: not_found }
+        '502': { description: 'unreachable | tls_failed | invalid_credentials | base_not_found | directory_error (nothing imported)' }
+        '504': { description: 'timeout (nothing imported)' }
   /authorize:
     get:
       operationId: authorize

@@ -300,7 +300,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List users (admin); q matches email, first or last name; items carry avatar_url and groups */
+        /** List users (admin); q matches email, first or last name; status=imported lists imported users; items carry avatar_url, groups, directory and invitation_id */
         get: operations["listUsers"];
         put?: never;
         post?: never;
@@ -970,6 +970,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/directories/{id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview directory entries under the connection base with their import status; nothing is written (directory:manage) */
+        post: operations["searchDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import the chosen entries (re-fetched by uid under the base) as inactive users (directory:manage) */
+        post: operations["importDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/authorize": {
         parameters: {
             query?: never;
@@ -1026,11 +1060,28 @@ export interface components {
             email?: string;
             display_name?: string;
             /** @enum {string} */
-            status?: "invited" | "active" | "deactivated" | "locked";
+            status?: "invited" | "active" | "deactivated" | "locked" | "imported";
             mfa_enabled?: boolean;
             roles?: string[];
             /** Format: date-time */
             last_signin_at?: string | null;
+            /** @description Directory origin of an imported user; null for users that never came from a directory. Never carries the DN. */
+            directory?: {
+                /**
+                 * Format: uuid
+                 * @description null once the connection is deleted
+                 */
+                connection_id?: string | null;
+                connection_name?: string;
+                directory_uid?: string;
+                /** Format: date-time */
+                last_imported_at?: string;
+            } | null;
+            /**
+             * Format: uuid
+             * @description pending invitation of an invited user (enables resend)
+             */
+            invitation_id?: string | null;
         };
         Role: {
             /** Format: uuid */
@@ -1261,6 +1312,70 @@ export interface components {
                 peer_subject?: string;
             } | null;
             duration_ms?: number;
+        };
+        /** @description Every field is optional; {} searches the whole connection base with (objectClass=*) */
+        SearchRequest: {
+            /** @description RFC 4515 filter, ANDed after the connection base_filter; empty = (objectClass=*) */
+            filter?: string;
+            /** @description must lie within the connection base_dn */
+            base?: string;
+            /**
+             * @description default sub
+             * @enum {string}
+             */
+            scope?: "one" | "sub";
+        };
+        SearchResult: {
+            items?: {
+                uid?: string;
+                dn?: string;
+                email?: string | null;
+                display_name?: string;
+                first_name?: string;
+                last_name?: string;
+                /** @enum {string} */
+                status?: "new" | "existing_user" | "imported" | "invalid";
+                /**
+                 * Format: uuid
+                 * @description for existing_user and imported
+                 */
+                user_id?: string | null;
+                /** @description for invalid: no_email | invalid_email | value_too_long | multi_valued_uid | invalid_uid */
+                reason?: string | null;
+            }[];
+            /** @description size or time limit hit */
+            truncated?: boolean;
+            /** @description entries dropped because their DN left the base */
+            out_of_scope?: number;
+            /** @description canonical (&<base_filter><filter>) actually sent */
+            effective_filter?: string;
+        };
+        SearchError: {
+            /** @description invalid_filter | invalid_base | validation_failed */
+            reason: string;
+            /** @description invalid_filter only: the parser position message, built from the submitted filter */
+            message?: string;
+        };
+        ImportRequest: {
+            uids: string[];
+        };
+        /** @description Partial success is still 200; every list is present (possibly empty) */
+        ImportResult: {
+            created?: components["schemas"]["ImportItem"][];
+            updated?: components["schemas"]["ImportItem"][];
+            /** @description no_email | invalid_email | email_in_use | duplicate_email | already_active | not_found_in_directory | value_too_long | multi_valued_uid | invalid_uid */
+            skipped?: components["schemas"]["ImportIssue"][];
+            /** @description directory_error | timeout | internal */
+            failed?: components["schemas"]["ImportIssue"][];
+        };
+        ImportItem: {
+            uid?: string;
+            /** Format: uuid */
+            user_id?: string;
+        };
+        ImportIssue: {
+            uid?: string;
+            reason?: string;
         };
     };
     responses: never;
@@ -1857,6 +1972,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     deactivateUser: {
@@ -1886,6 +2008,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     reactivateUser: {
@@ -1903,6 +2032,13 @@ export interface operations {
         responses: {
             /** @description reactivated */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_state (imported user) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3221,6 +3357,141 @@ export interface operations {
             };
             /** @description rate_limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    searchDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResult"];
+                };
+            };
+            /** @description invalid_filter (with message, before any network call) | invalid_base | validation_failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchError"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unreachable | tls_failed | invalid_credentials | base_not_found | directory_error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    importDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            /** @description per-entry outcomes (partial success) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResult"];
+                };
+            };
+            /** @description validation_failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unreachable | tls_failed | invalid_credentials | base_not_found | directory_error (nothing imported) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description timeout (nothing imported) */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
