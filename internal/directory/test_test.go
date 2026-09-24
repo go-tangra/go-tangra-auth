@@ -176,8 +176,8 @@ func ttPtr(s string) *string { return &s }
 // the directory's (so it binds).
 func ttInput() Input {
 	return Input{
-		Name: "Draft", Kind: "openldap", URL: ttURL, TLSMode: ldapdir.TLSModeLDAPS,
-		BindDN: ttBindDN, BindPassword: ttPtr(ttStoredPW), BaseDN: ttBaseDN,
+		Name: ttPtr("Draft"), Kind: ttPtr("openldap"), URL: ttPtr(ttURL), TLSMode: ttPtr(ldapdir.TLSModeLDAPS),
+		BindDN: ttPtr(ttBindDN), BindPassword: ttPtr(ttStoredPW), BaseDN: ttPtr(ttBaseDN),
 	}
 }
 
@@ -293,7 +293,8 @@ func TestTestTLSVersionReported(t *testing.T) {
 	f := ttSetup(t, ttOpts{})
 	f.dir.SetTLSVersion(tls.VersionTLS12)
 	in := ttInput()
-	in.AllowTLS12 = true
+	allow12 := true
+	in.AllowTLS12 = &allow12
 	res, err := f.svc.Test(context.Background(), ttAdmin(ttTenant), ttTenant, in, "")
 	if err != nil || !res.OK || res.TLS == nil || res.TLS.Version != "TLS 1.2" {
 		t.Fatalf("res=%+v err=%v", res, err)
@@ -304,7 +305,7 @@ func TestTestTLSVersionReported(t *testing.T) {
 
 	// StartTLS reports its negotiated version too.
 	in = ttInput()
-	in.URL, in.TLSMode = "ldap://ldap.example.test:389", ldapdir.TLSModeStartTLS
+	in.URL, in.TLSMode = ttPtr("ldap://ldap.example.test:389"), ttPtr(ldapdir.TLSModeStartTLS)
 	f.dir.SetTLSVersion(tls.VersionTLS13)
 	res, err = f.svc.Test(context.Background(), ttAdmin(ttTenant), ttTenant, in, "")
 	if err != nil || !res.OK || res.TLS == nil || res.TLS.Version != "TLS 1.3" {
@@ -325,28 +326,28 @@ func TestTestSteps(t *testing.T) {
 		{"unreachable", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpOpen, ldapdir.ErrUnreachable) }, "connect", "unreachable", true},
 		{"dial timeout", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpOpen, ldapdir.ErrTimeout) }, "connect", "timeout", true},
 		{"dial-time target refused", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpOpen, ldapdir.ErrTargetRefused) }, "connect", "target_refused", true},
-		{"literal ip refused before dialling", func(_ *ttFixture, in *Input) { in.URL = "ldaps://127.0.0.1:636" }, "connect", "target_refused", false},
+		{"literal ip refused before dialling", func(_ *ttFixture, in *Input) { in.URL = ttPtr("ldaps://127.0.0.1:636") }, "connect", "target_refused", false},
 		{"metadata ip refused before dialling", func(_ *ttFixture, in *Input) {
-			in.URL, in.TLSMode = "ldap://169.254.169.254:389", ldapdir.TLSModeStartTLS
+			in.URL, in.TLSMode = ttPtr("ldap://169.254.169.254:389"), ttPtr(ldapdir.TLSModeStartTLS)
 		}, "connect", "target_refused", false},
-		{"port outside policy", func(_ *ttFixture, in *Input) { in.URL = "ldaps://ldap.example.test:5432" }, "connect", "target_refused", false},
+		{"port outside policy", func(_ *ttFixture, in *Input) { in.URL = ttPtr("ldaps://ldap.example.test:5432") }, "connect", "target_refused", false},
 		{"untrusted certificate", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpOpen, ldapdir.ErrTLS) }, "tls", "tls_failed", true},
 		{"starttls refused", func(f *ttFixture, in *Input) {
-			in.URL, in.TLSMode = "ldap://ldap.example.test:389", ldapdir.TLSModeStartTLS
+			in.URL, in.TLSMode = ttPtr("ldap://ldap.example.test:389"), ttPtr(ldapdir.TLSModeStartTLS)
 			f.dir.InjectError(ldapfake.OpOpen, ldapdir.ErrTLS)
 		}, "tls", "tls_failed", true},
 		{"wrong password", func(_ *ttFixture, in *Input) { in.BindPassword = ttPtr(ttTypedPW) }, "bind", "invalid_credentials", true},
-		{"unknown bind dn", func(_ *ttFixture, in *Input) { in.BindDN = "cn=nobody,dc=example,dc=test" }, "bind", "invalid_credentials", true},
+		{"unknown bind dn", func(_ *ttFixture, in *Input) { in.BindDN = ttPtr("cn=nobody,dc=example,dc=test") }, "bind", "invalid_credentials", true},
 		{"bind timeout", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpBind, ldapdir.ErrTimeout) }, "bind", "timeout", true},
 		{"bind other result code", func(f *ttFixture, _ *Input) {
 			f.dir.InjectError(ldapfake.OpBind, &ldapdir.DirectoryError{Code: 53})
 		}, "bind", "directory_error", true},
 		{"bind server text", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpBind, leaky) }, "bind", "directory_error", true},
 		{"open server text", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpOpen, leaky) }, "connect", "directory_error", true},
-		{"base not found", func(_ *ttFixture, in *Input) { in.BaseDN = "ou=Nope,dc=example,dc=test" }, "search_base", "base_not_found", true},
+		{"base not found", func(_ *ttFixture, in *Input) { in.BaseDN = ttPtr("ou=Nope,dc=example,dc=test") }, "search_base", "base_not_found", true},
 		{"base below referral", func(f *ttFixture, in *Input) {
 			f.dir.AddReferral("ou=Remote,dc=example,dc=test", "ldap://remote.example.test/")
-			in.BaseDN = "ou=Remote,dc=example,dc=test"
+			in.BaseDN = ttPtr("ou=Remote,dc=example,dc=test")
 		}, "search_base", "directory_error", true},
 		{"base check timeout", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpBaseExists, ldapdir.ErrTimeout) }, "search_base", "timeout", true},
 		{"base check server text", func(f *ttFixture, _ *Input) { f.dir.InjectError(ldapfake.OpBaseExists, leaky) }, "search_base", "directory_error", true},
@@ -462,7 +463,7 @@ func TestTestReusesStoredPassword(t *testing.T) {
 	// edited (unsaved) settings.
 	in := ttInput()
 	in.BindPassword = nil
-	in.BaseDN = "dc=example,dc=test"
+	in.BaseDN = ttPtr("dc=example,dc=test")
 	res, err := f.svc.Test(ctx, ttAdmin(ttTenant), ttTenant, in, ttConnID)
 	if err != nil || !res.OK {
 		t.Fatalf("res=%+v err=%v", res, err)
@@ -628,15 +629,15 @@ func TestTestValidationBeforeDial(t *testing.T) {
 		mutate func(*Input)
 		want   error
 	}{
-		{"userinfo in url", func(in *Input) { in.URL = "ldaps://reader:" + ttStoredPW + "@ldap.example.test:636" }, ldapdir.ErrInvalidURL},
-		{"http scheme", func(in *Input) { in.URL = "https://ldap.example.test" }, ldapdir.ErrInvalidURL},
-		{"scheme vs tls mode", func(in *Input) { in.URL = "ldap://ldap.example.test:389" }, ldapdir.ErrInvalidURL},
+		{"userinfo in url", func(in *Input) { in.URL = ttPtr("ldaps://reader:" + ttStoredPW + "@ldap.example.test:636") }, ldapdir.ErrInvalidURL},
+		{"http scheme", func(in *Input) { in.URL = ttPtr("https://ldap.example.test") }, ldapdir.ErrInvalidURL},
+		{"scheme vs tls mode", func(in *Input) { in.URL = ttPtr("ldap://ldap.example.test:389") }, ldapdir.ErrInvalidURL},
 		{"garbage ca", func(in *Input) {
-			in.CAPEM = "-----BEGIN CERTIFICATE-----\n" + ttServer + "\n-----END CERTIFICATE-----\n"
+			in.CAPEM = ttPtr("-----BEGIN CERTIFICATE-----\n" + ttServer + "\n-----END CERTIFICATE-----\n")
 		}, ldapdir.ErrInvalidCA},
-		{"unknown tls mode", func(in *Input) { in.TLSMode = "none" }, ErrValidation},
-		{"bad bind dn", func(in *Input) { in.BindDN = "not a dn" }, ErrValidation},
-		{"bad base dn", func(in *Input) { in.BaseDN = "=,=" }, ErrValidation},
+		{"unknown tls mode", func(in *Input) { in.TLSMode = ttPtr("none") }, ErrValidation},
+		{"bad bind dn", func(in *Input) { in.BindDN = ttPtr("not a dn") }, ErrValidation},
+		{"bad base dn", func(in *Input) { in.BaseDN = ttPtr("=,=") }, ErrValidation},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -659,7 +660,7 @@ func TestTestValidationBeforeDial(t *testing.T) {
 
 func TestTestPlaintext(t *testing.T) {
 	in := ttInput()
-	in.URL, in.TLSMode = "ldap://ldap.example.test:389", ldapdir.TLSModePlain
+	in.URL, in.TLSMode = ttPtr("ldap://ldap.example.test:389"), ttPtr(ldapdir.TLSModePlain)
 
 	// Production refuses plaintext even with the opt-out set (config
 	// validation refuses that combination too; the service must not rely on it).
