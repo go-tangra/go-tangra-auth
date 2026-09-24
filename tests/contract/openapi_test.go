@@ -1,7 +1,11 @@
 package contract
 
 import (
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/go-freya/freya/internal/testrt"
 	"github.com/go-freya/freya/internal/testutil"
@@ -49,5 +53,326 @@ func TestOpenAPIDocument(t *testing.T) {
 	}
 	if got := len(s.Implemented()); got != len(declared) {
 		t.Fatalf("mounted %d of %d declared routes", got, len(declared))
+	}
+}
+
+// directoryRoutes are the connection routes of the LDAP import (feature 016,
+// contract A: "Directory connections"); search and import are asserted by
+// their own story.
+var directoryRoutes = []httpapi.Route{
+	{Method: "GET", Path: "/api/v1/admin/directories"},
+	{Method: "POST", Path: "/api/v1/admin/directories"},
+	{Method: "GET", Path: "/api/v1/admin/directories/{id}"},
+	{Method: "PUT", Path: "/api/v1/admin/directories/{id}"},
+	{Method: "POST", Path: "/api/v1/admin/directories/{id}/remove"},
+	{Method: "POST", Path: "/api/v1/admin/directories/test"},
+	{Method: "POST", Path: "/api/v1/admin/directories/{id}/test"},
+}
+
+// TestOpenAPIDirectoryConnections pins the connection surface: every route is
+// declared, mutations carry the CSRF header, request bodies are closed
+// objects, the bind password is write-only on input and never appears in any
+// response, and the document version is 1.2.0.
+func TestOpenAPIDirectoryConnections(t *testing.T) {
+	doc, err := httpapi.LoadDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Info == nil || doc.Info.Version != "1.2.0" {
+		t.Error("info.version must be 1.2.0")
+	}
+	for _, r := range directoryRoutes {
+		op := operation(doc, r)
+		if op == nil {
+			t.Errorf("%s: not declared", r)
+			continue
+		}
+		if r.Method != "GET" && !hasCSRF(op) {
+			t.Errorf("%s: mutation without the required X-CSRF-Token header", r)
+		}
+		if strings.Contains(r.Path, "{id}") && !hasUUIDPathID(op) {
+			t.Errorf("%s: path parameter id must be a required uuid", r)
+		}
+		if op.RequestBody != nil && op.RequestBody.Value != nil {
+			for ct, mt := range op.RequestBody.Value.Content {
+				if mt.Schema == nil || mt.Schema.Value == nil {
+					t.Errorf("%s %s: request body without schema", r, ct)
+					continue
+				}
+				assertClosed(t, r.String()+" request", mt.Schema.Value, map[*openapi3.Schema]bool{})
+			}
+		}
+		for code, resp := range op.Responses.Map() {
+			if resp.Value == nil {
+				continue
+			}
+			for _, mt := range resp.Value.Content {
+				if mt.Schema != nil && mt.Schema.Value != nil {
+					assertNoPassword(t, r.String()+" "+code, mt.Schema.Value, map[*openapi3.Schema]bool{})
+				}
+			}
+		}
+	}
+
+	// Bodies and responses reference the named schemas.
+	for _, r := range []httpapi.Route{directoryRoutes[1], directoryRoutes[3]} {
+		if op := operation(doc, r); op != nil {
+			if ref := bodyRef(op); ref != "#/components/schemas/DirectoryConnectionInput" {
+				t.Errorf("%s: request body must be DirectoryConnectionInput, got %q", r, ref)
+			}
+		}
+	}
+	for r, code := range map[httpapi.Route]string{directoryRoutes[1]: "201", directoryRoutes[2]: "200", directoryRoutes[3]: "200"} {
+		if op := operation(doc, r); op != nil {
+			if ref := responseRef(op, code); ref != "#/components/schemas/DirectoryConnection" {
+				t.Errorf("%s %s: response must be DirectoryConnection, got %q", r, code, ref)
+			}
+		}
+	}
+	if op := operation(doc, directoryRoutes[0]); op != nil {
+		s := responseSchema(op, "200")
+		if s == nil || s.Properties["items"] == nil || s.Properties["items"].Value.Items == nil ||
+			s.Properties["items"].Value.Items.Ref != "#/components/schemas/DirectoryConnection" {
+			t.Errorf("%s: 200 must be {items: DirectoryConnection[]}", directoryRoutes[0])
+		}
+	}
+	for _, r := range directoryRoutes[5:] {
+		if op := operation(doc, r); op != nil {
+			if ref := responseRef(op, "200"); ref != "#/components/schemas/TestResult" {
+				t.Errorf("%s: 200 must be TestResult, got %q", r, ref)
+			}
+		}
+	}
+	if op := operation(doc, directoryRoutes[5]); op != nil {
+		// Ad-hoc test: the input fields plus connection_id (reuse the stored password).
+		if s := bodySchema(op); s == nil || s.Properties["connection_id"] == nil || s.Properties["bind_password"] == nil ||
+			!s.Properties["bind_password"].Value.WriteOnly {
+			t.Errorf("%s: body must carry the input fields, a write-only bind_password and connection_id", directoryRoutes[5])
+		}
+	}
+
+	schemas := doc.Components.Schemas
+	in := schemaValue(t, schemas, "DirectoryConnectionInput")
+	out := schemaValue(t, schemas, "DirectoryConnection")
+	tr := schemaValue(t, schemas, "TestResult")
+	if in == nil || out == nil || tr == nil {
+		return
+	}
+
+	// Input: closed, write-only bounded password, the contract's fields.
+	assertClosed(t, "DirectoryConnectionInput", in, map[*openapi3.Schema]bool{})
+	bp := in.Properties["bind_password"]
+	switch {
+	case bp == nil || bp.Value == nil:
+		t.Error("DirectoryConnectionInput.bind_password missing")
+	case !bp.Value.WriteOnly:
+		t.Error("DirectoryConnectionInput.bind_password must be writeOnly")
+	case bp.Value.MaxLength == nil || *bp.Value.MaxLength != 1024 || bp.Value.MinLength != 1:
+		t.Errorf("DirectoryConnectionInput.bind_password must be 1..1024, got %d..%v", bp.Value.MinLength, bp.Value.MaxLength)
+	}
+	for _, f := range []string{"name", "kind", "url", "tls_mode", "allow_tls12", "ca_pem", "bind_dn", "bind_password", "base_dn", "base_filter", "attributes", "size_limit", "time_limit_seconds"} {
+		if in.Properties[f] == nil {
+			t.Errorf("DirectoryConnectionInput.%s missing", f)
+		}
+	}
+	for f, max := range map[string]uint64{"name": 80, "url": 512, "ca_pem": 65536, "bind_dn": 1024, "base_dn": 1024, "base_filter": 4096} {
+		if p := in.Properties[f]; p != nil && p.Value != nil && (p.Value.MaxLength == nil || *p.Value.MaxLength != max) {
+			t.Errorf("DirectoryConnectionInput.%s: maxLength must be %d", f, max)
+		}
+	}
+	assertEnum(t, "DirectoryConnectionInput.kind", in.Properties["kind"], "active_directory", "openldap", "other")
+	assertEnum(t, "DirectoryConnectionInput.tls_mode", in.Properties["tls_mode"], "ldaps", "starttls", "plain")
+
+	// Output: exactly the contract's fields (plus ca_pem, which GET /{id}
+	// fills) and nothing password-like but the flag.
+	assertNoPassword(t, "DirectoryConnection", out, map[*openapi3.Schema]bool{})
+	want := []string{"id", "name", "kind", "url", "tls_mode", "allow_tls12", "ca_pem_set", "bind_dn", "bind_password_set",
+		"base_dn", "base_filter", "attributes", "size_limit", "time_limit_seconds", "last_test", "created_at", "updated_at"}
+	for _, f := range want {
+		if out.Properties[f] == nil {
+			t.Errorf("DirectoryConnection.%s missing", f)
+		}
+	}
+	for f := range out.Properties {
+		if !slices.Contains(want, f) && f != "ca_pem" {
+			t.Errorf("DirectoryConnection.%s is not in the contract", f)
+		}
+	}
+	if p := out.Properties["bind_password_set"]; p != nil && (p.Value == nil || !p.Value.Type.Is("boolean")) {
+		t.Error("DirectoryConnection.bind_password_set must be a boolean")
+	}
+	if a := out.Properties["attributes"]; a != nil && a.Value != nil {
+		for _, f := range []string{"uid", "email", "display_name", "first_name", "last_name"} {
+			if a.Value.Properties[f] == nil {
+				t.Errorf("DirectoryConnection.attributes.%s missing", f)
+			}
+		}
+	}
+
+	// TestResult: failing step and closed reason, never server text.
+	for _, f := range []string{"ok", "step", "reason", "tls", "duration_ms"} {
+		if tr.Properties[f] == nil {
+			t.Errorf("TestResult.%s missing", f)
+		}
+	}
+	assertEnum(t, "TestResult.step", tr.Properties["step"], "connect", "tls", "bind", "search_base")
+}
+
+func operation(doc *openapi3.T, r httpapi.Route) *openapi3.Operation {
+	item := doc.Paths.Value(r.Path)
+	if item == nil {
+		return nil
+	}
+	return item.GetOperation(r.Method)
+}
+
+func hasCSRF(op *openapi3.Operation) bool {
+	for _, p := range op.Parameters {
+		if p.Value != nil && p.Value.In == "header" && p.Value.Name == "X-CSRF-Token" && p.Value.Required {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUUIDPathID(op *openapi3.Operation) bool {
+	for _, p := range op.Parameters {
+		if v := p.Value; v != nil && v.In == "path" && v.Name == "id" {
+			return v.Required && v.Schema != nil && v.Schema.Value != nil && v.Schema.Value.Format == "uuid"
+		}
+	}
+	return false
+}
+
+func bodySchemaRef(op *openapi3.Operation) *openapi3.SchemaRef {
+	if op.RequestBody == nil || op.RequestBody.Value == nil {
+		return nil
+	}
+	if mt := op.RequestBody.Value.Content.Get("application/json"); mt != nil {
+		return mt.Schema
+	}
+	return nil
+}
+
+func bodyRef(op *openapi3.Operation) string {
+	if s := bodySchemaRef(op); s != nil {
+		return s.Ref
+	}
+	return ""
+}
+
+func bodySchema(op *openapi3.Operation) *openapi3.Schema {
+	if s := bodySchemaRef(op); s != nil {
+		return s.Value
+	}
+	return nil
+}
+
+func responseSchemaRef(op *openapi3.Operation, code string) *openapi3.SchemaRef {
+	resp := op.Responses.Value(code)
+	if resp == nil || resp.Value == nil {
+		return nil
+	}
+	if mt := resp.Value.Content.Get("application/json"); mt != nil {
+		return mt.Schema
+	}
+	return nil
+}
+
+func responseRef(op *openapi3.Operation, code string) string {
+	if s := responseSchemaRef(op, code); s != nil {
+		return s.Ref
+	}
+	return ""
+}
+
+func responseSchema(op *openapi3.Operation, code string) *openapi3.Schema {
+	if s := responseSchemaRef(op, code); s != nil {
+		return s.Value
+	}
+	return nil
+}
+
+func schemaValue(t *testing.T, schemas openapi3.Schemas, name string) *openapi3.Schema {
+	t.Helper()
+	ref := schemas[name]
+	if ref == nil || ref.Value == nil {
+		t.Errorf("components.schemas.%s missing", name)
+		return nil
+	}
+	return ref.Value
+}
+
+func assertEnum(t *testing.T, where string, ref *openapi3.SchemaRef, want ...string) {
+	t.Helper()
+	if ref == nil || ref.Value == nil {
+		t.Errorf("%s missing", where)
+		return
+	}
+	got := map[string]bool{}
+	for _, v := range ref.Value.Enum {
+		if s, ok := v.(string); ok {
+			got[s] = true
+		}
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("%s: enum lacks %q (got %v)", where, w, ref.Value.Enum)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("%s: enum must be exactly %v, got %v", where, want, ref.Value.Enum)
+	}
+}
+
+// assertClosed requires additionalProperties: false on every object schema
+// reachable from s (nested objects such as attributes included).
+func assertClosed(t *testing.T, where string, s *openapi3.Schema, seen map[*openapi3.Schema]bool) {
+	t.Helper()
+	if s == nil || seen[s] {
+		return
+	}
+	seen[s] = true
+	if s.Type.Is("object") || len(s.Properties) > 0 {
+		if s.AdditionalProperties.Has == nil || *s.AdditionalProperties.Has || s.AdditionalProperties.Schema != nil {
+			t.Errorf("%s: object schema must set additionalProperties: false", where)
+		}
+	}
+	for name, p := range s.Properties {
+		if p != nil {
+			assertClosed(t, where+"."+name, p.Value, seen)
+		}
+	}
+	if s.Items != nil {
+		assertClosed(t, where+"[]", s.Items.Value, seen)
+	}
+}
+
+// assertNoPassword refuses any property whose name mentions a password or
+// secret anywhere below s, except the bind_password_set flag.
+func assertNoPassword(t *testing.T, where string, s *openapi3.Schema, seen map[*openapi3.Schema]bool) {
+	t.Helper()
+	if s == nil || seen[s] {
+		return
+	}
+	seen[s] = true
+	for name, p := range s.Properties {
+		l := strings.ToLower(name)
+		if name != "bind_password_set" && (strings.Contains(l, "password") || strings.Contains(l, "secret")) {
+			t.Errorf("%s: response exposes %q", where, name)
+		}
+		if p != nil {
+			assertNoPassword(t, where+"."+name, p.Value, seen)
+		}
+	}
+	if s.Items != nil {
+		assertNoPassword(t, where+"[]", s.Items.Value, seen)
+	}
+	for _, group := range []openapi3.SchemaRefs{s.AllOf, s.AnyOf, s.OneOf} {
+		for _, r := range group {
+			if r != nil {
+				assertNoPassword(t, where, r.Value, seen)
+			}
+		}
 	}
 }
