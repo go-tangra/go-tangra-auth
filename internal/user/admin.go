@@ -28,6 +28,9 @@ type AdminStore interface {
 	Roles(ctx context.Context, tenantID, userID string) ([]string, error) // effective roles
 	CountWithRole(ctx context.Context, tenantID, slug string) (int, error)
 	UserGroups(ctx context.Context, tenantID, userID string) ([]store.Group, error)
+	// DeleteImportedUser hard-deletes a user only while imported; any other
+	// status (or a missing user) is store.ErrNotFound.
+	DeleteImportedUser(ctx context.Context, tenantID, userID string) error
 }
 
 // Admin performs tenant administration of users. Every method takes the
@@ -193,6 +196,29 @@ func (a *Admin) Reactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 		return err
 	}
 	a.emit(audit.Event{Type: audit.UserReactivated, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid})
+	return nil
+}
+
+// RemoveImported hard-deletes a never-invited imported user; the directory
+// link cascades and no e-mail is sent. Every other status is ErrInvalidState,
+// so this is never a general user delete.
+func (a *Admin) RemoveImported(ctx context.Context, actor tenantctx.Actor, uid string) error {
+	u, err := a.lookup(ctx, actor, uid)
+	if err != nil {
+		return err
+	}
+	if u.Status != "imported" {
+		return ErrInvalidState
+	}
+	if err := a.st.DeleteImportedUser(ctx, actor.TenantID, uid); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Invited or removed since the lookup: the delete is guarded by
+			// status, so nothing else was touched.
+			return ErrInvalidState
+		}
+		return err
+	}
+	a.emit(audit.Event{Type: audit.ImportedUserDeleted, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid})
 	return nil
 }
 
