@@ -6,3 +6,4 @@ console/playwright-report/
 coverage.out
 deploy/dev-kek.b64
 console/dist-remote/
+console/.mf/
