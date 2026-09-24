@@ -21,6 +21,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
 		os.Exit(bootstrap(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "reset-user" {
+		os.Exit(resetUser(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mint-enrollment-token" {
 		os.Exit(mintEnrollmentToken(os.Args[2:]))
 	}

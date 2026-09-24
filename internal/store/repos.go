@@ -184,6 +184,20 @@ func SetMFA(ctx context.Context, tx pgx.Tx, tenantID, id string, enabled bool, s
 	return err
 }
 
+// ResetCredentials is the break-glass reset: it clears the password, the MFA
+// seed and its replay counter and returns the user to "invited" so the only
+// way back in is a fresh invitation. Only active or invited users qualify;
+// imported and deactivated users are refused with ErrNotFound.
+func ResetCredentials(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
+	ct, err := tx.Exec(ctx, `UPDATE users SET password_hash = NULL, password_changed_at = NULL, mfa_enabled = false,
+		mfa_secret_enc = NULL, mfa_last_counter = 0, status = 'invited', updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('active','invited')`, tenantID, id)
+	if err == nil && ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
 // SetMFACounter records the last accepted TOTP counter (replay protection).
 func SetMFACounter(ctx context.Context, tx pgx.Tx, tenantID, id string, counter int64) error {
 	_, err := tx.Exec(ctx, "UPDATE users SET mfa_last_counter = $3 WHERE tenant_id = $1 AND id = $2 AND mfa_last_counter < $3", tenantID, id, counter)
@@ -556,6 +570,16 @@ func GetInvitation(ctx context.Context, tx pgx.Tx, tenantID, id string) (Invitat
 // duplicate. Returns ErrNotFound when none is outstanding.
 func PendingInvitationByEmail(ctx context.Context, tx pgx.Tx, tenantID, email string) (Invitation, error) {
 	return scanInvitation(tx.QueryRow(ctx, "SELECT "+invCols+" FROM invitations WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1", tenantID, email))
+}
+
+// RevokePendingInvitations revokes every outstanding invitation for an email
+// so only the newest link works.
+func RevokePendingInvitations(ctx context.Context, tx pgx.Tx, tenantID, email string) (int64, error) {
+	ct, err := tx.Exec(ctx, "UPDATE invitations SET revoked_at = now() WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL", tenantID, email)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 // MarkInvitationAccepted sets accepted_at once.
