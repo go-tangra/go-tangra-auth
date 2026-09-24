@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import DirectoryImport from '@/views/admin/DirectoryImport.vue'
-import { directorySearchSchema } from '@/schemas/directory'
+import { directorySearchSchema, directoryImportSchema } from '@/schemas/directory'
 import { router } from '@/router'
 import { useSession } from '@/stores/session'
 import { body, click, mountView, q, stubFetch, type } from './helpers'
@@ -263,5 +263,17 @@ describe('directory import console', () => {
     expect(w.findAll('[data-test="preview-row"]').length).toBe(2)
     expect(q('[data-test="truncation"]').textContent).toMatch(/[Mm]ore entries matched/)
     w.unmount()
+  })
+})
+
+
+describe('directory import limits', () => {
+  it('requires between one and 500 unique identifiers', () => {
+    expect(directoryImportSchema.safeParse({ uids: [] }).success).toBe(false)
+    expect(directoryImportSchema.safeParse({ uids: ['same', 'same'] }).success).toBe(false)
+    expect(directoryImportSchema.safeParse({ uids: [''] }).success).toBe(false)
+    const uids = Array.from({ length: 500 }, (_, i) => String(i))
+    expect(directoryImportSchema.parse({ uids })).toEqual({ uids })
+    expect(directoryImportSchema.safeParse({ uids: [...uids, 'extra'] }).success).toBe(false)
   })
 })

@@ -2,12 +2,14 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, useToast, useConfirm, type Column, type SelectOption } from '@freya/ui'
+import type { components } from '@/api/schema'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage, userStatuses } from '@/api/vocab'
 import { useRoles } from '@/composables/useRoles'
 import InviteDialog from './InviteDialog.vue'
 
 export interface AdminUser extends Record<string, unknown> {
+  directory?: components['schemas']['User']['directory']
   id: string
   email: string
   display_name: string
@@ -90,7 +92,7 @@ const columns: Column<AdminUser>[] = [
           </span>
         </template>
         <template #cell-display_name="{ row }"><span data-test="user-name">{{ row.display_name }}</span></template>
-        <template #cell-status="{ row }"><UiStatusChip :status="row.status" :colors="{ invited: 'warning', deactivated: 'error' }" data-test="status-chip" /></template>
+        <template #cell-status="{ row }"><UiStatusChip :status="row.status" :colors="{ invited: 'warning', deactivated: 'error', imported: 'neutral' }" data-test="status-chip" /><span v-if="row.directory" data-test="origin" :title="`Imported from ${row.directory.connection_name} at ${row.directory.last_imported_at}`" class="ml-2 text-xs text-base-content/70">{{ row.directory.connection_name }}</span></template>
         <template #actions="{ row }">
           <UiButton v-if="row.status === 'active'" size="xs" variant="text" :disabled="busy" data-test="signout" @click="act(row, 'sessions/revoke')">Sign out</UiButton>
           <UiButton v-if="row.status === 'active'" size="xs" variant="text" color="error" :disabled="busy" data-test="deactivate" @click="act(row, 'deactivate')">Deactivate</UiButton>

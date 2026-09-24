@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
 import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiDialog, UiBadge, type Column } from '@freya/ui'
 import { api, ApiError } from '@/api/client'
@@ -70,7 +71,7 @@ onMounted(load)
 
 <template>
   <UiPage title="Directories" data-test="directories">
-    <template #actions><UiButton icon="mdi-plus" :disabled="busy || drawer" data-test="new-directory" @click="openNew">New directory</UiButton></template>
+    <template #actions><RouterLink :to="{ name: 'admin-directory-import' }" class="link link-primary">Import people</RouterLink><UiButton icon="mdi-plus" :disabled="busy || drawer" data-test="new-directory" @click="openNew">New directory</UiButton></template>
     <UiAlert v-if="error && !deleting" kind="error" class="mb-3">{{ error }} <UiButton variant="text" @click="load">Retry</UiButton></UiAlert>
     <UiCard :padded="false">
       <UiDataTable :items="rows" :columns="columns" :loading="loading" caption="Directory connections" empty-title="No directories yet" :row-attrs="() => ({ 'data-test': 'directory-row' })">

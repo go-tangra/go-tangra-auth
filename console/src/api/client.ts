@@ -13,6 +13,17 @@ export type ApiPath = keyof paths
 
 // Wording for the console's own closed-vocabulary reasons (api/openapi/console.yaml).
 registerReasons({
+  no_email: 'The directory entry has no email address.',
+  invalid_email: 'The directory entry has an invalid email address.',
+  email_in_use: 'That email address already belongs to a user.',
+  duplicate_email: 'Another selected entry has the same email address.',
+  already_active: 'This person is already a platform user.',
+  not_found_in_directory: 'This person is no longer in the directory search base.',
+  value_too_long: 'A directory attribute exceeds the allowed length.',
+  multi_valued_uid: 'The directory entry has more than one unique identifier.',
+  invalid_uid: 'The directory entry has an invalid unique identifier.',
+  internal: 'The person could not be imported. Try again.',
+
   invalid_url: 'Enter an ldap:// or ldaps:// URL.',
   invalid_ca: 'Enter a valid PEM CA certificate bundle.',
   invalid_filter: 'Enter a valid LDAP filter.',

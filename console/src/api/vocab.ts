@@ -37,7 +37,7 @@ export const auditEventTypes = [
 
 export type AuditEventType = (typeof auditEventTypes)[number]
 
-export const userStatuses = ['invited', 'active', 'deactivated'] as const
+export const userStatuses = ['invited', 'active', 'deactivated', 'imported'] as const
 
 /** Maps a refusal reason to a sentence for administrators (the kit's vocabulary plus the console's, registered in api/client.ts). */
 export function reasonMessage(reason: string): string {

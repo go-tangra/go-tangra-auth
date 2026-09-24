@@ -26,6 +26,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/invite/accept', name: 'invite-accept', component: () => import('@/views/AcceptInvitation.vue'), meta: { public: true, layout: 'bare' } },
   { path: '/admin/users', name: 'admin-users', component: () => import('@/views/admin/Users.vue'), meta: { roles: ['owner', 'admin'] } },
   { path: '/admin/users/:id', name: 'admin-user', component: () => import('@/views/admin/UserDetail.vue'), meta: { roles: ['owner', 'admin'] } },
+  { path: '/admin/directories/import', name: 'admin-directory-import', component: () => import('@/views/admin/DirectoryImport.vue'), meta: { roles: ['owner', 'admin'] } },
   { path: '/admin/directories', name: 'admin-directories', component: () => import('@/views/admin/Directories.vue'), meta: { roles: ['owner', 'admin'] } },
   { path: '/admin/groups', name: 'admin-groups', component: () => import('@/views/admin/Groups.vue'), meta: { roles: ['owner', 'admin'] } },
   { path: '/admin/groups/:id', name: 'admin-group', component: () => import('@/views/admin/GroupDetail.vue'), meta: { roles: ['owner', 'admin'] } },

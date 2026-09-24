@@ -34,3 +34,16 @@ export const directoryConnectionSchema = z.object({
 })
 export const directoryCreateSchema = directoryConnectionSchema.refine((v) => !!v.bind_password, { path: ['bind_password'], message: 'Enter the bind password.' })
 export type DirectoryInput = z.output<typeof directoryConnectionSchema>
+
+const optionalTrimmed = (value: unknown) => typeof value === 'string' ? value.trim() || undefined : value
+export const directorySearchSchema = z.object({
+  filter: z.preprocess(optionalTrimmed, bounded(4096).optional()),
+  base: z.preprocess(optionalTrimmed, bounded(1024).optional()),
+  scope: z.preprocess(optionalTrimmed, z.enum(['one', 'sub']).optional()),
+})
+export const directoryImportSchema = z.object({
+  uids: z.array(z.string().min(1)).min(1, 'Select at least one person.').max(500, 'Select at most 500 people.').refine((uids) => new Set(uids).size === uids.length, 'Select each person only once.'),
+})
+export type DirectorySearchInput = z.output<typeof directorySearchSchema>
+export type DirectorySearchResult = components['schemas']['SearchResult']
+export type DirectoryImportResult = components['schemas']['ImportResult']
