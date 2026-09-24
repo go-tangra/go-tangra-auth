@@ -113,6 +113,10 @@ func (s *Service) Search(ctx context.Context, actor tenantctx.Actor, tenantID, c
 	if err != nil {
 		return SearchResult{}, err
 	}
+	if err := s.usable(&c); err != nil {
+		s.refused(audit.DirectorySearched, &actor, tenantID, connID, err)
+		return SearchResult{}, err
+	}
 	plan, err := planSearch(&c, &q)
 	if err != nil {
 		if errors.Is(err, ldapdir.ErrInvalidFilter) || errors.Is(err, ldapdir.ErrInvalidBase) {

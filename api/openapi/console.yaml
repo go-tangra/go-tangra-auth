@@ -738,7 +738,7 @@ paths:
   /api/v1/admin/directories/test:
     post:
       operationId: testDirectoryInput
-      summary: Test unsaved settings; connection_id without bind_password reuses that connection's stored password (directory:manage)
+      summary: Test unsaved settings; connection_id without bind_password reuses that connection's stored password only for its own url, tls_mode and ca_pem (directory:manage)
       parameters: [{ $ref: '#/components/parameters/csrf' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryTestInput' } } } }
       responses:
@@ -757,7 +757,7 @@ paths:
         '404': { description: not_found }
     put:
       operationId: updateDirectory
-      summary: Partial update; an omitted bind_password keeps the stored one (directory:manage)
+      summary: Partial update; an omitted bind_password keeps the stored one unless url, tls_mode or ca_pem change (then validation_failed) (directory:manage)
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DirectoryConnectionInput' } } } }
       responses:
@@ -789,7 +789,7 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SearchRequest' } } } }
       responses:
         '200': { description: preview, content: { application/json: { schema: { $ref: '#/components/schemas/SearchResult' } } } }
-        '400': { description: 'invalid_filter (with message, before any network call) | invalid_base | validation_failed', content: { application/json: { schema: { $ref: '#/components/schemas/SearchError' } } } }
+        '400': { description: 'invalid_filter (with message, before any network call) | invalid_base | validation_failed | insecure_transport', content: { application/json: { schema: { $ref: '#/components/schemas/SearchError' } } } }
         '403': { description: forbidden }
         '404': { description: not_found }
         '429': { description: rate_limited }
@@ -803,9 +803,10 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImportRequest' } } } }
       responses:
         '200': { description: per-entry outcomes (partial success), content: { application/json: { schema: { $ref: '#/components/schemas/ImportResult' } } } }
-        '400': { description: validation_failed }
+        '400': { description: validation_failed | insecure_transport }
         '403': { description: forbidden }
         '404': { description: not_found }
+        '429': { description: rate_limited }
         '502': { description: 'unreachable | tls_failed | invalid_credentials | base_not_found | directory_error (nothing imported)' }
         '504': { description: 'timeout (nothing imported)' }
   /authorize:

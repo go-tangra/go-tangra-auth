@@ -612,8 +612,12 @@ func TestValidFieldsAndDefaults(t *testing.T) {
 		t.Fatalf("time above deployment max: %v", err)
 	}
 
-	// Clearing the CA with "" returns to system roots.
-	cleared, err := f.svc.Update(ctx, a, crudTenantA, v.ID, Input{CAPEM: sp("")})
+	// Clearing the CA with "" returns to system roots; a trust change needs
+	// the bind password again (T070).
+	if _, err := f.svc.Update(ctx, a, crudTenantA, v.ID, Input{CAPEM: sp("")}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("clear ca without password: %v", err)
+	}
+	cleared, err := f.svc.Update(ctx, a, crudTenantA, v.ID, Input{CAPEM: sp(""), BindPassword: sp(crudPW2)})
 	if err != nil || cleared.CAPEMSet || f.row(t, crudTenantA, v.ID).CAPEM != "" {
 		t.Fatalf("clear ca: %v", err)
 	}

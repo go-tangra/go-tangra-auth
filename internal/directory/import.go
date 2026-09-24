@@ -121,8 +121,21 @@ func (s *Service) Import(ctx context.Context, actor tenantctx.Actor, tenantID, c
 	if err != nil {
 		return ImportResult{}, err
 	}
+	if err := s.usable(&c); err != nil {
+		s.refused(audit.DirectoryImported, &actor, tenantID, connID, err)
+		return ImportResult{}, err
+	}
 	base, err := ldapdir.CompileUserFilter(c.BaseFilter)
 	if err != nil {
+		return ImportResult{}, err
+	}
+	// One import is one outbound session: it counts against the same
+	// per-tenant limit as tests and searches, or it would be an unmetered
+	// dial probe (T070).
+	if err := s.allow(ctx, tenantID); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			s.emitImported(&actor, tenantID, connID, "refused", ErrRateLimited.Error(), nil)
+		}
 		return ImportResult{}, err
 	}
 	pw, err := s.testPassword(&Input{}, &c, tenantID, connID)

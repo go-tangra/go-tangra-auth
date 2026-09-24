@@ -944,7 +944,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test unsaved settings; connection_id without bind_password reuses that connection's stored password (directory:manage) */
+        /** Test unsaved settings; connection_id without bind_password reuses that connection's stored password only for its own url, tls_mode and ca_pem (directory:manage) */
         post: operations["testDirectoryInput"];
         delete?: never;
         options?: never;
@@ -961,7 +961,7 @@ export interface paths {
         };
         /** One connection including ca_pem (directory:manage) */
         get: operations["getDirectory"];
-        /** Partial update; an omitted bind_password keeps the stored one (directory:manage) */
+        /** Partial update; an omitted bind_password keeps the stored one unless url, tls_mode or ca_pem change (then validation_failed) (directory:manage) */
         put: operations["updateDirectory"];
         post?: never;
         delete?: never;
@@ -3525,7 +3525,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResult"];
                 };
             };
-            /** @description invalid_filter (with message, before any network call) | invalid_base | validation_failed */
+            /** @description invalid_filter (with message, before any network call) | invalid_base | validation_failed | insecure_transport */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3597,7 +3597,7 @@ export interface operations {
                     "application/json": components["schemas"]["ImportResult"];
                 };
             };
-            /** @description validation_failed */
+            /** @description validation_failed | insecure_transport */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3613,6 +3613,13 @@ export interface operations {
             };
             /** @description not_found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -31,6 +32,13 @@ var (
 	ErrNotFound          = errors.New("not_found")
 	ErrRateLimited       = errors.New("rate_limited")
 )
+
+// errCredentialRequired refuses reusing a stored bind password for a changed
+// destination or trust anchor (url, tls_mode, ca_pem): without it an
+// administrator who cannot read the password could re-point the connection at
+// a server they control and receive it in the bind (T070). It is a
+// validation_failed to callers and audited as a refusal.
+var errCredentialRequired = fmt.Errorf("%w: bind password required for a changed target", ErrValidation)
 
 // Connection kinds (attribute presets) and field bounds (contracts §A).
 const (
@@ -344,6 +352,10 @@ func (s *Service) Update(ctx context.Context, actor tenantctx.Actor, tenantID, i
 		s.refused(audit.DirectoryConnectionUpdated, &actor, tenantID, id, err)
 		return View{}, err
 	}
+	if in.BindPassword == nil && targetChanged(&old, &c) {
+		s.refused(audit.DirectoryConnectionUpdated, &actor, tenantID, id, errCredentialRequired)
+		return View{}, errCredentialRequired
+	}
 	if in.BindPassword != nil {
 		enc, err := s.seal(tenantID, id, *in.BindPassword)
 		if err != nil {
@@ -410,6 +422,12 @@ func (s *Service) lookup(ctx context.Context, actor *tenantctx.Actor, tenantID, 
 			Details: map[string]any{"target_tenant": other.TenantID}})
 	}
 	return store.DirectoryConnection{}, ErrNotFound
+}
+
+// targetChanged reports whether c points the stored connection old at another
+// server or trusts another CA; the stored password may then not be reused.
+func targetChanged(old, c *store.DirectoryConnection) bool {
+	return old.URL != c.URL || old.TLSMode != c.TLSMode || old.CAPEM != c.CAPEM
 }
 
 // apply copies the given input fields onto c (nil = keep).
@@ -503,6 +521,17 @@ func (s *Service) checkTarget(rawURL, mode string) error {
 	return nil
 }
 
+// usable refuses a stored plain connection that this deployment no longer
+// allows (production, or the development opt-out withdrawn) before its
+// password is unsealed: the save-time check alone would keep binding in clear
+// text after the setting changed (T070).
+func (s *Service) usable(c *store.DirectoryConnection) error {
+	if c.TLSMode == ldapdir.TLSModePlain && (s.d.Production || !s.d.Config.AllowPlaintext) {
+		return ErrInsecureTransport
+	}
+	return nil
+}
+
 // maxLimits returns the deployment's per-search maxima, bounded by the API
 // ceilings (1000 entries, 60 s).
 func (s *Service) maxLimits() (size, seconds int) {
@@ -585,8 +614,10 @@ func validDN(dn string) bool {
 	return true
 }
 
-// canonicalFilter compiles an RFC 4515 filter and returns its canonical
-// form; "" (no base filter) stays "".
+// canonicalFilter checks a base filter with the same policy as a search's
+// user filter (length, depth, components, attribute names, no :dn:) and
+// returns its canonical form; "" (no base filter) stays "". A filter saved
+// with the bare compiler would pass here and then fail every search (T070).
 func canonicalFilter(f string) (string, error) {
 	if strings.TrimSpace(f) == "" {
 		return "", nil
@@ -594,15 +625,11 @@ func canonicalFilter(f string) (string, error) {
 	if len(f) > maxFilterLen {
 		return "", ldapdir.ErrInvalidFilter
 	}
-	p, err := ldap.CompileFilter(f)
+	c, err := ldapdir.CompileUserFilter(f)
 	if err != nil {
 		return "", ldapdir.ErrInvalidFilter
 	}
-	out, err := ldap.DecompileFilter(p)
-	if err != nil || len(out) > maxFilterLen {
-		return "", ldapdir.ErrInvalidFilter
-	}
-	return out, nil
+	return c.String(), nil
 }
 
 // changedFields names (never values) the fields an update changed.
@@ -633,8 +660,8 @@ func changedFields(old, c *store.DirectoryConnection, credential bool) []string 
 	return out
 }
 
-// refused audits policy refusals (D14): plaintext, a refused target and the
-// per-tenant cap. Plain input mistakes are not audited.
+// refused audits policy refusals (D14): plaintext, a refused target, the
+// per-tenant cap and a stored password offered to a changed target. Plain input mistakes are not audited.
 func (s *Service) refused(t audit.EventType, actor *tenantctx.Actor, tenantID, id string, err error) {
 	var reason string
 	switch {
@@ -644,6 +671,8 @@ func (s *Service) refused(t audit.EventType, actor *tenantctx.Actor, tenantID, i
 		reason = ldapdir.Reason(err)
 	case errors.Is(err, ErrLimitReached):
 		reason = ErrLimitReached.Error()
+	case errors.Is(err, errCredentialRequired):
+		reason = "bind_password_required"
 	default:
 		return
 	}

@@ -152,6 +152,13 @@ an allowed range.
   is no skip-verify.
 - `tls_mode: plain` is accepted only when `directory.allow_plaintext: true`
   and the environment is not production. Use it only for the local stack.
+  This is also checked on every use: once the opt-out is removed, tests,
+  searches and imports on existing plain connections fail with
+  `insecure_transport`.
+- Editing a connection keeps its stored bind password, unless the edit
+  changes `url`, `tls_mode` or `ca_pem`. Those edits (and unsaved tests
+  that change them) need the password again and otherwise fail with
+  `validation_failed`.
 - Bind passwords are sealed with the KEK (associated data
   `ldap-bind:<tenant>:<connection>`). **Rotating the KEK makes stored bind
   passwords unreadable**: tests and searches on those connections fail with

@@ -211,7 +211,7 @@ describe('directories console', () => {
     expect(pw.value).toBe('')
     expect(pw.type).toBe('password')
     expect(pw.autocomplete).toBe('new-password')
-    expect(q('[data-test="bind-password"] .helper-text').textContent).toBe('stored — leave blank to keep')
+    expect(q('[data-test="bind-password"] .helper-text').textContent).toBe('stored — leave blank to keep; required when the URL, TLS mode or CA changes')
     await type('[data-test="directory-name"] input', 'Corp AD 2')
     await click('[data-test="save-directory"]')
     const call = posted(fetch, (c) => String(c[0]) === '/api/v1/admin/directories/d1')

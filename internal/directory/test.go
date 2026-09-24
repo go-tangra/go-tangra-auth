@@ -80,7 +80,12 @@ func (s *Service) test(ctx context.Context, actor *tenantctx.Actor, tenantID str
 		}
 		c = stored
 	}
+	old := c
 	apply(&c, in)
+	if connID != "" && in.BindPassword == nil && targetChanged(&old, &c) {
+		s.refused(audit.DirectoryConnectionTested, actor, tenantID, connID, errCredentialRequired)
+		return TestResult{}, errCredentialRequired
+	}
 	targetErr, err := s.checkTestTarget(&c)
 	if err != nil {
 		s.refused(audit.DirectoryConnectionTested, actor, tenantID, connID, err)

@@ -70,7 +70,7 @@ async function test(): Promise<void> {
         <UiCheckbox v-bind="form.field('allow_tls12')" label="Allow TLS 1.2 for this connection" hint="TLS 1.3 is required by default. Certificate verification always stays enabled." />
         <UiTextarea v-bind="form.field('ca_pem')" label="Trusted CA certificates (PEM)" hint="Leave empty to use system roots. Clearing this field removes a saved CA bundle." />
         <UiInput v-bind="form.field('bind_dn')" label="Bind DN" required data-test="bind-dn" />
-        <UiInput v-bind="form.field('bind_password')" label="Bind password" type="password" autocomplete="new-password" :hint="connection?.bind_password_set ? 'stored — leave blank to keep' : undefined" :required="!connection" data-test="bind-password" />
+        <UiInput v-bind="form.field('bind_password')" label="Bind password" type="password" autocomplete="new-password" :hint="connection?.bind_password_set ? 'stored — leave blank to keep; required when the URL, TLS mode or CA changes' : undefined" :required="!connection" data-test="bind-password" />
         <UiInput v-bind="form.field('base_dn')" label="Search base DN" required data-test="base-dn" />
         <UiTextarea v-bind="form.field('base_filter')" label="Base filter" hint="Every search is restricted by this filter." />
         <fieldset class="grid grid-cols-1 gap-3 md:grid-cols-2">
