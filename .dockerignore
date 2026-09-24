@@ -1,0 +1,18 @@
+# Generated from go-freya tools/split/templates/dockerignore.tmpl.
+.git
+.github
+**/node_modules
+**/dist
+**/dist-remote
+**/coverage
+**/test-results
+**/playwright-report
+**/*.test
+**/coverage.out
+bin/
+go.work
+go.work.sum
+/authsvc
+.artifacts
+console/.mf
+deploy/dev-kek.b64

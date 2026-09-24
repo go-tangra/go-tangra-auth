@@ -1,47 +1,52 @@
 # syntax=docker/dockerfile:1
-# Auth service image: builds the console web UI, embeds it (-tags console remote),
-# and produces a slim runtime carrying authsvc. Build context is the repo root so
-# the module's replace directives (../.. , ../gateway, ../lcm) resolve.
+# go-tangra-auth (auth service, go-tangra v4) - standalone image.
+# Build context: the repository root. Generated from go-freya tools/split/templates/Dockerfile.tmpl.
+#
+#   docker buildx build --secret id=npm_token,env=NODE_AUTH_TOKEN \
+#     --build-arg APP_VERSION=4.0.0 --build-arg VCS_REF=$(git rev-parse HEAD) -t go-tangra-auth:dev .
+#
+# npm_token is a GitHub token with read:packages for @go-tangra/ui on npm.pkg.github.com.
+# It is mounted only for the npm ci step and written to a tmpfs, so it never lands in a layer.
 
 FROM node:22-alpine AS ui
-# The front-ends form one npm workspace (root package-lock.json) with the shared
-# kit at ui/kit; install the workspace, build the kit, then the console (+ remote).
-WORKDIR /w
-COPY package.json package-lock.json .npmrc ./
-COPY ui/kit/package.json ui/kit/
-COPY services/gateway/shell/package.json services/gateway/shell/
-COPY services/auth/console/package.json services/auth/console/
-COPY services/asset/ui/package.json services/asset/ui/
-COPY services/inventory/ui/package.json services/inventory/ui/
-COPY services/ipam/ui/package.json services/ipam/ui/
-COPY services/paperless/ui/package.json services/paperless/ui/
-COPY services/deployer/ui/package.json services/deployer/ui/
-COPY services/lcm/ui/package.json services/lcm/ui/
-COPY services/notification/ui/package.json services/notification/ui/
-COPY services/warden/ui/package.json services/warden/ui/
-COPY services/ticket/ui/package.json services/ticket/ui/
-COPY services/dns/ui/package.json services/dns/ui/
-RUN npm ci --no-audit --no-fund
-COPY ui/ ./ui/
-RUN npm run -w ui/kit build
-COPY services/auth/console/ ./services/auth/console/
-RUN npm run -w services/auth/console build && npm run -w services/auth/console build:remote
+WORKDIR /src/console
+COPY console/package.json console/package-lock.json ./
+RUN --mount=type=secret,id=npm_token,required=true \
+    --mount=type=tmpfs,target=/run/npmrc \
+    --mount=type=cache,target=/root/.npm \
+    set -eu; \
+    printf '@go-tangra:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\nignore-scripts=true\nfund=false\naudit=false\n' \
+      "$(cat /run/secrets/npm_token)" > /run/npmrc/.npmrc; \
+    NPM_CONFIG_USERCONFIG=/run/npmrc/.npmrc npm ci --no-audit --no-fund
+COPY console/ ./
+RUN npm run build && npm run build:remote
 
 FROM golang:1.26-alpine AS build
 RUN apk add --no-cache git ca-certificates
 WORKDIR /src
+# GOWORK=off: service repositories never use a go.work; dependencies come from published tags.
+ENV CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOWORK=off
+COPY go.mod go.sum ./
+COPY sdk/go.mod sdk/go.sum ./sdk/
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-COPY --from=ui /w/services/auth/console/dist ./services/auth/console/dist
-COPY --from=ui /w/services/auth/console/dist-remote ./services/auth/console/dist-remote
-WORKDIR /src/services/auth
-ENV CGO_ENABLED=0 GOFLAGS=-buildvcs=false
-RUN go build -tags "console remote" -o /out/authsvc ./cmd/authsvc
+COPY --from=ui /src/console/dist ./console/dist
+COPY --from=ui /src/console/dist-remote ./console/dist-remote
+ARG APP_VERSION=dev
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -tags "console remote" -ldflags "-s -w -X main.version=${APP_VERSION}" -o /out/authsvc ./cmd/authsvc
 
 FROM alpine:3.20
+ARG APP_VERSION=dev
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.source="https://github.com/go-tangra/go-tangra-auth" \
+      org.opencontainers.image.title="go-tangra-auth" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
 RUN apk add --no-cache ca-certificates postgresql-client && adduser -D -u 10001 app
 COPY --from=build /out/authsvc /usr/local/bin/
-COPY services/auth/deploy /app/deploy
+COPY deploy /app/deploy
 WORKDIR /app
 USER app
 ENTRYPOINT ["authsvc"]
-CMD ["-config", "deploy/dev.yaml"]
+CMD ["-config","deploy/dev.yaml"]
