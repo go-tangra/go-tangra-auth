@@ -52,7 +52,7 @@ async function choose(sel: string, value: string): Promise<void> {
   await flushPromises()
 }
 
-const posted = (fetch: ReturnType<typeof stubFetch>, predicate: (c: unknown[]) => boolean) => fetch.mock.calls.find(predicate)
+const posted = (fetch: ReturnType<typeof stubFetch>, predicate: (c: unknown[]) => boolean) => fetch.mock.calls.find((c) => c[1]?.method !== 'GET' && predicate(c))
 
 describe('directory connection schema', () => {
   const minimal = {
@@ -96,6 +96,13 @@ describe('directory connection schema', () => {
     expect(bad(directoryConnectionSchema.safeParse({ ...minimal, time_limit_seconds: 61 }))).toEqual(['time_limit_seconds:Between 1 and 60.'])
     expect(bad(directoryConnectionSchema.safeParse({ ...minimal, kind: 'novell' }))[0]).toMatch(/^kind:/)
     expect(bad(directoryConnectionSchema.safeParse({ ...minimal, tls_mode: 'tls' }))[0]).toMatch(/^tls_mode:/)
+  })
+
+  it('rejects URL credentials and invalid attributes, and preserves explicit clearing and secret whitespace', () => {
+    expect(directoryConnectionSchema.safeParse({ ...minimal, url: 'ldaps://reader:secret@dc.corp.test' }).success).toBe(false)
+    expect(directoryConnectionSchema.safeParse({ ...minimal, attributes: { uid: 'uid)(mail=*' } }).success).toBe(false)
+    expect(directoryConnectionSchema.safeParse({ ...minimal, ca_pem: 'x'.repeat(65537) }).success).toBe(false)
+    expect(directoryConnectionSchema.parse({ ...minimal, bind_password: ' secret ', ca_pem: '', base_filter: '' })).toMatchObject({ bind_password: ' secret ', ca_pem: '', base_filter: '' })
   })
 
   it('requires the password only on create; on update blank means keep', () => {
@@ -260,6 +267,25 @@ describe('directories console', () => {
     expect('bind_password' in sent).toBe(false)
     expect(q('[data-test="test-step"]').textContent).toBe('TLS')
     expect(q('[data-test="test-reason"]').textContent).toBe('The TLS handshake failed.')
+    w.unmount()
+  })
+
+  it('loads the saved CA, allows clearing it, and keeps a refused edit open for correction', async () => {
+    const fetch = stubFetch((url, init) => {
+      if (url === '/api/v1/admin/directories/d1' && init?.method === 'GET') return { status: 200, body: { ...ad, ca_pem: 'saved public CA' } }
+      if (init?.method === 'PUT') return { status: 400, body: { reason: 'invalid_ca' } }
+      return { status: 200, body: { items: [ad] } }
+    })
+    const w = mountView(Directories)
+    await flushPromises()
+    await w.find('[data-test="edit"]').trigger('click')
+    await flushPromises()
+    expect(q<HTMLTextAreaElement>('#ca_pem').value).toBe('saved public CA')
+    await type('#ca_pem', '')
+    await click('[data-test="save-directory"]')
+    expect(body(posted(fetch, (c) => (c[1] as RequestInit).method === 'PUT'))).toMatchObject({ ca_pem: '' })
+    expect(q('[data-test="directory-drawer"]').textContent).toContain('Enter a valid PEM CA certificate bundle.')
+    expect(q<HTMLInputElement>('[data-test="bind-password"] input').value).toBe('')
     w.unmount()
   })
 

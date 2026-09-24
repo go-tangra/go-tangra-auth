@@ -13,6 +13,19 @@ export type ApiPath = keyof paths
 
 // Wording for the console's own closed-vocabulary reasons (api/openapi/console.yaml).
 registerReasons({
+  invalid_url: 'Enter an ldap:// or ldaps:// URL.',
+  invalid_ca: 'Enter a valid PEM CA certificate bundle.',
+  invalid_filter: 'Enter a valid LDAP filter.',
+  invalid_base: 'Enter a valid search base DN.',
+  insecure_transport: 'Use LDAPS or StartTLS. Plaintext is only available in development.',
+  target_refused: 'The directory target is not allowed by the platform policy.',
+  unreachable: 'The directory could not be reached.',
+  timeout: 'The directory request timed out.',
+  tls_failed: 'The TLS handshake failed.',
+  base_not_found: 'The search base was not found in the directory.',
+  directory_error: 'The directory request failed.',
+  duplicate: 'A directory with that name already exists.',
+  limit_reached: 'The organisation has reached its directory connection limit.',
   last_owner: 'The last owner of an organisation cannot be removed or demoted.',
   self_escalation: 'You can only grant permissions you hold yourself.',
   not_found: 'That record does not exist in your organisation.',
