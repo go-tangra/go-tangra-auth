@@ -1,92 +1,102 @@
-# services/auth — tenant authentication & authorization
+# go-tangra-auth
 
-A multi-tenant authentication and authorization service built on the Freya
-framework (`github.com/go-tangra/go-tangra/v4`). It signs users in through a Vue/Vuetify
-console, issues short-lived EdDSA tokens that platform services verify offline,
-answers fine-grained authorization decisions through OpenFGA and gives tenant
-administrators and platform operators an audited management surface.
+Tenant authentication and authorization service for the
+[go-tangra v4 platform](https://github.com/go-tangra/go-tangra).
 
-Design: `specs/002-tenant-auth-service/` (spec, plan, data model, contracts).
+It signs users in through its own console, issues short-lived EdDSA tokens that
+platform services verify offline, answers fine-grained authorization decisions
+through OpenFGA, and gives tenant administrators and platform operators an
+audited management surface: tenants, users, invitations, MFA and recovery,
+roles, groups, user profiles and LDAP directory import.
+
 Security model: [`docs/security-model.md`](docs/security-model.md).
 Operations: [`docs/operations.md`](docs/operations.md).
+Design history: `specs/002-tenant-auth-service`, `specs/004-groups-user-profiles`,
+`specs/016-auth-ldap-import`.
 
-Feature 004 adds tenant **groups** (roles assignable to groups; effective roles
-are the union of direct and group roles, enforced through the OpenFGA model) and
-user **profiles** (first name, last name, phone, avatar) exposed to the platform
-through the session identity and the gateway's `/gateway/v1/me`. See
-`docs/security-model.md`. Feature 005 adds member-level `GET /api/v1/users?q=`
-and `GET /api/v1/roles` for subject pickers, and `builtin_grants` on
-`RegisterPermissions` so modules seed their own role grants.
+## Place in the platform
 
-Feature 016 adds **LDAP directory import** (`directory:manage`). Tenant
-administrators connect Active Directory, OpenLDAP or another LDAP directory
-over TLS 1.3 (with a per-connection TLS 1.2 opt-in and optional CA pinning;
-bind password sealed with the KEK). They search the directory with a
-validated RFC 4515 filter, preview the results and import selected people as
-inactive `imported` users. An imported user cannot sign in and looks like a
-non-existent account until an administrator **activates** them with an
-ordinary invitation, choosing their roles and groups. Outbound dials go
-through a dial-time target policy (loopback, link-local and metadata
-addresses are always refused; operators list platform CIDRs in
-`directory.targets.deny_cidrs`). Plain invitations now apply the same
-role-escalation check as role assignment. See `docs/security-model.md` and
-`docs/operations.md`; design in `specs/016-auth-ldap-import/`.
+```
+go-tangra/go-tangra          platform module + @go-tangra/ui kit
+        |
+go-tangra-auth  <---->  go-tangra-portal (gateway)  <---->  modules (lcm, warden, ...)
+```
+
+- Built on `github.com/go-tangra/go-tangra/v4` (mTLS transports, identity,
+  service policy, audit, observability).
+- The portal gateway fronts the console and the browser API. Modules register
+  their permissions with auth and verify tokens with the auth SDK.
+- Registers with the gateway through the portal SDK
+  (`github.com/go-tangra/go-tangra-portal/sdk/v4`).
+
+## Modules in this repository
+
+| Module | Path | Consumers |
+|---|---|---|
+| `github.com/go-tangra/go-tangra-auth/v4` | `/` | the service (`cmd/authsvc`) and `pkg/authmanifest` |
+| `github.com/go-tangra/go-tangra-auth/sdk/v4` | `sdk/` | other services: the `auth.v1` protobuf API and `pkg/authclient` (offline JWT verification and revocation feed) |
+
+The service builds against the in-repo SDK through
+`replace github.com/go-tangra/go-tangra-auth/sdk/v4 => ./sdk`. Consumers use the
+SDK's published `sdk/vX.Y.Z` tag.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `cmd/authsvc` | service binary (`run`, `bootstrap`) |
-| `internal/app` | wiring: config → Freya → stores → services → HTTP/gRPC |
-| `internal/{user,session,token,password,mfa,invite,tenant,authz,oauth}` | security logic (unit-tested to 100 % where the constitution requires it) |
-| `internal/*/…db` and `internal/store` | SQL bindings (TimescaleDB, RLS); covered by the tagged integration suite |
-| `internal/httpapi`, `internal/grpcapi` | browser API (OpenAPI-validated) and `auth.v1` service API |
-| `pkg/authclient` | verifier library for downstream services (offline JWT + revocation feed) |
-| `console` | Vue 3 + Vuetify + TypeScript console (served at `/console/`) |
-| `api/openapi`, `api/proto` | contracts (`console.yaml`, `auth.v1`, `demo.v1`) |
-| `deploy` | compose stack, dev config, policies |
+| `cmd/authsvc` | service binary (serve, `bootstrap`, `version`) |
+| `internal/app` | wiring: config, platform, stores, services, HTTP/gRPC |
+| `internal/...` | sessions, tokens, passwords, MFA, invitations, tenants, authz, OAuth, directory import, and their SQL bindings |
+| `console` | Vue 3 + FlyonUI console on `@go-tangra/ui` (served at `/console/`, plus a federated remote) |
+| `api/openapi`, `sdk/api/proto` | contracts (`console.yaml`, `auth.v1`) |
+| `deploy` | compose stack, dev configuration, policies |
 | `tests/{contract,fuzz,integration}` | contract, fuzz and Docker-backed integration suites |
 
-## Run it
+## Build and test
+
+You need Go 1.26, Node 22, Docker (for integration tests and the image), and a
+GitHub token with `read:packages` to install `@go-tangra/ui` from GitHub Packages.
 
 ```bash
-make -C services/auth compose-up            # TimescaleDB, Valkey, OpenFGA, mailpit
+go build ./... && go vet ./... && go test -race ./...
+(cd sdk && go vet ./... && go test -race ./...)
+make test-integration                     # -tags integration, needs Docker
+make lint cover fuzz redaction-scan vuln
+
+cd console
+export NODE_AUTH_TOKEN=$(gh auth token)   # console/.npmrc only references this variable
+npm ci && npm run lint && npm run test:unit && npm run build && npm run build:remote
+```
+
+The unit coverage gate requires at least 80 % overall and 100 % for the
+security-critical packages. Generated code, SQL bindings and wiring are covered
+by the integration suite instead.
+
+## Run locally
+
+```bash
+make compose-up                           # TimescaleDB, Valkey, OpenFGA, Mailpit
 go run ./cmd/authsvc bootstrap -config deploy/dev.yaml -operator-email ops@example.org
-go run ./cmd/authsvc -config deploy/dev.yaml
-(cd console && npm ci && npm run build)      # then rebuild the service with -tags console
+go run -tags "console remote" ./cmd/authsvc -config deploy/dev.yaml   # after the console build
 ```
 
-Quickstart with expected results: `specs/002-tenant-auth-service/quickstart.md`.
+## Container image
 
-## Gates
+The image is `ghcr.io/go-tangra/go-tangra-auth`, built by `.github/workflows/ci.yaml`.
 
 ```bash
-make -C services/auth lint cover fuzz        # vet, golangci-lint, unit coverage gate, fuzz smoke
-make -C services/auth test-integration       # -tags integration (needs Docker)
-make -C services/auth redaction-scan         # secrets never reach logs/audit/outbox/errors
-(cd services/auth/console && npm run lint && npm run test:unit && npm run test:e2e)
+docker buildx build --secret id=npm_token,env=NODE_AUTH_TOKEN \
+  --build-arg APP_VERSION=4.0.0 -t go-tangra-auth:dev .
+docker run --rm go-tangra-auth:dev version
 ```
 
-The unit coverage gate requires ≥ 80 % overall and 100 % for
-`internal/{token,session,password,mfa,tenantctx}`; generated code, SQL
-bindings and wiring are excluded from the unit gate and exercised by the
-integration suite instead.
+The image runs `authsvc -config deploy/dev.yaml` as user `app` (uid 10001).
+Production deployments mount their own configuration.
 
-## Moving to its own repository
+## Versioning
 
-The service is a standalone Go module (`services/auth/go.mod`) with a `replace`
-directive pointing at the framework. To split it out:
-
-1. Copy `services/auth` to the new repository root; keep `go.mod`'s module path
-   or rename it and update the import paths (`internal/...`, `pkg/authclient`,
-   `api/proto/...`).
-2. Replace `replace github.com/go-tangra/go-tangra/v4 => ../..` with a tagged
-   `require github.com/go-tangra/go-tangra/v4 vX.Y.Z`.
-3. Move `.github/workflows/ci.yml`'s `auth-service*` jobs into the new
-   repository's workflow; they only reference paths inside the service.
-4. Regenerate the console API types (`npm run gen:api`) and protobuf code
-   (`buf generate`) — both read files inside the service.
-5. Downstream services import `pkg/authclient` from the new module path.
-
-Nothing in the framework imports the service; nothing in the service reaches
-outside its directory except the `replace` directive.
+- Service releases are tagged `vX.Y.Z`. CI publishes the image as `X.Y.Z`,
+  `X.Y`, `X` and `sha-<short>`. There is no `latest` tag.
+- The SDK is released separately with `sdk/vX.Y.Z` tags. These tags never build an image.
+- v4.0.0 is the first release of this repository. It matches the go-tangra v4
+  platform major version.
