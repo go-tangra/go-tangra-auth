@@ -376,3 +376,178 @@ func assertNoPassword(t *testing.T, where string, s *openapi3.Schema, seen map[*
 		}
 	}
 }
+
+// importRoutes are the search and import routes of the LDAP import (feature
+// 016 US2, contract A).
+var importRoutes = []httpapi.Route{
+	{Method: "POST", Path: "/api/v1/admin/directories/{id}/search"},
+	{Method: "POST", Path: "/api/v1/admin/directories/{id}/import"},
+}
+
+// TestOpenAPIDirectoryImport pins the search/import surface and the users
+// list changes: routes declared with CSRF and a uuid id, closed request
+// bodies referencing SearchRequest/ImportRequest, 200 SearchResult /
+// ImportResult, the documented refusals, and User.status gaining "imported"
+// with the directory origin and pending invitation id.
+func TestOpenAPIDirectoryImport(t *testing.T) {
+	doc, err := httpapi.LoadDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBody := map[string]string{importRoutes[0].Path: "SearchRequest", importRoutes[1].Path: "ImportRequest"}
+	wantResp := map[string]string{importRoutes[0].Path: "SearchResult", importRoutes[1].Path: "ImportResult"}
+	wantCodes := map[string][]string{importRoutes[0].Path: {"200", "400", "429", "502", "504"}, importRoutes[1].Path: {"200", "400", "502", "504"}}
+	for _, r := range importRoutes {
+		op := operation(doc, r)
+		if op == nil {
+			t.Errorf("%s: not declared", r)
+			continue
+		}
+		if !hasCSRF(op) {
+			t.Errorf("%s: mutation without the required X-CSRF-Token header", r)
+		}
+		if !hasUUIDPathID(op) {
+			t.Errorf("%s: path parameter id must be a required uuid", r)
+		}
+		if ref := bodyRef(op); ref != "#/components/schemas/"+wantBody[r.Path] {
+			t.Errorf("%s: request body must be %s, got %q", r, wantBody[r.Path], ref)
+		}
+		if ref := responseRef(op, "200"); ref != "#/components/schemas/"+wantResp[r.Path] {
+			t.Errorf("%s: 200 must be %s, got %q", r, wantResp[r.Path], ref)
+		}
+		for _, code := range wantCodes[r.Path] {
+			if op.Responses.Value(code) == nil {
+				t.Errorf("%s: response %s not declared", r, code)
+			}
+		}
+		for code, resp := range op.Responses.Map() {
+			if resp.Value == nil {
+				continue
+			}
+			for _, mt := range resp.Value.Content {
+				if mt.Schema != nil && mt.Schema.Value != nil {
+					assertNoPassword(t, r.String()+" "+code, mt.Schema.Value, map[*openapi3.Schema]bool{})
+				}
+			}
+		}
+	}
+	// A refused filter carries the parser's position message next to the reason.
+	if op := operation(doc, importRoutes[0]); op != nil {
+		if s := responseSchema(op, "400"); s == nil || s.Properties["reason"] == nil || s.Properties["message"] == nil {
+			t.Errorf("%s: 400 must document reason and message", importRoutes[0])
+		}
+	}
+
+	schemas := doc.Components.Schemas
+	sreq := schemaValue(t, schemas, "SearchRequest")
+	sres := schemaValue(t, schemas, "SearchResult")
+	ireq := schemaValue(t, schemas, "ImportRequest")
+	ires := schemaValue(t, schemas, "ImportResult")
+	usr := schemaValue(t, schemas, "User")
+
+	if sreq != nil {
+		assertClosed(t, "SearchRequest", sreq, map[*openapi3.Schema]bool{})
+		assertProps(t, "SearchRequest", sreq, "filter", "base", "scope")
+		if len(sreq.Required) != 0 {
+			t.Errorf("SearchRequest: every field is optional, got required %v", sreq.Required)
+		}
+		assertMaxLength(t, "SearchRequest.filter", sreq.Properties["filter"], 4096)
+		assertMaxLength(t, "SearchRequest.base", sreq.Properties["base"], 1024)
+		assertEnum(t, "SearchRequest.scope", sreq.Properties["scope"], "one", "sub")
+	}
+	if sres != nil {
+		assertProps(t, "SearchResult", sres, "items", "truncated", "out_of_scope", "effective_filter")
+		assertType(t, "SearchResult.truncated", sres.Properties["truncated"], "boolean")
+		assertType(t, "SearchResult.out_of_scope", sres.Properties["out_of_scope"], "integer")
+		assertType(t, "SearchResult.effective_filter", sres.Properties["effective_filter"], "string")
+		if it := arrayItems(sres.Properties["items"]); it == nil {
+			t.Error("SearchResult.items must be an array of objects")
+		} else {
+			assertProps(t, "SearchResult.items[]", it, "uid", "dn", "email", "display_name", "first_name", "last_name", "status", "user_id", "reason")
+			assertEnum(t, "SearchResult.items[].status", it.Properties["status"], "new", "existing_user", "imported", "invalid")
+			for _, f := range []string{"email", "user_id", "reason"} {
+				if p := it.Properties[f]; p != nil && p.Value != nil && !p.Value.Nullable {
+					t.Errorf("SearchResult.items[].%s must be nullable", f)
+				}
+			}
+			if p := it.Properties["user_id"]; p != nil && p.Value != nil && p.Value.Format != "uuid" {
+				t.Error("SearchResult.items[].user_id must be a uuid")
+			}
+		}
+	}
+	if ireq != nil {
+		assertClosed(t, "ImportRequest", ireq, map[*openapi3.Schema]bool{})
+		assertProps(t, "ImportRequest", ireq, "uids")
+		if !slices.Contains(ireq.Required, "uids") {
+			t.Error("ImportRequest.uids must be required")
+		}
+		if u := ireq.Properties["uids"]; u == nil || u.Value == nil || !u.Value.Type.Is("array") {
+			t.Error("ImportRequest.uids must be an array")
+		} else {
+			v := u.Value
+			if v.MinItems != 1 || v.MaxItems == nil || *v.MaxItems != 500 || !v.UniqueItems {
+				t.Errorf("ImportRequest.uids must be 1..500 unique items, got %d..%v unique=%v", v.MinItems, v.MaxItems, v.UniqueItems)
+			}
+			assertType(t, "ImportRequest.uids[]", v.Items, "string")
+		}
+	}
+	if ires != nil {
+		assertProps(t, "ImportResult", ires, "created", "updated", "skipped", "failed")
+		for f, fields := range map[string][]string{"created": {"uid", "user_id"}, "updated": {"uid", "user_id"}, "skipped": {"uid", "reason"}, "failed": {"uid", "reason"}} {
+			if it := arrayItems(ires.Properties[f]); it == nil {
+				t.Errorf("ImportResult.%s must be an array of objects", f)
+			} else {
+				assertProps(t, "ImportResult."+f+"[]", it, fields...)
+			}
+		}
+	}
+	if usr != nil {
+		assertEnum(t, "User.status", usr.Properties["status"], "invited", "active", "deactivated", "locked", "imported")
+		if p := usr.Properties["invitation_id"]; p == nil || p.Value == nil || !p.Value.Nullable || p.Value.Format != "uuid" {
+			t.Error("User.invitation_id must be a nullable uuid")
+		}
+		if p := usr.Properties["directory"]; p == nil || p.Value == nil || !p.Value.Nullable {
+			t.Error("User.directory must be a nullable object")
+		} else {
+			assertProps(t, "User.directory", p.Value, "connection_id", "connection_name", "directory_uid", "last_imported_at")
+			if c := p.Value.Properties["connection_id"]; c != nil && c.Value != nil && !c.Value.Nullable {
+				t.Error("User.directory.connection_id must be nullable (the connection may be deleted)")
+			}
+		}
+	}
+}
+
+func assertProps(t *testing.T, where string, s *openapi3.Schema, want ...string) {
+	t.Helper()
+	for _, f := range want {
+		if s.Properties[f] == nil {
+			t.Errorf("%s.%s missing", where, f)
+		}
+	}
+	for f := range s.Properties {
+		if !slices.Contains(want, f) {
+			t.Errorf("%s.%s is not in the contract", where, f)
+		}
+	}
+}
+
+func assertType(t *testing.T, where string, ref *openapi3.SchemaRef, typ string) {
+	t.Helper()
+	if ref == nil || ref.Value == nil || !ref.Value.Type.Is(typ) {
+		t.Errorf("%s must be a %s", where, typ)
+	}
+}
+
+func assertMaxLength(t *testing.T, where string, ref *openapi3.SchemaRef, n uint64) {
+	t.Helper()
+	if ref == nil || ref.Value == nil || ref.Value.MaxLength == nil || *ref.Value.MaxLength != n {
+		t.Errorf("%s: maxLength must be %d", where, n)
+	}
+}
+
+func arrayItems(ref *openapi3.SchemaRef) *openapi3.Schema {
+	if ref == nil || ref.Value == nil || !ref.Value.Type.Is("array") || ref.Value.Items == nil || ref.Value.Items.Value == nil {
+		return nil
+	}
+	return ref.Value.Items.Value
+}

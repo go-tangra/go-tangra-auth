@@ -83,6 +83,8 @@ type dirCall struct {
 	TenantID string
 	ID       string
 	Input    directory.Input
+	Search   directory.SearchRequest // search only
+	UIDs     []string                // import only
 }
 
 // fakeDirectories stands in for *directory.Service: connections keyed by
@@ -94,6 +96,8 @@ type fakeDirectories struct {
 	calls []dirCall
 	err   error
 	test  directory.TestResult
+	found directory.SearchResult // returned by Search
+	imp   directory.ImportResult // returned by Import
 }
 
 func newFakeDirectories(t *testing.T) *fakeDirectories {
@@ -101,6 +105,8 @@ func newFakeDirectories(t *testing.T) *fakeDirectories {
 	f.conns[tid][dirConnA] = dirView(t, dirConnA, "Corp AD", true)
 	f.conns[dirTID2][dirConnB] = dirView(t, dirConnB, "Other LDAP", true)
 	f.test = dirResult(t, `{"ok":true,"step":null,"reason":null,"tls":{"version":"TLS 1.3","peer_subject":"CN=ldap.example.test"},"duration_ms":12}`)
+	f.found = dirSearchResult(t, dirSearchWire)
+	f.imp = dirImportResult(t, dirImportWire)
 	return f
 }
 
@@ -299,6 +305,8 @@ func dirRoutes() []dirRoute {
 		{"POST", "/api/v1/admin/directories/" + dirConnA + "/remove", ""},
 		{"POST", "/api/v1/admin/directories/test", dirCreateBody("")},
 		{"POST", "/api/v1/admin/directories/" + dirConnA + "/test", ""},
+		{"POST", "/api/v1/admin/directories/" + dirConnA + "/search", `{"filter":"(department=Eng)"}`},
+		{"POST", "/api/v1/admin/directories/" + dirConnA + "/import", `{"uids":["uid-alice"]}`},
 	}
 }
 
