@@ -60,6 +60,7 @@ func (e *DirectoryError) Is(target error) bool { return target == ErrDirectory }
 var closedErrors = []error{
 	ErrTargetRefused, ErrUnreachable, ErrTimeout, ErrTLS, ErrInvalidCredentials,
 	ErrBaseNotFound, ErrInvalidFilter, ErrInvalidBase, ErrInvalidURL, ErrInvalidCA,
+	ErrNoEmail, ErrInvalidEmail, ErrValueTooLong, ErrMultiValuedUID, ErrInvalidUID,
 }
 
 // mapError turns any error from go-ldap, the dialer or crypto/tls into the
@@ -143,6 +144,11 @@ var reasons = map[error]string{
 	ErrInvalidBase:        "invalid_base",
 	ErrInvalidURL:         "invalid_url",
 	ErrInvalidCA:          "invalid_ca",
+	ErrNoEmail:            "no_email",
+	ErrInvalidEmail:       "invalid_email",
+	ErrValueTooLong:       "value_too_long",
+	ErrMultiValuedUID:     "multi_valued_uid",
+	ErrInvalidUID:         "invalid_uid",
 }
 
 // Reason returns the stable reason code for err ("" for nil). Anything outside
