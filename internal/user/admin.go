@@ -14,6 +14,9 @@ import (
 var (
 	ErrLastOwner = errors.New("last_owner")
 	ErrNotFound  = store.ErrNotFound
+	// ErrInvalidState refuses an operation the user's status does not allow:
+	// an imported user is only activated (invitation) or removed (feature 016).
+	ErrInvalidState = errors.New("invalid_state")
 )
 
 // AdminStore is what administration needs from persistence.
@@ -25,6 +28,9 @@ type AdminStore interface {
 	Roles(ctx context.Context, tenantID, userID string) ([]string, error) // effective roles
 	CountWithRole(ctx context.Context, tenantID, slug string) (int, error)
 	UserGroups(ctx context.Context, tenantID, userID string) ([]store.Group, error)
+	// DeleteImportedUser hard-deletes a user only while imported; any other
+	// status (or a missing user) is store.ErrNotFound.
+	DeleteImportedUser(ctx context.Context, tenantID, userID string) error
 }
 
 // Admin performs tenant administration of users. Every method takes the
@@ -54,6 +60,19 @@ type UserView struct {
 	LastName  string     `json:"last_name"`
 	AvatarURL string     `json:"avatar_url"`
 	Groups    []GroupRef `json:"groups"`
+	// Feature 016: the directory origin of an imported user (never the DN)
+	// and the pending invitation of an invited one; both null otherwise.
+	Directory    *DirectoryOrigin `json:"directory"`
+	InvitationID *string          `json:"invitation_id"`
+}
+
+// DirectoryOrigin labels where a user was imported from. ConnectionID is nil
+// once the connection was deleted; ConnectionName keeps the label.
+type DirectoryOrigin struct {
+	ConnectionID   *string `json:"connection_id"`
+	ConnectionName string  `json:"connection_name"`
+	DirectoryUID   string  `json:"directory_uid"`
+	LastImportedAt string  `json:"last_imported_at"`
 }
 
 // GroupRef names a group a user belongs to.
@@ -72,7 +91,12 @@ func (a *Admin) List(ctx context.Context, actor tenantctx.Actor, q, status strin
 	for _, u := range users {
 		roles, _ := a.st.Roles(ctx, actor.TenantID, u.ID)
 		v := UserView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Status: u.Status, MFAEnabled: u.MFAEnabled, Roles: nonNilStrings(roles),
-			FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{}}
+			FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{},
+			InvitationID: u.InvitationID}
+		if l := u.Directory; l != nil {
+			v.Directory = &DirectoryOrigin{ConnectionID: l.ConnectionID, ConnectionName: l.ConnectionName, DirectoryUID: l.DirectoryUID,
+				LastImportedAt: l.LastImportedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+		}
 		if groups, err := a.st.UserGroups(ctx, actor.TenantID, u.ID); err == nil {
 			for _, g := range groups {
 				v.Groups = append(v.Groups, GroupRef{ID: g.ID, Name: g.Name})
@@ -135,6 +159,9 @@ func (a *Admin) Deactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 	if err != nil {
 		return err
 	}
+	if u.Status == "imported" {
+		return ErrInvalidState
+	}
 	if last, err := a.isLastOwner(ctx, actor.TenantID, uid); err != nil {
 		return err
 	} else if last {
@@ -159,6 +186,9 @@ func (a *Admin) Reactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 	if err != nil {
 		return err
 	}
+	if u.Status == "imported" {
+		return ErrInvalidState
+	}
 	if u.Status != "deactivated" {
 		return nil
 	}
@@ -166,6 +196,29 @@ func (a *Admin) Reactivate(ctx context.Context, actor tenantctx.Actor, uid strin
 		return err
 	}
 	a.emit(audit.Event{Type: audit.UserReactivated, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid})
+	return nil
+}
+
+// RemoveImported hard-deletes a never-invited imported user; the directory
+// link cascades and no e-mail is sent. Every other status is ErrInvalidState,
+// so this is never a general user delete.
+func (a *Admin) RemoveImported(ctx context.Context, actor tenantctx.Actor, uid string) error {
+	u, err := a.lookup(ctx, actor, uid)
+	if err != nil {
+		return err
+	}
+	if u.Status != "imported" {
+		return ErrInvalidState
+	}
+	if err := a.st.DeleteImportedUser(ctx, actor.TenantID, uid); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Invited or removed since the lookup: the delete is guarded by
+			// status, so nothing else was touched.
+			return ErrInvalidState
+		}
+		return err
+	}
+	a.emit(audit.Event{Type: audit.ImportedUserDeleted, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid})
 	return nil
 }
 

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -147,5 +148,133 @@ func TestLoadYAML(t *testing.T) {
 	}
 	if _, err := Load("/nonexistent.yaml"); err == nil {
 		t.Fatal("missing file must fail")
+	}
+}
+
+func TestDirectoryDefaults(t *testing.T) {
+	d := Default().Directory
+	if !d.Enabled || d.AllowPlaintext || len(d.Targets.AllowCIDRs) != 0 ||
+		!slices.Equal(d.Targets.AllowedPorts, []int{389, 636, 3268, 3269}) ||
+		d.DialTimeout != 5*time.Second || d.MaxSizeLimit != 1000 || d.MaxTimeLimit != 60*time.Second ||
+		d.RatePerMinute != 30 || d.MaxConnectionsPerTenant != 10 {
+		t.Fatalf("directory defaults %+v", d)
+	}
+}
+
+func TestDirectoryValidate(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(*Directory)
+		want string
+	}{
+		{"deny cidr garbage", func(d *Directory) { d.Targets.DenyCIDRs = []string{"not-a-cidr"} }, "directory.targets.deny_cidrs"},
+		{"deny cidr prefix too long", func(d *Directory) { d.Targets.DenyCIDRs = []string{"10.0.0.0/33"} }, "directory.targets.deny_cidrs"},
+		{"allow cidr bare address", func(d *Directory) { d.Targets.AllowCIDRs = []string{"10.0.0.1"} }, "directory.targets.allow_cidrs"},
+		{"allow cidr garbage after valid", func(d *Directory) { d.Targets.AllowCIDRs = []string{"10.0.0.0/8", "fd00::/129"} }, "directory.targets.allow_cidrs"},
+		{"allow cidr empty string", func(d *Directory) { d.Targets.AllowCIDRs = []string{""} }, "directory.targets.allow_cidrs"},
+		{"ports empty", func(d *Directory) { d.Targets.AllowedPorts = nil }, "directory.targets.allowed_ports"},
+		{"port zero", func(d *Directory) { d.Targets.AllowedPorts = []int{389, 0} }, "directory.targets.allowed_ports"},
+		{"port negative", func(d *Directory) { d.Targets.AllowedPorts = []int{-636} }, "directory.targets.allowed_ports"},
+		{"port above 65535", func(d *Directory) { d.Targets.AllowedPorts = []int{65536} }, "directory.targets.allowed_ports"},
+		{"dial timeout zero", func(d *Directory) { d.DialTimeout = 0 }, "directory.dial_timeout"},
+		{"dial timeout above 30s", func(d *Directory) { d.DialTimeout = 31 * time.Second }, "directory.dial_timeout"},
+		{"max size zero", func(d *Directory) { d.MaxSizeLimit = 0 }, "directory.max_size_limit"},
+		{"max size above 1000", func(d *Directory) { d.MaxSizeLimit = 1001 }, "directory.max_size_limit"},
+		{"max time below 1s", func(d *Directory) { d.MaxTimeLimit = 500 * time.Millisecond }, "directory.max_time_limit"},
+		{"max time above 60s", func(d *Directory) { d.MaxTimeLimit = 61 * time.Second }, "directory.max_time_limit"},
+		{"rate zero", func(d *Directory) { d.RatePerMinute = 0 }, "directory.rate_per_minute"},
+		{"rate negative", func(d *Directory) { d.RatePerMinute = -1 }, "directory.rate_per_minute"},
+		{"connections zero", func(d *Directory) { d.MaxConnectionsPerTenant = 0 }, "directory.max_connections_per_tenant"},
+		{"connections negative", func(d *Directory) { d.MaxConnectionsPerTenant = -5 }, "directory.max_connections_per_tenant"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := valid(t)
+			tc.mut(&c.Directory)
+			err := c.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want mention of %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestDirectoryValidateAcceptsBounds(t *testing.T) {
+	c := valid(t)
+	c.Env = "production"
+	d := &c.Directory
+	d.Targets.DenyCIDRs = []string{"10.0.0.0/8", "fd00::/8"}
+	d.Targets.AllowCIDRs = []string{"10.89.0.0/24"}
+	d.Targets.AllowedPorts = []int{1, 65535}
+	d.DialTimeout, d.MaxTimeLimit = 30*time.Second, time.Second
+	d.MaxSizeLimit, d.RatePerMinute, d.MaxConnectionsPerTenant = 1, 1, 1
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	d.MaxSizeLimit, d.MaxTimeLimit = 1000, 60*time.Second
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDirectoryPlaintextRefusedInProduction(t *testing.T) {
+	c := valid(t)
+	c.Directory.AllowPlaintext = true
+	c.Env = "dev"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("dev opt-out must be accepted: %v", err)
+	}
+	c.Env = "production"
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "directory.allow_plaintext") {
+		t.Fatalf("got %v, want directory.allow_plaintext refusal", err)
+	}
+}
+
+func TestDirectoryWarnings(t *testing.T) {
+	c := valid(t)
+	c.Env = "dev"
+	c.Directory.AllowPlaintext = true
+	c.Directory.Targets.AllowCIDRs = []string{"10.89.0.0/24", "fd00:89::/64"}
+	w := strings.Join(c.Warnings(), "\n")
+	for _, want := range []string{"directory", "allow_plaintext", "allow_cidrs", "10.89.0.0/24", "fd00:89::/64"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("warning for %s missing in %q", want, w)
+		}
+	}
+	// deny_cidrs only narrows reach; it is not an insecure convenience.
+	c = valid(t)
+	c.Directory.Targets.DenyCIDRs = []string{"10.0.0.0/8"}
+	for _, s := range c.Warnings() {
+		if strings.Contains(s, "directory") {
+			t.Fatalf("unexpected directory warning %q", s)
+		}
+	}
+}
+
+func TestDirectoryLoadYAML(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	_ = os.WriteFile(p, []byte(`directory:
+  enabled: false
+  allow_plaintext: true
+  targets:
+    deny_cidrs: ["10.0.0.0/8"]
+    allow_cidrs: ["10.89.0.0/24"]
+    allowed_ports: [636]
+  dial_timeout: 3s
+  max_size_limit: 200
+  max_time_limit: 20s
+  rate_per_minute: 10
+  max_connections_per_tenant: 4
+`), 0o600)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := c.Directory
+	if d.Enabled || !d.AllowPlaintext || !slices.Equal(d.Targets.DenyCIDRs, []string{"10.0.0.0/8"}) ||
+		!slices.Equal(d.Targets.AllowCIDRs, []string{"10.89.0.0/24"}) || !slices.Equal(d.Targets.AllowedPorts, []int{636}) ||
+		d.DialTimeout != 3*time.Second || d.MaxSizeLimit != 200 || d.MaxTimeLimit != 20*time.Second ||
+		d.RatePerMinute != 10 || d.MaxConnectionsPerTenant != 4 {
+		t.Fatalf("directory %+v", d)
 	}
 }

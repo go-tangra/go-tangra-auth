@@ -21,7 +21,13 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/image v0.46.0
+require (
+	github.com/go-asn1-ber/asn1-ber v1.5.8
+	github.com/go-ldap/ldap/v3 v3.4.14
+	golang.org/x/image v0.46.0
+)
+
+require github.com/Azure/go-ntlmssp v0.1.1 // indirect
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

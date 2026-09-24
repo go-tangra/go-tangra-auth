@@ -104,24 +104,55 @@ func GetUserByEmail(ctx context.Context, tx pgx.Tx, tenantID, email string) (Use
 	return scanUser(tx.QueryRow(ctx, "SELECT "+userCols+" FROM users WHERE tenant_id = $1 AND email = $2", tenantID, email))
 }
 
-// ListUsers with optional search and status.
+// ListUsers with optional search and status. Each user carries its directory
+// origin (if imported from one) and, for invited users, the id of the most
+// recent pending invitation (expired ones included: resend renews them).
 func ListUsers(ctx context.Context, tx pgx.Tx, tenantID, q, status string, limit int) ([]User, error) {
-	rows, err := tx.Query(ctx, "SELECT "+userCols+` FROM users WHERE tenant_id = $1
-		AND ($2 = '' OR email ILIKE '%' || $2 || '%' OR display_name ILIKE '%' || $2 || '%' OR first_name ILIKE '%' || $2 || '%' OR last_name ILIKE '%' || $2 || '%')
-		AND ($3 = '' OR status = $3) ORDER BY created_at, id LIMIT $4`, tenantID, q, status, limit)
+	rows, err := tx.Query(ctx, "SELECT "+prefixCols("u.", userCols)+", l.user_id IS NOT NULL, "+prefixCols("l.", linkCols)+`, inv.id
+		FROM users u
+		LEFT JOIN user_directory_links l ON l.user_id = u.id
+		LEFT JOIN LATERAL (SELECT i.id FROM invitations i WHERE i.tenant_id = u.tenant_id AND i.email = u.email
+			AND i.accepted_at IS NULL AND i.revoked_at IS NULL ORDER BY i.created_at DESC, i.id LIMIT 1) inv ON u.status = 'invited'
+		WHERE u.tenant_id = $1
+		AND ($2 = '' OR u.email ILIKE '%' || $2 || '%' OR u.display_name ILIKE '%' || $2 || '%' OR u.first_name ILIKE '%' || $2 || '%' OR u.last_name ILIKE '%' || $2 || '%')
+		AND ($3 = '' OR u.status = $3) ORDER BY u.created_at, u.id LIMIT $4`, tenantID, q, status, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		u, err := scanUser(rows)
-		if err != nil {
+		var (
+			u               User
+			linked          bool
+			l               DirectoryLink
+			luid, ltid      *string
+			lname, lui, ldn *string
+			lfirst, llast   *time.Time
+		)
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.DisplayName, &u.Status, &u.PasswordHash, &u.PasswordChangedAt,
+			&u.MFAEnabled, &u.MFASecretEnc, &u.MFALastCounter, &u.CreatedAt, &u.UpdatedAt, &u.LastSigninAt,
+			&u.FirstName, &u.LastName, &u.Phone, &u.AvatarID, &u.DisplayNameExplicit, &u.ProfileUpdatedAt,
+			&linked, &luid, &ltid, &l.ConnectionID, &lname, &lui, &ldn, &lfirst, &llast, &l.ImportedBy, &u.InvitationID); err != nil {
 			return nil, err
+		}
+		if linked {
+			l.UserID, l.TenantID, l.ConnectionName, l.DirectoryUID, l.DirectoryDN = *luid, *ltid, *lname, *lui, *ldn
+			l.FirstImportedAt, l.LastImportedAt = *lfirst, *llast
+			u.Directory = &l
 		}
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// prefixCols qualifies a comma-separated column list with a table alias.
+func prefixCols(alias, cols string) string {
+	parts := strings.Split(cols, ", ")
+	for i, c := range parts {
+		parts[i] = alias + c
+	}
+	return strings.Join(parts, ", ")
 }
 
 // UpdateUserStatus changes status.
@@ -631,7 +662,7 @@ func InsertAuditRows(ctx context.Context, tx pgx.Tx, rows []AuditRow) error {
 			r.Outcome, r.Reason, r.OriginIPHash, r.UserAgent, r.CorrelationID, r.TraceID, r.Details)
 	}
 	res := tx.SendBatch(ctx, b)
-	defer res.Close()
+	defer func() { _ = res.Close() }()
 	for range rows {
 		if _, err := res.Exec(); err != nil {
 			return err

@@ -237,6 +237,12 @@ func TestConsoleNonceBehindGateway(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `nonce="gw-nonce"`) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
+	for _, bad := range []string{`x"><script>alert(1)</script>`, strings.Repeat("a", 129)} {
+		w = do(gw, "GET", "/console/signin", "", map[string]string{"X-CSP-Nonce": bad})
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `nonce=""`) {
+			t.Fatalf("unsafe relayed nonce must be dropped: %s", w.Body.String())
+		}
+	}
 	standalone, _ := NewHandler(rt, WithConsole(fs))
 	r := httptest.NewRequest("GET", "https://localhost/console/signin", nil)
 	r.Header.Set("X-CSP-Nonce", "spoof")

@@ -51,6 +51,51 @@ describe('admin console', () => {
     w.unmount()
   })
 
+  it('lists imported users with an imported chip and a directory-origin tooltip', async () => {
+    const imported = {
+      id: 'u3',
+      email: 'cy@corp.test',
+      display_name: 'Cy By',
+      status: 'imported',
+      mfa_enabled: false,
+      roles: [],
+      last_signin_at: null,
+      invitation_id: null,
+      directory: { connection_id: 'd1', connection_name: 'Corp AD', directory_uid: 'abc-123', last_imported_at: '2026-09-23T08:00:00Z' },
+    }
+    stubFetch((url) => {
+      if (url.startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [users[0], imported] } }
+      if (url.startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
+      return { status: 404, body: { reason: 'not_found' } }
+    })
+    const w = mountView(Users)
+    await flushPromises()
+    expect(w.findAll('[data-test="user-row"]').length).toBe(2)
+    expect(w.findAll('[data-test="status-chip"]').map((c) => c.text())).toEqual(['active', 'imported'])
+    const origins = w.findAll('[data-test="origin"]')
+    expect(origins.length).toBe(1)
+    expect(origins[0]!.attributes('title')).toBe('Imported from Corp AD at 2026-09-23T08:00:00Z')
+    w.unmount()
+  })
+
+  it('offers imported in the status filter and reloads with status=imported', async () => {
+    const fetch = stubFetch((url) => {
+      if (url.startsWith('/api/v1/admin/users')) return { status: 200, body: { items: users } }
+      if (url.startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
+      return { status: 404, body: { reason: 'not_found' } }
+    })
+    const w = mountView(Users)
+    await flushPromises()
+    const sel = w.find('[data-test="status"] select').element as HTMLSelectElement
+    expect([...sel.options].map((o) => o.value)).toEqual(['', 'invited', 'active', 'deactivated', 'imported'])
+    sel.value = 'imported'
+    sel.dispatchEvent(new Event('change'))
+    await new Promise((r) => setTimeout(r, 300))
+    await flushPromises()
+    expect(fetch.mock.calls.some((c) => String(c[0]).includes('/api/v1/admin/users?') && String(c[0]).includes('status=imported'))).toBe(true)
+    w.unmount()
+  })
+
   it('confirms deactivation and maps refusal reasons to messages', async () => {
     const fetch = stubFetch((url) => {
       if (url.startsWith('/api/v1/admin/users') && !url.includes('/deactivate')) return { status: 200, body: { items: users } }

@@ -35,6 +35,10 @@ var (
 type Tx interface {
 	Tenant(ctx context.Context, tenantID string) (store.Tenant, error)
 	UserByEmail(ctx context.Context, tenantID, email string) (store.User, error)
+	// Feature 016: activation loads the imported row by id; UserAnyTenant is
+	// used only under system scope to audit cross-tenant ids.
+	UserByID(ctx context.Context, tenantID, id string) (store.User, error)
+	UserAnyTenant(ctx context.Context, id string) (store.User, error)
 	InsertUser(ctx context.Context, u store.User) error
 	SetPasswordHash(ctx context.Context, tenantID, userID, hash string) error
 	UpdateUserStatus(ctx context.Context, tenantID, userID, status string) error
@@ -69,12 +73,19 @@ type Store interface {
 	Atomic(ctx context.Context, scope store.Scope, fn func(tx any) error) error
 }
 
+// Escalation refuses roles or groups that grant more than the actor holds
+// (authz.ErrSelfEscalation). It writes nothing.
+type Escalation interface {
+	MayAssign(ctx context.Context, actor tenantctx.Actor, tenantID string, roleIDs, groupIDs []string) error
+}
+
 // Service handles invitations.
 type Service struct {
 	st     Store
 	outbox *email.Outbox
 	authz  *authz.Client
 	audit  *audit.Writer
+	esc    Escalation
 	issuer string
 	now    func() time.Time
 }
@@ -82,6 +93,13 @@ type Service struct {
 // New wires the service. issuer is the public base URL for accept links.
 func New(st Store, ob *email.Outbox, az *authz.Client, a *audit.Writer, issuer string) *Service {
 	return &Service{st: st, outbox: ob, authz: az, audit: a, issuer: issuer, now: time.Now}
+}
+
+// WithEscalation attaches the grant check applied to every invitation and
+// activation. Without one, no check is made.
+func (s *Service) WithEscalation(e Escalation) *Service {
+	s.esc = e
+	return s
 }
 
 // AcceptPath is the console route that completes an invitation.
@@ -102,7 +120,9 @@ func (s *Service) Create(ctx context.Context, actor tenantctx.Actor, tenantID, e
 	return s.CreateWith(ctx, actor, tenantID, Params{Email: emailAddr, RoleIDs: roleIDs})
 }
 
-// CreateWith is Create with groups and profile names.
+// CreateWith is Create with groups and profile names. An e-mail that belongs
+// to an imported user activates that user (feature 016); the result has the
+// same shape as any other invitation.
 func (s *Service) CreateWith(ctx context.Context, actor tenantctx.Actor, tenantID string, p Params) (string, error) {
 	addr, err := normEmail(p.Email)
 	if err != nil {
@@ -116,14 +136,53 @@ func (s *Service) CreateWith(ctx context.Context, actor tenantctx.Actor, tenantI
 	if err != nil {
 		return "", ErrBadEmail
 	}
-	if len(p.GroupIDs) > GroupsMax {
-		return "", ErrBadEmail
+	if err := s.checkGrants(ctx, actor, tenantID, p); err != nil {
+		return "", err
 	}
-	roleIDs := p.RoleIDs
 	var id string
 	err = s.st.Atomic(ctx, store.Scope{TenantID: tenantID}, func(raw any) error {
 		tx := raw.(Tx)
-		if _, err := tx.RolesByID(ctx, tenantID, roleIDs); err != nil {
+		u, err := tx.UserByEmail(ctx, tenantID, addr)
+		switch {
+		case err == nil && u.Status == "imported":
+			pp := p
+			pp.FirstName, pp.LastName = orName(first, u.FirstName), orName(last, u.LastName)
+			id, err = s.activate(ctx, tx, actor, tenantID, u, pp)
+			return err
+		case err == nil && u.Status != "invited":
+			s.emit(audit.Event{Type: audit.InviteCreated, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "refused", Reason: "account_exists", SubjectKind: "user", SubjectID: u.ID})
+			return nil
+		}
+		id, err = s.invite(ctx, tx, actor, tenantID, addr, p.RoleIDs, p.GroupIDs, first, last)
+		if err != nil {
+			return err
+		}
+		s.emit(audit.Event{Type: audit.InviteCreated, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "invite", SubjectID: id})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func orName(given, row string) string {
+	if given != "" {
+		return given
+	}
+	return row
+}
+
+// checkGrants refuses a request naming too many, unknown or foreign roles or
+// groups (ErrBadEmail), then runs the escalation check once. Nothing is
+// written.
+func (s *Service) checkGrants(ctx context.Context, actor tenantctx.Actor, tenantID string, p Params) error {
+	if len(p.GroupIDs) > GroupsMax {
+		return ErrBadEmail
+	}
+	err := s.st.Atomic(ctx, store.Scope{TenantID: tenantID}, func(raw any) error {
+		tx := raw.(Tx)
+		if _, err := tx.RolesByID(ctx, tenantID, p.RoleIDs); err != nil {
 			return ErrBadEmail
 		}
 		for _, gid := range p.GroupIDs {
@@ -131,31 +190,153 @@ func (s *Service) CreateWith(ctx context.Context, actor tenantctx.Actor, tenantI
 				return ErrBadEmail
 			}
 		}
-		if u, err := tx.UserByEmail(ctx, tenantID, addr); err == nil && u.Status != "invited" {
-			s.emit(audit.Event{Type: audit.InviteCreated, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "refused", Reason: "account_exists", SubjectKind: "user", SubjectID: u.ID})
-			return nil
+		return nil
+	})
+	if err != nil || s.esc == nil {
+		return err
+	}
+	if err := s.esc.MayAssign(ctx, actor, tenantID, p.RoleIDs, p.GroupIDs); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrBadEmail
 		}
-		tok, err := crypto.RandomToken(32)
+		return err
+	}
+	return nil
+}
+
+// invite inserts an invitation and queues its e-mail; it returns the id.
+func (s *Service) invite(ctx context.Context, tx Tx, actor tenantctx.Actor, tenantID, addr string, roleIDs, groupIDs []string, first, last string) (string, error) {
+	tok, err := crypto.RandomToken(32)
+	if err != nil {
+		return "", err
+	}
+	id := store.NewID()
+	inv := store.Invitation{ID: id, TenantID: tenantID, Email: addr, RoleIDs: roleIDs, TokenHash: crypto.HashToken(tok), ExpiresAt: s.now().Add(Lifetime),
+		GroupIDs: groupIDs, FirstName: first, LastName: last}
+	if actor.UserID != "" {
+		invitedBy := actor.UserID
+		inv.InvitedBy = &invitedBy
+	}
+	if err := tx.InsertInvitation(ctx, inv); err != nil {
+		return "", err
+	}
+	if err := s.queue(ctx, tx, tenantID, addr, tok); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// activate invites an imported user and moves the row to invited. The
+// invitation is written before the status so a failed insert leaves the user
+// imported.
+func (s *Service) activate(ctx context.Context, tx Tx, actor tenantctx.Actor, tenantID string, u store.User, p Params) (string, error) {
+	id, err := s.invite(ctx, tx, actor, tenantID, strings.ToLower(u.Email), p.RoleIDs, p.GroupIDs, p.FirstName, p.LastName)
+	if err != nil {
+		return "", err
+	}
+	if err := tx.UpdateUserStatus(ctx, tenantID, u.ID, "invited"); err != nil {
+		return "", err
+	}
+	s.emit(audit.Event{Type: audit.InviteCreated, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", Reason: "activation",
+		SubjectKind: "user", SubjectID: u.ID, Details: map[string]any{"invitation_id": id}})
+	return id, nil
+}
+
+// ActivateMax bounds the users one activation request may name.
+const ActivateMax = 100
+
+// Activation outcomes and per-user failure reasons.
+const (
+	OutcomeInvited     = "invited"
+	OutcomeFailed      = "failed"
+	ReasonInvalidState = "invalid_state"
+	ReasonNotFound     = "not_found"
+	ReasonInternal     = "internal"
+)
+
+// ActivateItem is the result for one requested user; empty strings stand for
+// no value.
+type ActivateItem struct {
+	UserID, Outcome, InvitationID, Reason string
+}
+
+// Activate invites imported users (feature 016, D11): each moves imported →
+// invited with an invitation carrying the names from its row and the given
+// roles and groups. The request is refused as a whole (nil items) when it is
+// malformed or grants beyond the actor; otherwise every user is handled in
+// its own transaction and results follow request order.
+func (s *Service) Activate(ctx context.Context, actor tenantctx.Actor, tenantID string, userIDs []string, p Params) ([]ActivateItem, error) {
+	if len(userIDs) == 0 || len(userIDs) > ActivateMax {
+		return nil, ErrBadEmail
+	}
+	seen := make(map[string]bool, len(userIDs))
+	for _, uid := range userIDs {
+		if seen[uid] {
+			return nil, ErrBadEmail
+		}
+		seen[uid] = true
+	}
+	if err := s.checkGrants(ctx, actor, tenantID, p); err != nil {
+		return nil, err
+	}
+	items := make([]ActivateItem, 0, len(userIDs))
+	for _, uid := range userIDs {
+		items = append(items, s.activateOne(ctx, actor, tenantID, uid, p))
+	}
+	return items, nil
+}
+
+var errInvalidState = errors.New(ReasonInvalidState)
+
+func (s *Service) activateOne(ctx context.Context, actor tenantctx.Actor, tenantID, uid string, p Params) ActivateItem {
+	it := ActivateItem{UserID: uid, Outcome: OutcomeFailed}
+	var id string
+	err := s.st.Atomic(ctx, store.Scope{TenantID: tenantID}, func(raw any) error {
+		tx := raw.(Tx)
+		u, err := tx.UserByID(ctx, tenantID, uid)
 		if err != nil {
 			return err
 		}
-		id = store.NewID()
-		invitedBy := actor.UserID
-		inv := store.Invitation{ID: id, TenantID: tenantID, Email: addr, RoleIDs: roleIDs, TokenHash: crypto.HashToken(tok), ExpiresAt: s.now().Add(Lifetime),
-			GroupIDs: p.GroupIDs, FirstName: first, LastName: last}
-		if invitedBy != "" {
-			inv.InvitedBy = &invitedBy
+		if u.Status != "imported" {
+			return errInvalidState
 		}
-		if err := tx.InsertInvitation(ctx, inv); err != nil {
-			return err
-		}
-		if err := s.queue(ctx, tx, tenantID, addr, tok); err != nil {
-			return err
-		}
-		s.emit(audit.Event{Type: audit.InviteCreated, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "invite", SubjectID: id})
-		return nil
+		pp := p
+		pp.FirstName, pp.LastName = u.FirstName, u.LastName
+		id, err = s.activate(ctx, tx, actor, tenantID, u, pp)
+		return err
 	})
-	return id, err
+	switch {
+	case err == nil:
+		it.Outcome, it.InvitationID = OutcomeInvited, id
+	case errors.Is(err, errInvalidState):
+		it.Reason = ReasonInvalidState
+	case errors.Is(err, store.ErrNotFound):
+		it.Reason = ReasonNotFound
+		s.auditForeign(ctx, actor, tenantID, uid)
+	default:
+		it.Reason = ReasonInternal
+	}
+	return it
+}
+
+// auditForeign records a cross-tenant attempt when uid exists in another
+// tenant. The lookup runs under system scope, outside the tenant
+// transaction, and the event carries no e-mail.
+func (s *Service) auditForeign(ctx context.Context, actor tenantctx.Actor, tenantID, uid string) {
+	if !tenantctx.ValidTenantID(uid) {
+		return
+	}
+	var other store.User
+	err := s.st.Atomic(ctx, store.Scope{System: true}, func(raw any) error {
+		var err error
+		other, err = raw.(Tx).UserAnyTenant(ctx, uid)
+		return err
+	})
+	if err != nil || other.TenantID == tenantID {
+		return
+	}
+	s.emit(audit.Event{Type: audit.CrossTenantRefused, TenantID: tenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "refused", Reason: "foreign_user",
+		SubjectKind: "user", SubjectID: uid, Details: map[string]any{"target_tenant": other.TenantID}})
 }
 
 // Resend rotates the token and queues the e-mail again.

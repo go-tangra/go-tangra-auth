@@ -83,3 +83,104 @@ func TestAssignRoles(t *testing.T) {
 		t.Fatal("no actor")
 	}
 }
+
+// MayAssign is the grant check shared by AssignRoles and invitations
+// (activation and CreateWith): it only checks, never writes.
+func TestMayAssign(t *testing.T) {
+	f := newGroupFixture(t)
+	ctx := context.Background()
+	as := NewAssigner(f.ms, f.c, nil)
+	owner := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-owner", TenantID: tA, Roles: []string{"owner"}}
+	// Non-owners whose OpenFGA permissions are audit:read only: a built-in admin and a custom-role holder.
+	admin := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-manager", TenantID: tA, Roles: []string{"admin"}}
+	custom := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-manager", TenantID: tA, Roles: []string{"auditor"}}
+	// Callers (invite handlers) carry the actor in ctx, as AllowedMany requires.
+	in := func(a tenantctx.Actor) context.Context { return tenantctx.WithActor(ctx, a) }
+	n := f.fga.Len()
+
+	// The owner may grant anything, including owner and admin.
+	if err := as.MayAssign(in(owner), owner, tA, []string{"r-owner", "r-admin", "r-auditor", "r-billing"}); err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+	for _, actor := range []tenantctx.Actor{admin, custom} {
+		for _, role := range []string{"r-owner", "r-admin", "r-billing"} {
+			if err := as.MayAssign(in(actor), actor, tA, []string{role}); !errors.Is(err, ErrSelfEscalation) {
+				t.Fatalf("%v granting %s: %v", actor.Roles, role, err)
+			}
+			// One escalating role refuses the whole set.
+			if err := as.MayAssign(in(actor), actor, tA, []string{"r-auditor", role}); !errors.Is(err, ErrSelfEscalation) {
+				t.Fatalf("%v granting auditor+%s: %v", actor.Roles, role, err)
+			}
+		}
+		if err := as.MayAssign(in(actor), actor, tA, []string{"r-auditor", "r-auditor"}); err != nil {
+			t.Fatalf("%v granting a held permission: %v", actor.Roles, err)
+		}
+		if err := as.MayAssign(in(actor), actor, tA, nil); err != nil {
+			t.Fatalf("%v granting nothing: %v", actor.Roles, err)
+		}
+	}
+	// Foreign role ids are not found, not an escalation; a foreign tenant is refused.
+	if err := as.MayAssign(in(owner), owner, tA, []string{"r-foreign"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("foreign role: %v", err)
+	}
+	if err := as.MayAssign(in(owner), owner, tB, []string{"r-foreign"}); err == nil {
+		t.Fatal("foreign tenant accepted")
+	}
+	// A pure check: no tuples, no bindings.
+	if f.fga.Len() != n {
+		t.Fatal("MayAssign wrote tuples")
+	}
+	if roles, _ := f.ms.Roles(ctx, tA, "u-owner"); len(roles) != 1 {
+		t.Fatalf("MayAssign touched bindings: %v", roles)
+	}
+
+	// Group-granted roles are checked through Escalation.MayGrant on the groups' permissions.
+	esc := NewEscalation(f.c)
+	finance, _ := f.g.Create(f.owner, tA, "Finance", "")
+	readers, _ := f.g.Create(f.owner, tA, "Readers", "")
+	if _, err := f.g.SetRoles(f.owner, tA, finance.ID, []string{"r-billing"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.SetRoles(f.owner, tA, readers.ID, []string{"r-auditor"}); err != nil {
+		t.Fatal(err)
+	}
+	billing, _, err := f.g.groupGrants(ctx, tA, finance.ID)
+	if err != nil || len(billing) == 0 {
+		t.Fatalf("finance grants %v %v", billing, err)
+	}
+	reading, _, _ := f.g.groupGrants(ctx, tA, readers.ID)
+	for _, actor := range []tenantctx.Actor{admin, custom} {
+		if err := esc.MayGrant(in(actor), actor, tA, billing); !errors.Is(err, ErrSelfEscalation) {
+			t.Fatalf("%v via group: %v", actor.Roles, err)
+		}
+		if err := esc.MayGrant(in(actor), actor, tA, reading); err != nil {
+			t.Fatalf("%v via held group: %v", actor.Roles, err)
+		}
+	}
+	if err := esc.MayGrant(in(owner), owner, tA, append(billing, reading...)); err != nil {
+		t.Fatalf("owner via groups: %v", err)
+	}
+}
+
+// AssignRoles keeps its behaviour after MayAssign is extracted: roles the
+// target already holds are exempt from the grant check, new ones are not.
+func TestAssignRolesUsesMayAssign(t *testing.T) {
+	f := newGroupFixture(t)
+	as := NewAssigner(f.ms, f.c, nil)
+	if _, err := as.AssignRoles(f.owner, tA, "u-bob", []string{"r-billing"}); err != nil {
+		t.Fatal(err)
+	}
+	custom := tenantctx.WithActor(context.Background(), tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-manager", TenantID: tA, Roles: []string{"auditor"}})
+	if _, err := as.AssignRoles(custom, tA, "u-bob", []string{"r-billing", "r-auditor"}); err != nil {
+		t.Fatalf("already-held role must not be re-checked: %v", err)
+	}
+	if _, err := as.AssignRoles(custom, tA, "u-dana", []string{"r-billing"}); !errors.Is(err, ErrSelfEscalation) {
+		t.Fatalf("new role: %v", err)
+	}
+	if _, err := as.AssignRoles(f.mgr, tA, "u-dana", []string{"r-admin"}); !errors.Is(err, ErrSelfEscalation) {
+		t.Fatalf("admin granting admin: %v", err)
+	}
+	if roles, _ := f.ms.Roles(context.Background(), tA, "u-dana"); len(roles) != 0 {
+		t.Fatalf("refused assignment wrote bindings: %v", roles)
+	}
+}

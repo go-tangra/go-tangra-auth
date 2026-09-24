@@ -282,9 +282,10 @@ func (m *MemKeys) SetState(_ context.Context, kid, state string, at time.Time) e
 		return store.ErrNotFound
 	}
 	k.State = state
-	if state == StateRetiring {
+	switch state {
+	case StateRetiring:
 		k.RetiringAt = &at
-	} else if state == StateRetired {
+	case StateRetired:
 		k.RetiredAt = &at
 	}
 	m.keys[kid] = k

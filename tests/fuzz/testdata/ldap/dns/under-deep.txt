@@ -1,0 +1,1 @@
+cn=Bob Smith,ou=Sales,ou=Staff,dc=example,dc=test

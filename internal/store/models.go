@@ -24,6 +24,10 @@ type User struct {
 	AvatarID                   *string
 	DisplayNameExplicit        bool
 	ProfileUpdatedAt           *time.Time
+	// Filled by ListUsers only (feature 016): the directory origin, and the
+	// pending (not accepted, not revoked) invitation of an invited user.
+	Directory    *DirectoryLink
+	InvitationID *string
 }
 
 // ProfilePatch is the writable part of a profile.

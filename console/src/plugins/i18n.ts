@@ -9,6 +9,7 @@ export const messages = {
     'nav.sessions': 'Sessions',
     'nav.security': 'Security',
     'nav.users': 'Users',
+    'nav.directories': 'Directories',
     'nav.groups': 'Groups',
     'nav.roles': 'Roles',
     'nav.policy': 'Policy',

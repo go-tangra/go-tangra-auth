@@ -4,13 +4,14 @@ package integration
 
 import (
 	"crypto/tls"
-	"github.com/go-freya/freya/transport/edge"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-freya/freya/transport/edge"
 )
 
 // TestHardening sweeps the edge beyond the stories: body/header limits,
@@ -31,7 +32,7 @@ func TestHardening(t *testing.T) {
 		if resp.StatusCode != 413 && resp.StatusCode != 400 {
 			t.Errorf("oversized body → %d", resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	req, _ = http.NewRequest(http.MethodGet, e.Base+"/api/v1/session", nil)
 	req.Header.Set("X-Padding", strings.Repeat("p", 512<<10))
@@ -39,7 +40,7 @@ func TestHardening(t *testing.T) {
 		if resp.StatusCode != 431 && resp.StatusCode != 400 {
 			t.Errorf("oversized headers → %d", resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	// Per-route burst: spoofed X-Forwarded-For from an untrusted client must
 	// not open a fresh bucket.
@@ -51,8 +52,8 @@ func TestHardening(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 		if resp.StatusCode == 429 {
 			limited = true
 			if resp.Header.Get("Retry-After") == "" {
@@ -67,7 +68,7 @@ func TestHardening(t *testing.T) {
 	// TLS 1.2 is refused at the handshake; plaintext gets no HTTP service.
 	d := &net.Dialer{Timeout: 5 * time.Second}
 	if conn, err := tls.DialWithDialer(d, "tcp", host, &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}); err == nil { //nolint:gosec // probing our own listener
-		conn.Close()
+		_ = conn.Close()
 		t.Error("TLS 1.2 handshake accepted")
 	}
 	if raw, err := net.DialTimeout("tcp", host, 5*time.Second); err == nil {
@@ -78,7 +79,7 @@ func TestHardening(t *testing.T) {
 		if strings.HasPrefix(string(buf[:n]), "HTTP/1.1 200") {
 			t.Error("plaintext request served")
 		}
-		raw.Close()
+		_ = raw.Close()
 	}
 	// Security headers on the console, the API and error responses.
 	for _, path := range []string{"/console/signin", "/api/v1/session", "/api/v1/nope", "/.well-known/jwks.json"} {
@@ -86,8 +87,8 @@ func TestHardening(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 		for _, h := range []string{"Content-Security-Policy", "Strict-Transport-Security", "X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options"} {
 			if resp.Header.Get(h) == "" {
 				t.Errorf("%s: missing %s", path, h)

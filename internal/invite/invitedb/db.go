@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-freya/freya/services/auth/internal/invite"
 	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-freya/freya/services/auth/internal/tenantctx"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -26,6 +27,25 @@ func (d dbTx) Tenant(ctx context.Context, tid string) (store.Tenant, error) {
 }
 func (d dbTx) UserByEmail(ctx context.Context, tid, e string) (store.User, error) {
 	return store.GetUserByEmail(ctx, d.tx, tid, e)
+}
+
+// UserByID treats a non-UUID id as unknown rather than failing the uuid cast.
+func (d dbTx) UserByID(ctx context.Context, tid, id string) (store.User, error) {
+	if !tenantctx.ValidTenantID(id) {
+		return store.User{}, store.ErrNotFound
+	}
+	return store.GetUser(ctx, d.tx, tid, id)
+}
+
+// UserAnyTenant is only called under system scope, to audit cross-tenant ids.
+func (d dbTx) UserAnyTenant(ctx context.Context, id string) (u store.User, err error) {
+	if !tenantctx.ValidTenantID(id) {
+		return u, store.ErrNotFound
+	}
+	if err = d.tx.QueryRow(ctx, "SELECT id, tenant_id, status FROM users WHERE id = $1", id).Scan(&u.ID, &u.TenantID, &u.Status); err != nil {
+		err = store.ErrNotFound
+	}
+	return
 }
 func (d dbTx) InsertUser(ctx context.Context, u store.User) error {
 	return store.InsertUser(ctx, d.tx, u)

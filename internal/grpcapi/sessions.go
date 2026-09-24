@@ -124,13 +124,13 @@ func (s *SessionsServer) Introspect(ctx context.Context, req *authv1.IntrospectR
 	}
 	resp.UserId, resp.TenantId, resp.SessionId, resp.Roles = c.Subject, c.TenantID, c.SessionID, c.Roles
 	resp.ExpiresAt = timestamppb.New(c.ExpiresAt.Time)
-	entries, err := s.Sessions.Since(ctx, c.IssuedAt.Time.Add(-time.Second), 1000)
+	entries, err := s.Sessions.Since(ctx, c.IssuedAt.Add(-time.Second), 1000)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "feed unavailable")
 	}
 	resp.Active = true
 	for _, e := range entries {
-		if e.TS.Unix() < c.IssuedAt.Time.Unix() {
+		if e.TS.Unix() < c.IssuedAt.Unix() {
 			continue
 		}
 		if (e.Kind == "session" && e.SubjectID == c.SessionID) || (e.Kind == "user" && e.SubjectID == c.Subject) || (e.Kind == "tenant" && e.SubjectID == c.TenantID) {

@@ -1,0 +1,1 @@
+ldap://reader:p%40ss@ldap.example.org

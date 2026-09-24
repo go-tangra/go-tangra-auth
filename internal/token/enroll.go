@@ -87,10 +87,8 @@ func (i *Issuer) VerifyEnrollment(s string) (EnrollGrant, error) {
 	var c EnrollClaims
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}), jwt.WithIssuer(i.Issuer),
 		jwt.WithAudience(EnrollAudience), jwt.WithLeeway(skew), jwt.WithIssuedAt(), jwt.WithExpirationRequired(), jwt.WithTimeFunc(i.now))
+	// WithValidMethods rejects every non-EdDSA alg before the key func runs.
 	_, err := parser.ParseWithClaims(s, &c, func(t *jwt.Token) (any, error) {
-		if t.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
-			return nil, errors.New("alg must be EdDSA")
-		}
 		kid, _ := t.Header["kid"].(string)
 		if kid == "" {
 			return nil, errors.New("kid required")

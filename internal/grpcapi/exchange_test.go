@@ -52,7 +52,7 @@ func TestExchangeAndMintToken(t *testing.T) {
 		t.Fatalf("%v %v", ex, err)
 	}
 	claims, err := iss.Verify(ex.AccessToken)
-	if err != nil || claims.SessionID != sess.ID || claims.TenantID != tid || claims.Audience[0] != "gateway" || !claims.ExpiresAt.Time.Equal(ex.ExpiresAt.AsTime()) {
+	if err != nil || claims.SessionID != sess.ID || claims.TenantID != tid || claims.Audience[0] != "gateway" || !claims.ExpiresAt.Equal(ex.ExpiresAt.AsTime()) {
 		t.Fatalf("%+v %v", claims, err)
 	}
 	mt, err := ss.MintToken(ctx, &authv1.MintTokenRequest{TenantId: tid, SessionId: sess.ID})

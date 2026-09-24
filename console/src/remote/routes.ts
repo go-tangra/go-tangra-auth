@@ -3,8 +3,8 @@ import '@/remote.css'
 import { routes as consoleRoutes } from '@/router/routes'
 
 // The console as a federated remote: the same route records, mounted by the
-// platform shell under /console. The catch-all stays scoped to the prefix so
-// it never shadows other modules.
+// platform shell under /console (including /console/admin/directories).
+// The catch-all stays scoped to the prefix so it never shadows other modules.
 const prefix = '/console'
 
 // Route names stay as declared so named navigation inside the console keeps

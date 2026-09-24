@@ -54,9 +54,10 @@ type Env struct {
 	Mail   string // mailpit API base
 	Client *http.Client
 	Cancel context.CancelFunc
+	PGIP   string // TimescaleDB container address on the docker network
 }
 
-func container(t *testing.T, req testcontainers.ContainerRequest) (host string, ports map[string]string) {
+func container(t *testing.T, req testcontainers.ContainerRequest) (c testcontainers.Container, host string, ports map[string]string) {
 	t.Helper()
 	ctx := context.Background()
 	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{ContainerRequest: req, Started: true})
@@ -73,7 +74,7 @@ func container(t *testing.T, req testcontainers.ContainerRequest) (host string, 
 		}
 		ports[p] = mp.Port()
 	}
-	return host, ports
+	return c, host, ports
 }
 
 // selfSigned writes a server certificate for the Valkey container.
@@ -99,17 +100,24 @@ func freePort(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().String()
 }
 
 // Start boots every dependency and the service; skips when Docker is absent.
-func Start(t *testing.T) *Env {
+// mutate hooks run after the containers are up and before the app is built;
+// they receive the TimescaleDB container's docker-network address (for
+// directory target-policy CIDRs).
+func Start(t *testing.T, mutate ...func(*config.Config, string)) *Env {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	pgHost, pgPorts := container(t, testcontainers.ContainerRequest{Image: "timescale/timescaledb:latest-pg16", ExposedPorts: []string{"5432/tcp"},
+	pgC, pgHost, pgPorts := container(t, testcontainers.ContainerRequest{Image: "timescale/timescaledb:latest-pg16", ExposedPorts: []string{"5432/tcp"},
 		Env: map[string]string{"POSTGRES_PASSWORD": "test", "POSTGRES_DB": "auth"}, WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(2 * time.Minute)})
+	pgIP, err := pgC.ContainerIP(ctx)
+	if err != nil {
+		t.Fatalf("timescaledb container address: %v", err)
+	}
 	adminDSN := fmt.Sprintf("postgres://postgres:test@%s:%s/auth?sslmode=disable", pgHost, pgPorts["5432/tcp"])
 	for i := 0; i < 30; i++ {
 		conn, err := pgx.Connect(ctx, adminDSN)
@@ -121,13 +129,13 @@ func Start(t *testing.T) *Env {
 		time.Sleep(time.Second)
 	}
 	certPath, keyPath := selfSigned(t, dir)
-	vkHost, vkPorts := container(t, testcontainers.ContainerRequest{Image: "valkey/valkey:8", ExposedPorts: []string{"6379/tcp"},
+	_, vkHost, vkPorts := container(t, testcontainers.ContainerRequest{Image: "valkey/valkey:8", ExposedPorts: []string{"6379/tcp"},
 		Files:      []testcontainers.ContainerFile{{HostFilePath: certPath, ContainerFilePath: "/tls/server.crt", FileMode: 0o644}, {HostFilePath: keyPath, ContainerFilePath: "/tls/server.key", FileMode: 0o644}},
 		Cmd:        []string{"valkey-server", "--tls-port", "6379", "--port", "0", "--tls-cert-file", "/tls/server.crt", "--tls-key-file", "/tls/server.key", "--tls-ca-cert-file", "/tls/server.crt", "--tls-auth-clients", "no", "--requirepass", "test"},
 		WaitingFor: wait.ForListeningPort("6379/tcp")})
-	fgaHost, fgaPorts := container(t, testcontainers.ContainerRequest{Image: "openfga/openfga:v1.20.0", ExposedPorts: []string{"8080/tcp"},
+	_, fgaHost, fgaPorts := container(t, testcontainers.ContainerRequest{Image: "openfga/openfga:v1.20.0", ExposedPorts: []string{"8080/tcp"},
 		Cmd: []string{"run", "--authn-method=preshared", "--authn-preshared-keys=test-key", "--playground-enabled=false"}, WaitingFor: wait.ForHTTP("/healthz").WithPort("8080/tcp")})
-	mpHost, mpPorts := container(t, testcontainers.ContainerRequest{Image: "axllent/mailpit:latest", ExposedPorts: []string{"1025/tcp", "8025/tcp"}, WaitingFor: wait.ForListeningPort("8025/tcp")})
+	_, mpHost, mpPorts := container(t, testcontainers.ContainerRequest{Image: "axllent/mailpit:latest", ExposedPorts: []string{"1025/tcp", "8025/tcp"}, WaitingFor: wait.ForListeningPort("8025/tcp")})
 	kek := make([]byte, 32)
 	_, _ = rand.Read(kek)
 	kekPath := filepath.Join(dir, "kek.b64")
@@ -148,6 +156,9 @@ func Start(t *testing.T) *Env {
 	cfg.OpenFGA = config.OpenFGA{URL: fmt.Sprintf("http://%s:%s", fgaHost, fgaPorts["8080/tcp"]), PresharedKey: "test-key", AllowPlaintext: true}
 	cfg.KEK = config.KEK{Source: "file", Path: kekPath}
 	cfg.Email = config.Email{Transport: "smtp", Host: mpHost, Port: atoi(mpPorts["1025/tcp"]), From: "auth@example.org", AllowPlaintext: true}
+	for _, m := range mutate {
+		m(&cfg, pgIP)
+	}
 
 	a, err := app.Build(ctx, cfg, app.Options{Migrate: true, Freya: []freya.Option{freya.WithInsecureLocalDev()}})
 	if err != nil {
@@ -167,7 +178,7 @@ func Start(t *testing.T) *Env {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 10 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}} //nolint:gosec // dev self-signed edge cert
-	env := &Env{T: t, App: a, Base: "https://" + edgeAddr, Mail: fmt.Sprintf("http://%s:%s", mpHost, mpPorts["8025/tcp"]), Client: client, Cancel: cancel}
+	env := &Env{T: t, App: a, Base: "https://" + edgeAddr, Mail: fmt.Sprintf("http://%s:%s", mpHost, mpPorts["8025/tcp"]), Client: client, Cancel: cancel, PGIP: pgIP}
 	env.waitReady()
 	return env
 }
@@ -240,7 +251,7 @@ func (e *Env) JSON(method, path string, body any, hdr ...string) (int, map[strin
 	if err != nil {
 		e.T.Fatalf("%s %s: %v", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	out := map[string]any{}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return resp.StatusCode, out

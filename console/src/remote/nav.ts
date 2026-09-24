@@ -1,4 +1,5 @@
-/** Dynamic navigation entries (none: the manifest declares the static ones). */
+/** Dynamic navigation entries (none: authmanifest declares static entries,
+ * including permission-gated Directories at /console/admin/directories). */
 export interface NavEntry {
   title: string
   path: string

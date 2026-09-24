@@ -18,7 +18,7 @@ import (
 const (
 	Module        = "auth"
 	ConsolePrefix = "/console"
-	Version       = "1.1.0"
+	Version       = "1.2.0"
 )
 
 // Permissions the console registers (granted to builtin roles by the service).
@@ -30,16 +30,17 @@ var Permissions = []gatewayclient.Permission{
 	{Resource: "policy", Action: "manage", Description: "Edit the tenant sign-in policy"},
 	{Resource: "audit", Action: "read", Description: "Read the tenant audit log"},
 	{Resource: "clients", Action: "manage", Description: "Register OAuth client applications"},
+	{Resource: "directory", Action: "manage", Description: "Connect LDAP directories, search them and import users as inactive"},
 	{Resource: "tenants", Action: "operate", Description: "Create, suspend and inspect tenants (platform operators)"},
 }
 
 // Grants maps builtin role slugs to the permission references they hold.
 var Grants = map[string][]string{
-	"owner":    {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage"},
-	"admin":    {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage"},
+	"owner":    {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage", "directory:manage"},
+	"admin":    {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage", "directory:manage"},
 	"member":   {"profile:read"},
 	"auditor":  {"profile:read", "audit:read"},
-	"operator": {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage", "tenants:operate"},
+	"operator": {"profile:read", "users:manage", "groups:manage", "roles:manage", "policy:manage", "audit:read", "clients:manage", "directory:manage", "tenants:operate"},
 }
 
 // Manifest builds the gateway manifest from the embedded OpenAPI document.
@@ -75,12 +76,14 @@ func Manifest() (gatewayclient.Manifest, error) {
 			{Action: []string{"manage"}, Subject: []string{"Policy"}, Requires: "policy:manage"},
 			{Action: []string{"read"}, Subject: []string{"AuditEvent"}, Requires: "audit:read"},
 			{Action: []string{"manage"}, Subject: []string{"ClientApplication"}, Requires: "clients:manage"},
+			{Action: []string{"manage"}, Subject: []string{"DirectoryConnection"}, Requires: "directory:manage"},
 			{Action: []string{"manage"}, Subject: []string{"Tenant", "OperatorGrant"}, Requires: "tenants:operate"},
 		},
 		Exposes: []string{"./routes", "./nav"},
 		Nav: []gatewayclient.NavEntry{
 			{Title: "Security", Path: ConsolePrefix + "/security", Icon: "mdi-shield-key-outline", Order: 900, Requires: "profile:read"},
 			{Title: "Users", Path: ConsolePrefix + "/admin/users", Icon: "mdi-account-multiple-outline", Order: 800, Requires: "users:manage"},
+			{Title: "Directories", Path: ConsolePrefix + "/admin/directories", Icon: "mdi-folder-account-outline", Order: 802, Requires: "directory:manage"},
 			{Title: "Groups", Path: ConsolePrefix + "/admin/groups", Icon: "mdi-account-group-outline", Order: 805, Requires: "groups:manage"},
 			{Title: "Roles", Path: ConsolePrefix + "/admin/roles", Icon: "mdi-account-key-outline", Order: 810, Requires: "roles:manage"},
 			{Title: "Policy", Path: ConsolePrefix + "/admin/policy", Icon: "mdi-file-cog-outline", Order: 820, Requires: "policy:manage"},

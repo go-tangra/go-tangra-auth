@@ -25,6 +25,7 @@ const all: NavItem[] = [
   { key: 'nav.sessions', to: '/sessions', icon: 'mdi-devices' },
   { key: 'nav.security', to: '/security', icon: 'mdi-shield-key-outline' },
   { key: 'nav.users', to: '/admin/users', icon: 'mdi-account-multiple-outline', roles: ['owner', 'admin'] },
+  { key: 'nav.directories', to: '/admin/directories', icon: 'mdi-folder-account-outline', roles: ['owner', 'admin'] },
   { key: 'nav.groups', to: '/admin/groups', icon: 'mdi-account-group-outline', roles: ['owner', 'admin'] },
   { key: 'nav.roles', to: '/admin/roles', icon: 'mdi-account-key-outline', roles: ['owner', 'admin'] },
   { key: 'nav.policy', to: '/admin/policy', icon: 'mdi-file-cog-outline', roles: ['owner', 'admin'] },

@@ -60,6 +60,15 @@ const (
 	ProfileUpdated     EventType = "profile_updated"
 	AvatarUpdated      EventType = "avatar_updated"
 	AvatarRemoved      EventType = "avatar_removed"
+	// Feature 016: LDAP import (research D14). Activation is InviteCreated with
+	// reason "activation"; details carry ids and counts, never directory PII.
+	DirectoryConnectionCreated EventType = "directory_connection_created"
+	DirectoryConnectionUpdated EventType = "directory_connection_updated"
+	DirectoryConnectionDeleted EventType = "directory_connection_deleted"
+	DirectoryConnectionTested  EventType = "directory_connection_tested"
+	DirectorySearched          EventType = "directory_searched"
+	DirectoryImported          EventType = "directory_imported"
+	ImportedUserDeleted        EventType = "imported_user_deleted"
 )
 
 var known = map[EventType]struct{}{}
@@ -69,7 +78,9 @@ func init() {
 		RecoveryRequested, RecoveryCompleted, InviteCreated, InviteAccepted, InviteRevoked, RoleCreated, RoleUpdated, RoleDeleted, RoleAssigned,
 		RoleRevoked, PermissionRegistered, UserDeactivated, UserReactivated, SessionRevoked, TenantCreated, TenantSuspended, TenantReactivated,
 		OperatorGrantCreated, OperatorGrantUsed, ClientRegistered, PolicyUpdated, CrossTenantRefused, AuthzDenied, TokenExchanged,
-		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved} {
+		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
+		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
+		DirectoryImported, ImportedUserDeleted} {
 		known[t] = struct{}{}
 	}
 }

@@ -125,6 +125,205 @@ hash at rest). The resulting token carries `aud=<client_id>`.
   Administrators' edits of other people reach the platform within the
   gateway's identity cache window (60 s).
 
+## Directory import (feature 016)
+
+Tenant administrators with `directory:manage` (owner/admin, or a custom role
+granted it through OpenFGA) connect an LDAP directory, search it with an RFC
+4515 filter and import the people they select as **inactive** users. Nobody
+gets an account until an administrator activates them with an ordinary
+invitation. Design: `specs/016-auth-ldap-import/`.
+
+### Outbound target policy (SSRF)
+
+The tenant administrator types the URL, so every dial is policed. Without
+that, the auth service could be used to scan the platform network.
+
+- **At save**: the URL must be exactly `ldap://host[:port]` or
+  `ldaps://host[:port]`, with no userinfo, path, query or fragment. The port
+  must be in `directory.targets.allowed_ports` (default `389, 636, 3268,
+  3269`). An IP-literal host is checked against the address policy at save;
+  a hostname is not resolved then.
+- **At dial time**: `ldapdir` dials through a `net.Dialer` whose `Control`
+  hook checks the **resolved address and port actually being dialled**. That
+  defeats DNS rebinding and hostnames that resolve to internal addresses.
+- **Always denied**, in code, not configurable: unspecified (`0.0.0.0`, `::`,
+  `0.0.0.0/8`), loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`
+  including the `169.254.169.254` cloud metadata endpoint, `fe80::/10`),
+  multicast, and the IPv4-mapped forms of all of these.
+- **`deny_cidrs`**: platform-internal networks the operator lists. An
+  IPv4 address is also matched against IPv6 prefixes in its mapped form.
+- **`allow_cidrs`**: overrides `deny_cidrs` only, never the always-denied set.
+  Every entry is logged as a start-up warning.
+- **Coarse outcomes only**: connection tests and searches report the closed
+  vocabulary `unreachable`, `target_refused`, `timeout`, `tls_failed`,
+  `invalid_credentials`, `base_not_found` or `directory_error`, plus the
+  failed step (`connect|tls|bind|search_base`). They never report server
+  diagnostic text, so a probe learns little. Tests, searches and imports
+  share a per-tenant rate limit (`directory.rate_per_minute`, 30 by default;
+  one import request counts once), and a dial times out after
+  `directory.dial_timeout` (5 s by default).
+
+### Transport and trust
+
+- `tls_mode` is `ldaps` (implicit TLS, `ldaps://`) or `starttls` (`ldap://`
+  followed by StartTLS **before** the bind). If StartTLS fails, the session
+  is aborted; it never falls back to plaintext.
+- **TLS 1.3 is the minimum.** A connection can opt in to TLS 1.2 with
+  `allow_tls12`, for Active Directory before Windows Server 2022. TLS 1.2 is
+  limited to ECDHE key exchange with AEAD ciphers (AES-GCM,
+  ChaCha20-Poly1305).
+- **CA pinning**: the connection's `ca_pem` (at most 64 KiB, every PEM block a
+  parseable certificate, at least one) replaces the system roots for that
+  connection. Leave it empty to use the system roots. `ServerName` is always
+  the URL host. There is no skip-verify option; a private CA is handled by
+  pinning it.
+- **`plain`** (`ldap://` without TLS) exists only for development. It is
+  refused unless `directory.allow_plaintext: true`, which is refused in
+  production and logged as a start-up warning. Saving a plain connection is
+  audited. The check runs again every time a connection is used (test,
+  search, import), so a plain connection saved under the opt-out stops
+  working as soon as the opt-out is withdrawn or the deployment is
+  production.
+
+### Credentials and data
+
+- The bind password is sealed with the service's KEK envelope (AES-256-GCM)
+  under the associated data `ldap-bind:<tenant>:<connection>`, so a
+  ciphertext cannot be moved to another tenant or connection. It is
+  write-only: responses carry only `bind_password_set`. It is decrypted just
+  before the bind and zeroed afterwards. An empty password is refused, so
+  there are no anonymous binds.
+- The stored password is only ever sent to the destination it was entered
+  for. An update or an unsaved test (`connection_id` without
+  `bind_password`) that changes `url`, `tls_mode` or `ca_pem` must include
+  the password again. Otherwise it is refused with `400 validation_failed`
+  and audited as `refused` / `bind_password_required`. Without this rule, an
+  administrator who cannot read the password could point the connection at
+  a server they control and receive the password in the bind request.
+- **Filters**: at most 4 KiB, valid UTF-8, no NUL, at most 16 levels deep and
+  at most 64 components. Attribute names must be plain names or OIDs, and
+  `:dn:` extensible matching is refused. The same rules apply to the
+  connection's base filter when it is saved. The filter is compiled and
+  re-serialised to canonical form before anything is sent. The base filter
+  and the user filter are compiled independently and AND-combined, so the
+  user filter cannot escape the base filter. A narrowed base must be the
+  connection base DN or below it. Searches never dereference aliases, returned
+  entries outside the base are dropped, and referrals are never followed.
+- **Limits**: each connection has `size_limit` (1..1000, 500 by default) and
+  `time_limit_seconds` (1..60, 15 by default). Both are sent to the server
+  and also enforced by the client (deadline = time limit + 2 s). Operators
+  cap them with `directory.max_size_limit` and `directory.max_time_limit`. A
+  truncated result is labelled as truncated. Only the mapped attributes are
+  requested. Decoded values are capped (unique id 256 B, e-mail 254 B, DN
+  1024 B, names 100 runes), and an over-long value marks the entry `invalid`
+  instead of truncating it. One LDAP message is capped at 8 MiB. One import
+  takes at most 500 unique ids and one activation at most 100 users. A tenant
+  can have at most `directory.max_connections_per_tenant` connections (10 by
+  default).
+- Import never trusts the browser. It re-fetches each selected unique id from
+  the directory with an exact-match filter under the base DN and the base
+  filter. It never sends e-mail.
+- Audit (`directory_connection_*`, `directory_searched`,
+  `directory_imported`, `imported_user_deleted`, `invite_created` with
+  `reason: activation`) records ids, counts and the canonical filter (capped
+  at 1 KiB). It never records passwords, directory entries or the e-mail
+  addresses of imported people.
+
+### The `imported` status
+
+An imported user has no password, MFA, roles or groups. Outside the admin
+users list, the account behaves **exactly like one that does not exist**:
+
+- Sign-in runs the unknown-account branch: the same dummy argon2id verify,
+  the same timing pad and `401 invalid_credentials`. It never touches the
+  lockout counter, so a `423` cannot reveal the account.
+- Password recovery and invitation accept answer as for an unknown account.
+  Profile lookups list active members only.
+- Deactivate, reactivate and `PUT /admin/users/{id}/roles` refuse an imported
+  user with `409 invalid_state`, and group membership adds skip it. Without
+  the deactivate/reactivate refusal, deactivating and then reactivating would
+  turn a password-less row `active` and let recovery mail it a reset link.
+- The only way out is activation, an ordinary invitation (`imported →
+  invited`, then `invite.Accept` sets `active`), or a hard delete with
+  `remove-imported`, which works only while the user is still `imported`.
+  Inviting the e-mail address of an imported user through the plain "Invite
+  user" form also activates that user.
+
+### Escalation check on invitations (behaviour change)
+
+Before feature 016, plain invitations applied **no** role-grant check, so an
+administrator could invite someone with the `owner` role. Activation and
+plain invitations (`POST /api/v1/admin/invitations`) now run the same check
+as `setUserRoles`. A non-owner cannot grant `owner` or `admin`, or any role or
+group carrying a permission they do not hold themselves. Such a request is
+refused with `403 self_escalation` and audited. Owners, platform operators and
+system actors (tenant creation, which invites the first owner) are not
+affected.
+
+### Security review (T070)
+
+Constitution *Code Review* pass over `internal/ldapdir`, `internal/directory`
+(with `directorydb`) and the sign-in, recovery, invitation, activation and
+admin paths changed by feature 016. The review followed the STRIDE summary
+in the feature research. Findings, most severe first:
+
+| # | Severity | Finding | Fix | Regression test |
+|---|----------|---------|-----|-----------------|
+| F1 | High | **Stored bind password replayed to a new target.** `PUT /admin/directories/{id}` and `POST /admin/directories/test` with `connection_id` kept or reused the sealed password when only `url`, `tls_mode` or `ca_pem` changed. Anyone with `directory:manage` could point a connection at a host they control (outside `deny_cidrs`, their own CA pinned) and receive the service account's password in the bind, even though the API never returns it. | Changing `url`, `tls_mode` or `ca_pem` now requires `bind_password` in the same request (`targetChanged`, `errCredentialRequired`). Otherwise the request is refused with `validation_failed` and audited as `bind_password_required`. Name, bind/base DN, filter, mapping and limit edits still keep the stored password (spec US1 #4). The console hint says so. | `TestReviewStoredPasswordNotReplayedToNewTarget` |
+| F2 | Medium | **Import bypassed the outbound rate limit.** Each `POST /admin/directories/{id}/import` opened and bound a session, but only tests and searches counted against `directory.rate_per_minute`. Combined with editing a connection's URL, import was an unmetered dial probe of the reachable address space, with coarse but distinguishable outcomes (`unreachable`, `timeout`, `tls_failed`). | Import counts once per request against the same per-tenant limit before any unsealing or dialling. It answers `429 rate_limited` and audits `directory_imported` `refused`. The OpenAPI document gained the `429`. | `TestReviewImportRateLimited` |
+| F3 | Medium | **Plaintext enforced only at save.** A `plain` connection saved under `directory.allow_plaintext` could still be searched and imported from after the opt-out was withdrawn, or after its row reached a production deployment (restored database), which sent the bind password in clear text. | `usable()` refuses a plain connection at search and import time (`400 insecure_transport`, audited `refused`) before the password is unsealed. The saved-connection test already re-ran the save-time check. | `TestReviewPlaintextRefusedAtUse` |
+| F4 | Low | **Base filter saved without the filter policy.** The base filter was only compiled and re-serialised, so `:dn:` matching, bad attribute names, escaped NULs or over-deep filters were accepted at save. Every search then refused them (fail closed), so there was no bypass, only a stored value that could never work. | The base filter goes through `ldapdir.CompileUserFilter` at save, the same policy searches apply. | `TestReviewBaseFilterPolicyAtSave` |
+
+Reviewed and found sound (no change):
+
+- **Filter injection**: user filters are compiled, policy-walked and
+  re-serialised to a fixed point. `Combine` re-parses `(&base user)` and
+  checks the root is an AND of exactly two children. The import filter is
+  the canonical base filter AND `(<attr>=<ldap.EscapeFilter(value)>)`, where
+  `<attr>` is a saved attribute name matching `^[A-Za-z][A-Za-z0-9-]{0,63}$`.
+  AD GUIDs are escaped as raw bytes.
+- **Base/alias escape**: `ScopeBase`/`WithinBase` compare parsed DNs per RDN.
+  Searches send `NeverDerefAliases` and never follow referrals. Every returned
+  entry is re-checked against the base (search: the effective base; import:
+  the connection base) and dropped otherwise. A narrowed base is sent as the
+  admin typed it, so a server that parses a DN differently from go-ldap could
+  search elsewhere under that base, but the per-entry check drops whatever
+  lands outside it. This is accepted.
+- **TLS verification**: TLS 1.3 minimum, and TLS 1.2 only by opt-in with
+  ECDHE+AEAD suites. `ServerName` is the URL host, there is no skip-verify
+  field, renegotiation is off, and a StartTLS failure aborts with no
+  plaintext fallback. The service also refuses to bind unless the session
+  reports a completed handshake.
+- **SSRF dial-time policy**: `net.Dialer.Control` checks every resolved
+  address and port, including each address when a hostname resolves to
+  several. The always-denied set cannot be overridden by `allow_cidrs`.
+  IPv4-mapped IPv6 addresses and zoned addresses are handled. Errors never
+  echo the URL.
+- **Password sealing/redaction**: AES-256-GCM envelope with associated data
+  `ldap-bind:<tenant>:<connection>`. Views carry `bind_password_set` only,
+  plaintext buffers are cleared after `Bind`, and errors, results and audit
+  rows use the closed vocabulary. The redaction sentinels (T063) cover
+  create, update, test, search and import.
+- **Enumeration via imported accounts**: sign-in drops an imported row to
+  the unknown-account branch before the lockout lookup and uses the same
+  dummy argon2id verify and timing pad. Recovery requests look up `active`
+  users only. Invitation accept refuses an imported row with the same
+  `invalid_token` as an unknown token. Profile and group-member listings are
+  limited to `active` users.
+- **Reactivate bypass**: deactivate, reactivate and `PUT /admin/users/{id}/roles`
+  refuse `imported` users. Group membership adds skip them in SQL
+  (`status <> 'imported'`). `imported → invited` happens only in
+  `invite.activate`, and `invited → active` only in `invite.Accept`, which
+  sets the password.
+- **Escalation at activation**: `checkGrants` validates roles and groups in
+  the tenant, then runs `MayAssign`/`MayJoin` once before any per-user
+  transaction. Plain invitations, including the "imported e-mail becomes an
+  activation" path, use the same check.
+- **Cross-tenant**: every directory, link and user query runs in a
+  tenant-scoped transaction under RLS. Foreign connection and user ids
+  answer `not_found` and audit `cross_tenant_refused` through a system-scope
+  lookup that returns nothing to the caller.
+
 ## What the service never does
 
 - Store or log passwords, session secrets, challenge ids, codes or tokens in
@@ -150,6 +349,12 @@ hash at rest). The resulting token carries `aud=<client_id>`.
 | **E** operator abuse | platform tenant with mandatory TOTP; time-limited (≤ 4 h), reasoned, audited grants for in-tenant actions | `TestOperatorGrants`, `TestOperatorPolicyAndClients` |
 | **S/T** replay after revocation | revocation marks + feed; verifiers reject within ≤ 10 s and fail closed when stale | `TestRevocationPropagation` (SC-003), `TestRevocationFeedAndFailClosed` |
 | **I** key compromise | 24 h rotation, KEK outside the database, retire/republish schedule | `TestKeyRotation` (SC-007), `TestRotationStatesAndJWKS` |
+| **E** SSRF / internal port scan via a directory URL | dial-time IP check on the resolved address, always-denied set, `deny_cidrs`, port allow-list, coarse outcomes, per-tenant rate limit on test, search and import | `ldapdir` policy tests, `ldap_ssrf_test.go`, `TestReviewImportRateLimited` |
+| **S/I** MITM on the directory, bind password harvest | TLS 1.3 minimum (per-connection TLS 1.2 opt-in), pinned CA or system roots, no skip-verify, StartTLS before bind, sealed write-only password, closed error vocabulary | `ldapdir` client/TLS tests, redaction scan |
+| **T** LDAP filter injection | compile + canonicalise, AND with the base filter, base-DN scoping, no alias deref, per-entry DN re-check | `ldapdir` filter/DN tests, `FuzzCompileUserFilter`, `FuzzCombine`, `FuzzScopeBase` |
+| **I** enumeration of imported users | sign-in/recovery/accept treat `imported` as unknown, no lockout oracle, deactivate/reactivate refused | `TestAdminRefusesImported`, sign-in and recovery tests |
+| **I** bind password exfiltration by re-pointing a connection | the stored password is reused only for the same `url`/`tls_mode`/`ca_pem`; otherwise it must be typed again (T070 F1) | `TestReviewStoredPasswordNotReplayedToNewTarget` |
+| **E** granting roles through an invitation or activation | shared `MayAssign` / `MayJoin` escalation check on activation and plain invitations | `TestMayAssign`, `invite` and `activate` tests |
 
 ## Contracts
 

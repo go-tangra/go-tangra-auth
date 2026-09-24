@@ -300,7 +300,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List users (admin); q matches email, first or last name; items carry avatar_url and groups */
+        /** List users (admin); q matches email, first or last name; status=imported lists imported users; items carry avatar_url, groups, directory and invitation_id */
         get: operations["listUsers"];
         put?: never;
         post?: never;
@@ -386,6 +386,40 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["reactivateUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Invite imported users (admin); roles and groups pass the escalation check once, before any invitation */
+        post: operations["activateUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/remove-imported": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete an imported user that was never activated (admin; no e-mail) */
+        post: operations["removeImportedUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -883,6 +917,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** LDAP directory connections of the tenant (directory:manage) */
+        get: operations["listDirectories"];
+        put?: never;
+        /** Create a connection; the bind password is sealed and never returned (directory:manage) */
+        post: operations["createDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test unsaved settings; connection_id without bind_password reuses that connection's stored password only for its own url, tls_mode and ca_pem (directory:manage) */
+        post: operations["testDirectoryInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One connection including ca_pem (directory:manage) */
+        get: operations["getDirectory"];
+        /** Partial update; an omitted bind_password keeps the stored one unless url, tls_mode or ca_pem change (then validation_failed) (directory:manage) */
+        put: operations["updateDirectory"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete a connection; users already imported stay (directory:manage) */
+        post: operations["deleteDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test a saved connection and record last_test (directory:manage) */
+        post: operations["testDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview directory entries under the connection base with their import status; nothing is written (directory:manage) */
+        post: operations["searchDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/directories/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import the chosen entries (re-fetched by uid under the base) as inactive users (directory:manage) */
+        post: operations["importDirectory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/authorize": {
         parameters: {
             query?: never;
@@ -939,11 +1094,28 @@ export interface components {
             email?: string;
             display_name?: string;
             /** @enum {string} */
-            status?: "invited" | "active" | "deactivated" | "locked";
+            status?: "invited" | "active" | "deactivated" | "locked" | "imported";
             mfa_enabled?: boolean;
             roles?: string[];
             /** Format: date-time */
             last_signin_at?: string | null;
+            /** @description Directory origin of an imported user; null for users that never came from a directory. Never carries the DN. */
+            directory?: {
+                /**
+                 * Format: uuid
+                 * @description null once the connection is deleted
+                 */
+                connection_id?: string | null;
+                connection_name?: string;
+                directory_uid?: string;
+                /** Format: date-time */
+                last_imported_at?: string;
+            } | null;
+            /**
+             * Format: uuid
+             * @description pending invitation of an invited user (enables resend)
+             */
+            invitation_id?: string | null;
         };
         Role: {
             /** Format: uuid */
@@ -1071,6 +1243,191 @@ export interface components {
             /** @enum {string} */
             token_type?: "Bearer";
             expires_in?: number;
+        };
+        /** @description LDAP attribute names; omitted or empty ones default from the kind */
+        DirectoryAttributes: {
+            uid?: components["schemas"]["DirectoryAttributeName"];
+            email?: components["schemas"]["DirectoryAttributeName"];
+            display_name?: components["schemas"]["DirectoryAttributeName"];
+            first_name?: components["schemas"]["DirectoryAttributeName"];
+            last_name?: components["schemas"]["DirectoryAttributeName"];
+        };
+        DirectoryAttributeName: string;
+        /** @description A tenant's LDAP connection. Never carries the bind password, only bind_password_set. */
+        DirectoryConnection: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            ca_pem_set?: boolean;
+            /** @description PEM of the trusted CA (public data); only GET /api/v1/admin/directories/{id} fills it */
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password_set?: boolean;
+            base_dn?: string;
+            /** @description canonical form */
+            base_filter?: string;
+            attributes?: {
+                uid?: string;
+                email?: string;
+                display_name?: string;
+                first_name?: string;
+                last_name?: string;
+            };
+            size_limit?: number;
+            time_limit_seconds?: number;
+            last_test?: {
+                /** Format: date-time */
+                at?: string;
+                outcome?: string;
+            } | null;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /** @description Create (name, kind, url, tls_mode, bind_dn, bind_password and base_dn required) or partial update (omitted bind_password keeps the stored one) */
+        DirectoryConnectionInput: {
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            /** @description ldap:// or ldaps:// URL; host name only, no IP literal */
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            /** @description "" clears */
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password?: string;
+            base_dn?: string;
+            /** @description RFC 4515 filter always ANDed into every search */
+            base_filter?: string;
+            attributes?: components["schemas"]["DirectoryAttributes"];
+            size_limit?: number;
+            time_limit_seconds?: number;
+        };
+        /** @description DirectoryConnectionInput plus connection_id; with connection_id and no bind_password the stored password of that connection (same tenant) is used */
+        DirectoryTestInput: {
+            /** Format: uuid */
+            connection_id?: string;
+            name?: string;
+            /** @enum {string} */
+            kind?: "active_directory" | "openldap" | "other";
+            url?: string;
+            /** @enum {string} */
+            tls_mode?: "ldaps" | "starttls" | "plain";
+            allow_tls12?: boolean;
+            ca_pem?: string;
+            bind_dn?: string;
+            bind_password?: string;
+            base_dn?: string;
+            base_filter?: string;
+            attributes?: components["schemas"]["DirectoryAttributes"];
+            size_limit?: number;
+            time_limit_seconds?: number;
+        };
+        /** @description ok:false is still 200; reason is the closed vocabulary, never server text */
+        TestResult: {
+            ok?: boolean;
+            /**
+             * @description failing step
+             * @enum {string|null}
+             */
+            step?: "connect" | "tls" | "bind" | "search_base" | null;
+            reason?: string | null;
+            tls?: {
+                version?: string;
+                peer_subject?: string;
+            } | null;
+            duration_ms?: number;
+        };
+        /** @description Every field is optional; {} searches the whole connection base with (objectClass=*) */
+        SearchRequest: {
+            /** @description RFC 4515 filter, ANDed after the connection base_filter; empty = (objectClass=*) */
+            filter?: string;
+            /** @description must lie within the connection base_dn */
+            base?: string;
+            /**
+             * @description default sub
+             * @enum {string}
+             */
+            scope?: "one" | "sub";
+        };
+        SearchResult: {
+            items?: {
+                uid?: string;
+                dn?: string;
+                email?: string | null;
+                display_name?: string;
+                first_name?: string;
+                last_name?: string;
+                /** @enum {string} */
+                status?: "new" | "existing_user" | "imported" | "invalid";
+                /**
+                 * Format: uuid
+                 * @description for existing_user and imported
+                 */
+                user_id?: string | null;
+                /** @description for invalid: no_email | invalid_email | value_too_long | multi_valued_uid | invalid_uid */
+                reason?: string | null;
+            }[];
+            /** @description size or time limit hit */
+            truncated?: boolean;
+            /** @description entries dropped because their DN left the base */
+            out_of_scope?: number;
+            /** @description canonical (&<base_filter><filter>) actually sent */
+            effective_filter?: string;
+        };
+        SearchError: {
+            /** @description invalid_filter | invalid_base | validation_failed */
+            reason: string;
+            /** @description invalid_filter only: the parser position message, built from the submitted filter */
+            message?: string;
+        };
+        ImportRequest: {
+            uids: string[];
+        };
+        /** @description Partial success is still 200; every list is present (possibly empty) */
+        ImportResult: {
+            created?: components["schemas"]["ImportItem"][];
+            updated?: components["schemas"]["ImportItem"][];
+            /** @description no_email | invalid_email | email_in_use | duplicate_email | already_active | not_found_in_directory | value_too_long | multi_valued_uid | invalid_uid */
+            skipped?: components["schemas"]["ImportIssue"][];
+            /** @description directory_error | timeout | internal */
+            failed?: components["schemas"]["ImportIssue"][];
+        };
+        ImportItem: {
+            uid?: string;
+            /** Format: uuid */
+            user_id?: string;
+        };
+        ImportIssue: {
+            uid?: string;
+            reason?: string;
+        };
+        ActivateRequest: {
+            user_ids: string[];
+            role_ids?: string[];
+            group_ids?: string[];
+        };
+        ActivateResult: {
+            /** @description One item per requested user id */
+            items: {
+                /** Format: uuid */
+                user_id: string;
+                /** @enum {string} */
+                outcome: "invited" | "failed";
+                /** Format: uuid */
+                invitation_id: string | null;
+                /** @description failed only: invalid_state | not_found | internal */
+                reason: string | null;
+            }[];
         };
     };
     responses: never;
@@ -1667,6 +2024,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     deactivateUser: {
@@ -1696,6 +2060,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     reactivateUser: {
@@ -1713,6 +2084,96 @@ export interface operations {
         responses: {
             /** @description reactivated */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    activateUsers: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description per-user outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivateResult"];
+                };
+            };
+            /** @description validation_failed | malformed_body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden | self_escalation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    removeImportedUser: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_state (not imported) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2742,6 +3203,437 @@ export interface operations {
             };
             /** @description self_escalation */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDirectories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["DirectoryConnection"][];
+                    };
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description duplicate | limit_reached */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testDirectoryInput: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryTestInput"];
+            };
+        };
+        responses: {
+            /** @description result (ok false is still 200) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown or cross-tenant connection_id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getDirectory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryConnection"];
+                };
+            };
+            /** @description validation_failed | invalid_url | invalid_filter | invalid_base | invalid_ca | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description duplicate */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description target_refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description result (ok false is still 200) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    searchDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResult"];
+                };
+            };
+            /** @description invalid_filter (with message, before any network call) | invalid_base | validation_failed | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchError"];
+                };
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unreachable | tls_failed | invalid_credentials | base_not_found | directory_error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    importDirectory: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            /** @description per-entry outcomes (partial success) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResult"];
+                };
+            };
+            /** @description validation_failed | insecure_transport */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unreachable | tls_failed | invalid_credentials | base_not_found | directory_error (nothing imported) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description timeout (nothing imported) */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

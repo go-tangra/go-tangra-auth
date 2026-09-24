@@ -40,7 +40,9 @@ type Store struct {
 	Grants      map[string]store.OperatorGrant
 	AuditRows   []store.AuditRow
 	Now         func() time.Time
-	g           *groupState // feature 004 (see groups.go)
+	g           *groupState     // feature 004 (see groups.go)
+	dir         *directoryState // feature 016 (see directory.go)
+	failNext    map[string]bool // methods armed by FailNext (see directory.go)
 }
 
 // New returns an empty store.
@@ -463,6 +465,11 @@ func (m *Store) User(_ context.Context, tid, uid string) (store.User, error) {
 	return store.User{}, store.ErrNotFound
 }
 
+// UserByID is User under the name the invite Tx uses (feature 016).
+func (m *Store) UserByID(ctx context.Context, tid, uid string) (store.User, error) {
+	return m.User(ctx, tid, uid)
+}
+
 // UserAnyTenant finds a user id across tenants (system scope; used only to
 // audit cross-tenant attempts).
 func (m *Store) UserAnyTenant(_ context.Context, uid string) (store.User, error) {
@@ -484,7 +491,7 @@ func (m *Store) ListUsers(_ context.Context, tid, q, status string, limit int) (
 		if u.TenantID != tid || (status != "" && u.Status != status) || (q != "" && !strings.Contains(strings.ToLower(u.Email+" "+u.DisplayName+" "+u.FirstName+" "+u.LastName), strings.ToLower(q))) {
 			continue
 		}
-		out = append(out, u)
+		out = append(out, m.withOriginLocked(u))
 		if limit > 0 && len(out) >= limit {
 			break
 		}

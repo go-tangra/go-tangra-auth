@@ -1,0 +1,1 @@
+ldap://cn=reader%2Cdc=example%2Cdc=test:secret@ldap.example.org

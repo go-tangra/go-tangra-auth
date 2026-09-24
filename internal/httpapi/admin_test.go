@@ -36,7 +36,9 @@ func withUS2(t *testing.T, u *us1) (*audit.Writer, *email.Outbox) {
 	ob := email.NewOutbox(env, nullSender{}, nil, 3, nil)
 	az := authz.New(authz.NewFake(), c, nil)
 	sm := u.sessions
-	u.srv.RegisterUS2(US2Deps{Invites: invite.New(u.ms, ob, az, aw, "https://auth.example.org"), Admin: user.NewAdmin(u.ms, sm, aw), Assigner: authz.NewAssigner(u.ms, az, aw), Audit: u.ms, Sessions: sm})
+	as := authz.NewAssigner(u.ms, az, aw)
+	inv := invite.New(u.ms, ob, az, aw, "https://auth.example.org").WithEscalation(authz.InviteEscalation{Assigner: as, Groups: authz.NewGroups(u.ms, az, aw)})
+	u.srv.RegisterUS2(US2Deps{Invites: inv, Admin: user.NewAdmin(u.ms, sm, aw), Assigner: as, Audit: u.ms, Sessions: sm})
 	return aw, ob
 }
 
@@ -149,5 +151,47 @@ func TestAdminHandlers(t *testing.T) {
 	}
 	if w, _ := u.call("GET", "/api/v1/admin/audit", "", newbie); w.Code != 200 {
 		t.Fatalf("auditor → %d", w.Code)
+	}
+}
+
+// Feature 016: an imported user is only activated or removed; roles, status
+// changes and group membership are refused (research D10).
+func TestAdminRefusesImportedTarget(t *testing.T) {
+	u := newUS1(t)
+	aw, _ := withGroups(t, u)
+	defer aw.Close()
+	u.ms.AddUser(store.User{ID: "u5", TenantID: tid, Email: "imp@x.test", DisplayName: "Imp", Status: "imported"})
+	ow, _ := u.call("POST", "/api/v1/signin", `{"tenant":"acme","email":"alice@x.test","password":"correct horse battery"}`)
+	owner := sessionCookie(ow)
+
+	if w, out := u.call("PUT", "/api/v1/admin/users/u5/roles", `{"role_ids":["r-auditor"]}`, owner); w.Code != 409 || out["reason"] != "invalid_state" {
+		t.Fatalf("roles → %d %v", w.Code, out)
+	}
+	if roles, _ := u.ms.Roles(context.Background(), tid, "u5"); len(roles) != 0 {
+		t.Fatalf("imported user got roles %v", roles)
+	}
+	for _, op := range []string{"deactivate", "reactivate"} {
+		if w, out := u.call("POST", "/api/v1/admin/users/u5/"+op, "", owner); w.Code != 409 || out["reason"] != "invalid_state" {
+			t.Fatalf("%s → %d %v", op, w.Code, out)
+		}
+	}
+	if got, _ := u.ms.User(context.Background(), tid, "u5"); got.Status != "imported" {
+		t.Fatalf("status changed to %q", got.Status)
+	}
+	// Group membership: the imported user is never added.
+	w, out := u.call("POST", "/api/v1/admin/groups", `{"name":"Imported"}`, owner)
+	if w.Code != 201 {
+		t.Fatalf("create group → %d %v", w.Code, out)
+	}
+	gid, _ := out["id"].(string)
+	if w, _ := u.call("POST", "/api/v1/admin/groups/"+gid+"/members", `{"user_ids":["u5"]}`, owner); w.Code == 200 {
+		t.Fatal("imported user added to a group")
+	}
+	if n, _ := u.ms.CountGroupMembers(context.Background(), tid, gid); n != 0 {
+		t.Fatalf("members = %d", n)
+	}
+	// An active user is unaffected.
+	if w, out := u.call("PUT", "/api/v1/admin/users/u2/roles", `{"role_ids":["r-auditor"]}`, owner); w.Code != 200 {
+		t.Fatalf("active roles → %d %v", w.Code, out)
 	}
 }
