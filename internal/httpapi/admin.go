@@ -78,6 +78,8 @@ func (s *Server) RegisterUS2(d US2Deps) {
 	s.MustHandle("POST", "/api/v1/admin/users/{id}/deactivate", s.userStatus(d, "deactivate"))
 	s.MustHandle("POST", "/api/v1/admin/users/{id}/reactivate", s.userStatus(d, "reactivate"))
 	s.MustHandle("POST", "/api/v1/admin/users/{id}/sessions/revoke", s.userStatus(d, "signout"))
+	s.MustHandle("POST", "/api/v1/admin/users/activate", s.activateUsers(d))
+	s.MustHandle("POST", "/api/v1/admin/users/{id}/remove-imported", s.removeImported(d))
 	s.MustHandle("POST", "/api/v1/admin/invitations", s.createInvitation(d))
 	s.MustHandle("POST", "/api/v1/admin/invitations/{id}/resend", s.resendInvitation(d))
 	s.MustHandle("POST", "/api/v1/invitations/accept", s.acceptInvitation(d))
@@ -152,6 +154,67 @@ func (s *Server) userStatus(d US2Deps, op string) http.HandlerFunc {
 			err = d.Admin.ForceSignout(r.Context(), a, uid)
 		}
 		if err != nil {
+			Fail(w, r, s.rt.Logger(), adminError(err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// activateUsers invites imported users (feature 016). Whole-request refusals
+// (validation, self_escalation) happen before any invitation; per-user
+// failures come back as items.
+func (s *Server) activateUsers(d US2Deps) http.HandlerFunc {
+	type body struct {
+		UserIDs  []string `json:"user_ids"`
+		RoleIDs  []string `json:"role_ids"`
+		GroupIDs []string `json:"group_ids"`
+	}
+	type item struct {
+		UserID       string  `json:"user_id"`
+		Outcome      string  `json:"outcome"`
+		InvitationID *string `json:"invitation_id"`
+		Reason       *string `json:"reason"`
+	}
+	orNil := func(v string) *string {
+		if v == "" {
+			return nil
+		}
+		return &v
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, err := RequireAdmin(r)
+		if err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		var in body
+		if err := DecodeJSON(r, &in); err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		res, err := d.Invites.Activate(r.Context(), a, a.TenantID, in.UserIDs, invite.Params{RoleIDs: in.RoleIDs, GroupIDs: in.GroupIDs})
+		if err != nil {
+			Fail(w, r, s.rt.Logger(), adminError(err))
+			return
+		}
+		items := make([]item, 0, len(res))
+		for _, it := range res {
+			items = append(items, item{UserID: it.UserID, Outcome: it.Outcome, InvitationID: orNil(it.InvitationID), Reason: orNil(it.Reason)})
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	}
+}
+
+// removeImported deletes an imported user that was never activated.
+func (s *Server) removeImported(d US2Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, err := RequireAdmin(r)
+		if err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		if err := d.Admin.RemoveImported(r.Context(), a, r.PathValue("id")); err != nil {
 			Fail(w, r, s.rt.Logger(), adminError(err))
 			return
 		}

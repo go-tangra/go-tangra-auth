@@ -392,6 +392,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Invite imported users (admin); roles and groups pass the escalation check once, before any invitation */
+        post: operations["activateUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/remove-imported": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete an imported user that was never activated (admin; no e-mail) */
+        post: operations["removeImportedUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{id}/sessions/revoke": {
         parameters: {
             query?: never;
@@ -1377,6 +1411,24 @@ export interface components {
             uid?: string;
             reason?: string;
         };
+        ActivateRequest: {
+            user_ids: string[];
+            role_ids?: string[];
+            group_ids?: string[];
+        };
+        ActivateResult: {
+            /** @description One item per requested user id */
+            items: {
+                /** Format: uuid */
+                user_id: string;
+                /** @enum {string} */
+                outcome: "invited" | "failed";
+                /** Format: uuid */
+                invitation_id: string | null;
+                /** @description failed only: invalid_state | not_found | internal */
+                reason: string | null;
+            }[];
+        };
     };
     responses: never;
     parameters: {
@@ -2038,6 +2090,89 @@ export interface operations {
                 content?: never;
             };
             /** @description invalid_state (imported user) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    activateUsers: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description per-user outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivateResult"];
+                };
+            };
+            /** @description validation_failed | malformed_body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden | self_escalation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    removeImportedUser: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_state (not imported) */
             409: {
                 headers: {
                     [name: string]: unknown;

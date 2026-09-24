@@ -300,6 +300,29 @@ components:
     ImportIssue:
       type: object
       properties: { uid: { type: string }, reason: { type: string } }
+    ActivateRequest:
+      type: object
+      additionalProperties: false
+      required: [user_ids]
+      properties:
+        user_ids: { type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: { type: string, format: uuid } }
+        role_ids: { type: array, items: { type: string, format: uuid } }
+        group_ids: { type: array, maxItems: 50, items: { type: string, format: uuid } }
+    ActivateResult:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: One item per requested user id
+          items:
+            type: object
+            required: [user_id, outcome, invitation_id, reason]
+            properties:
+              user_id: { type: string, format: uuid }
+              outcome: { type: string, enum: [invited, failed] }
+              invitation_id: { type: string, format: uuid, nullable: true }
+              reason: { type: string, nullable: true, description: 'failed only: invalid_state | not_found | internal' }
 paths:
   /.well-known/jwks.json:
     get:
@@ -465,6 +488,26 @@ paths:
       operationId: reactivateUser
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
       responses: { '204': { description: reactivated }, '409': { description: 'invalid_state (imported user)' } }
+  /api/v1/admin/users/activate:
+    post:
+      operationId: activateUsers
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Invite imported users (admin); roles and groups pass the escalation check once, before any invitation
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActivateRequest' } } } }
+      responses:
+        '200': { description: per-user outcomes, content: { application/json: { schema: { $ref: '#/components/schemas/ActivateResult' } } } }
+        '400': { description: validation_failed | malformed_body }
+        '403': { description: forbidden | self_escalation }
+  /api/v1/admin/users/{id}/remove-imported:
+    post:
+      operationId: removeImportedUser
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
+      summary: Delete an imported user that was never activated (admin; no e-mail)
+      responses:
+        '204': { description: removed }
+        '403': { description: forbidden }
+        '404': { description: not_found }
+        '409': { description: 'invalid_state (not imported)' }
   /api/v1/admin/users/{id}/sessions/revoke:
     post:
       operationId: revokeUserSessions
