@@ -126,10 +126,10 @@ func (s *AuthorizationServer) RegisterPermissions(ctx context.Context, req *auth
 }
 
 func decisionError(err error) error {
-	switch {
-	case err == authz.ErrBadPermission, err == authz.ErrMalformed:
+	switch err {
+	case authz.ErrBadPermission, authz.ErrMalformed:
 		return status.Error(codes.InvalidArgument, err.Error())
-	case err == tenantctx.ErrCrossTenant, err == tenantctx.ErrNoActor, err == authz.ErrCrossTenant:
+	case tenantctx.ErrCrossTenant, tenantctx.ErrNoActor, authz.ErrCrossTenant:
 		return status.Error(codes.PermissionDenied, "cross_tenant_refused")
 	}
 	return status.Error(codes.Unavailable, "decision unavailable")

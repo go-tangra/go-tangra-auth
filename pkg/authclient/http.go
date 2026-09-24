@@ -34,7 +34,7 @@ func (h HTTPKeys) Keys(ctx context.Context) (map[string]ed25519.PublicKey, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("authclient: jwks: status %d", resp.StatusCode)
 	}

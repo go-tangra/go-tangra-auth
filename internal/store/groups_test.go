@@ -16,7 +16,7 @@ func TestMigrationGroupsProfiles(t *testing.T) {
 	adminDSN, appDSN := startDB(t)
 	ctx := context.Background()
 	admin, _ := pgx.Connect(ctx, adminDSN)
-	defer admin.Close(ctx)
+	defer func() { _ = admin.Close(ctx) }()
 	// Migrate up to 0004, seed a pre-feature user, then apply 0005.
 	if err := MigrateTo(ctx, adminDSN, 4); err != nil {
 		t.Fatal(err)

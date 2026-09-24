@@ -58,11 +58,29 @@ func consoleHandler(dist fs.FS, gatewayMode bool) http.Handler {
 		// edge, relayed in X-CSP-Nonce; only the gateway can reach this server.
 		nonce := edge.Nonce(r.Context())
 		if nonce == "" && gatewayMode {
-			nonce = r.Header.Get("X-CSP-Nonce")
+			nonce = relayedNonce(r.Header.Get("X-CSP-Nonce"))
 		}
 		page := bytes.ReplaceAll(index, []byte(noncePlaceholder), []byte(nonce))
+		// #nosec G705 -- the only request-derived bytes are the nonce, restricted to base64url characters by relayedNonce.
 		_, _ = w.Write(bytes.ReplaceAll(page, []byte(gatewayPlaceholder), gatewayFlag))
 	})
+}
+
+// relayedNonce returns the gateway-relayed nonce when it is plain base64 /
+// base64url text of sane length, and "" otherwise, so a header value can never
+// break out of the nonce attribute it is written into.
+func relayedNonce(v string) string {
+	if len(v) > 128 {
+		return ""
+	}
+	for _, c := range v {
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', strings.ContainsRune("+/=_-", c):
+		default:
+			return ""
+		}
+	}
+	return v
 }
 
 // remoteHandler serves the federated remote: mf-manifest.json is never cached,

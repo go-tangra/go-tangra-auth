@@ -243,7 +243,7 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Identity, error) {
 func (v *Verifier) revoked(c Claims) bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	iat := c.IssuedAt.Time.Unix()
+	iat := c.IssuedAt.Unix()
 	for _, e := range v.entries {
 		if e.TS.Unix() < iat {
 			continue

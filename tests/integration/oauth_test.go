@@ -27,24 +27,25 @@ func TestOAuthCodeFlow(t *testing.T) {
 	q := url.Values{"response_type": {"code"}, "client_id": {"spa"}, "redirect_uri": {"https://app.example.org/cb"}, "state": {"st"}, "code_challenge": {oauth.Challenge(verifier)}, "code_challenge_method": {"S256"}}
 	noRedirect := *e.Client
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	get := func(query url.Values) *http.Response {
+	// get returns the status and redirect target; the body is always closed.
+	get := func(query url.Values) (int, string) {
 		resp, err := noRedirect.Get(e.Base + "/authorize?" + query.Encode())
 		if err != nil {
 			t.Fatal(err)
 		}
-		resp.Body.Close()
-		return resp
+		_ = resp.Body.Close()
+		return resp.StatusCode, resp.Header.Get("Location")
 	}
-	if resp := get(q); resp.StatusCode != 302 || !strings.HasPrefix(resp.Header.Get("Location"), "/console/signin?next=") {
-		t.Fatalf("%d %q", resp.StatusCode, resp.Header.Get("Location"))
+	if st, where := get(q); st != 302 || !strings.HasPrefix(where, "/console/signin?next=") {
+		t.Fatalf("%d %q", st, where)
 	}
 	if code := e.SignIn("acme", "alice@acme.test", pw); code != 200 {
 		t.Fatal(code)
 	}
-	resp := get(q)
-	loc, _ := url.Parse(resp.Header.Get("Location"))
-	if resp.StatusCode != 302 || loc.Host != "app.example.org" || loc.Query().Get("state") != "st" {
-		t.Fatalf("%d %q", resp.StatusCode, resp.Header.Get("Location"))
+	st, where := get(q)
+	loc, _ := url.Parse(where)
+	if st != 302 || loc.Host != "app.example.org" || loc.Query().Get("state") != "st" {
+		t.Fatalf("%d %q", st, where)
 	}
 	exchange := func(code, ver string) (int, map[string]any) {
 		form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {"https://app.example.org/cb"}, "client_id": {"spa"}, "code_verifier": {ver}}
@@ -56,7 +57,7 @@ func TestOAuthCodeFlow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		out := map[string]any{}
 		_ = jsonDecode(r, &out)
 		return r.StatusCode, out
@@ -68,7 +69,8 @@ func TestOAuthCodeFlow(t *testing.T) {
 	if st, _ := exchange(code, verifier); st != 400 {
 		t.Fatal("reused code accepted")
 	}
-	loc, _ = url.Parse(get(q).Header.Get("Location"))
+	_, where = get(q)
+	loc, _ = url.Parse(where)
 	if st, out := exchange(loc.Query().Get("code"), verifier); st != 200 || out["token_type"] != "Bearer" {
 		t.Fatalf("%d %v", st, out)
 	}
@@ -77,12 +79,12 @@ func TestOAuthCodeFlow(t *testing.T) {
 		bad[k] = v
 	}
 	bad.Set("redirect_uri", "https://evil.example.org/cb")
-	if resp := get(bad); resp.StatusCode != 400 {
-		t.Fatalf("unregistered redirect → %d", resp.StatusCode)
+	if st, _ := get(bad); st != 400 {
+		t.Fatalf("unregistered redirect → %d", st)
 	}
 	bad.Set("redirect_uri", "https://app.example.org/cb")
 	bad.Del("state")
-	if resp := get(bad); resp.StatusCode != 400 {
-		t.Fatalf("missing state → %d", resp.StatusCode)
+	if st, _ := get(bad); st != 400 {
+		t.Fatalf("missing state → %d", st)
 	}
 }

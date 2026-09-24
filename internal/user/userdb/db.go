@@ -60,6 +60,7 @@ func (d DBAdminStore) ListUsers(ctx context.Context, tid, q, status string, limi
 func (d DBAdminStore) UpdateUserStatus(ctx context.Context, tid, id, status string) error {
 	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.UpdateUserStatus(ctx, tx, tid, id, status) })
 }
+
 // DeleteImportedUser deletes a user only while imported (feature 016).
 func (d DBAdminStore) DeleteImportedUser(ctx context.Context, tid, id string) error {
 	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.DeleteImportedUser(ctx, tx, tid, id) })

@@ -51,7 +51,7 @@ func Migrate(ctx context.Context, dsn string) error {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
 	db := stdlib.OpenDB(*cfg)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if _, err := db.ExecContext(ctx, "SELECT pg_advisory_lock(7241001)"); err != nil {
 		return fmt.Errorf("store: migrate lock: %w", err)
 	}
@@ -74,7 +74,7 @@ func MigrateTo(ctx context.Context, dsn string, version int64) error {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
 	db := stdlib.OpenDB(*cfg)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	goose.SetBaseFS(migrations)
 	goose.SetLogger(goose.NopLogger())
 	if err := goose.SetDialect("postgres"); err != nil {

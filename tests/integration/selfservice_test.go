@@ -95,7 +95,7 @@ func TestSessionsSelf(t *testing.T) {
 	}
 	var sessions []map[string]any
 	_ = jsonDecode(resp, &sessions)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	var other string
 	for _, s := range sessions {
 		if s["current"] != true {

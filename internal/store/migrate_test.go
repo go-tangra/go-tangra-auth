@@ -52,7 +52,7 @@ func TestMigrateAndRLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin, _ := pgx.Connect(ctx, adminDSN)
-	defer admin.Close(ctx)
+	defer func() { _ = admin.Close(ctx) }()
 	var n int
 	_ = admin.QueryRow(ctx, "SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_name IN ('auth_audit_events','signin_attempts','revocations')").Scan(&n)
 	if n != 3 {
@@ -132,7 +132,7 @@ func TestMigration0008LDAPImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	defer func() { _ = admin.Close(ctx) }()
 	st, err := Open(ctx, appDSN, 4)
 	if err != nil {
 		t.Fatal(err)

@@ -26,7 +26,7 @@ func (e *Env) upload(path string, body []byte, contentType string) (int, http.He
 	if err != nil {
 		e.T.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	out := map[string]any{}
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 	return resp.StatusCode, resp.Header, out
@@ -38,7 +38,7 @@ func (e *Env) get(path string) (int, http.Header, []byte) {
 	if err != nil {
 		e.T.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, resp.Header, b
 }

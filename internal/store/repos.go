@@ -662,7 +662,7 @@ func InsertAuditRows(ctx context.Context, tx pgx.Tx, rows []AuditRow) error {
 			r.Outcome, r.Reason, r.OriginIPHash, r.UserAgent, r.CorrelationID, r.TraceID, r.Details)
 	}
 	res := tx.SendBatch(ctx, b)
-	defer res.Close()
+	defer func() { _ = res.Close() }()
 	for range rows {
 		if _, err := res.Exec(); err != nil {
 			return err
