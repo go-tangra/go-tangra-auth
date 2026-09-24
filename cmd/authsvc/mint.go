@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/app"
-	"github.com/go-freya/freya/services/auth/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/app"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
 )
 
 // meshTenant is lcm's mesh CA tenant: an enrollment token must name it so the

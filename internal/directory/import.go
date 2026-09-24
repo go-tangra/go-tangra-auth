@@ -11,10 +11,10 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // MaxImportUIDs bounds one import request (FR-006, research D8).

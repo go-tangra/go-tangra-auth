@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/go-freya/freya/services/auth/internal/user"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 )
 
 // Attribute mapping and entry decoding (research D7/D8). Every value a

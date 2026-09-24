@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-freya/freya/services/auth/internal/oauth"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/oauth"
 )
 
 // OAuthDeps wires the authorization-code flow.

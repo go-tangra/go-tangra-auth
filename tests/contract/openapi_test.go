@@ -7,9 +7,9 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/go-freya/freya/internal/testrt"
-	"github.com/go-freya/freya/internal/testutil"
-	"github.com/go-freya/freya/services/auth/internal/httpapi"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/httpapi"
+	"github.com/go-tangra/go-tangra/v4/freyatest/testrt"
+	"github.com/go-tangra/go-tangra/v4/freyatest/testutil"
 )
 
 // TestOpenAPIDocument proves the contract parses, every operation has an id and

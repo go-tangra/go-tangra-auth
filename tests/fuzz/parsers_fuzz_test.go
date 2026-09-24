@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/internal/testrt"
-	"github.com/go-freya/freya/internal/testutil"
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/httpapi"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/httpapi"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra/v4/freyatest/testrt"
+	"github.com/go-tangra/go-tangra/v4/freyatest/testutil"
 )
 
 const tid = "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c55"

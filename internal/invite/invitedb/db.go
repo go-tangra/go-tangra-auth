@@ -7,9 +7,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/invite"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/invite"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 	"github.com/jackc/pgx/v5"
 )
 

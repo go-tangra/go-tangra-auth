@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/memstore"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 var errDown = errors.New("down")

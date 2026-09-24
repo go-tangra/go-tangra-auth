@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/email"
-	"github.com/go-freya/freya/services/auth/internal/invite"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/user"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/invite"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 )
 
 type nullSender struct{}

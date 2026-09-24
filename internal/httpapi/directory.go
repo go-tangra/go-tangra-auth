@@ -5,11 +5,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/directory"
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/directory"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // PermDirectoryManage gates the directory connection routes (feature 016).

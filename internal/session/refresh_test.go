@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // TestViewRefreshOnPolicyVersion: a cached session view reloads its effective

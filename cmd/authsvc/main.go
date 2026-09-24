@@ -12,9 +12,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-freya/freya/services/auth/console"
-	"github.com/go-freya/freya/services/auth/internal/app"
-	"github.com/go-freya/freya/services/auth/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/console"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/app"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
 )
 
 func main() {

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/memstore"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/services/auth/internal/token"
-	"github.com/go-freya/freya/services/auth/pkg/authclient"
+	"github.com/go-tangra/go-tangra-auth/sdk/v4/pkg/authclient"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/token"
 )
 
 const (

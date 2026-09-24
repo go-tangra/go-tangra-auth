@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
 )
 
 // MaxLength bounds passwords (argon2 cost is linear in length).

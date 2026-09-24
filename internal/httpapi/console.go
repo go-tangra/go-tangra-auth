@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // noncePlaceholder in index.html is replaced with the per-request CSP nonce;

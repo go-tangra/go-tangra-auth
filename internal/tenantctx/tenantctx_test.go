@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/go-freya/freya/authn"
-	"github.com/go-freya/freya/identity"
+	"github.com/go-tangra/go-tangra/v4/authn"
+	"github.com/go-tangra/go-tangra/v4/identity"
 )
 
 func TestActorRoundTrip(t *testing.T) {

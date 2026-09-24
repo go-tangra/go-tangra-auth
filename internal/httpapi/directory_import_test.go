@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/directory"
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/directory"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // Feature 016 US2: search and import routes (contracts §A, gate D) and the

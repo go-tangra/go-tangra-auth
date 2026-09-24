@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/user"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 func withProfiles(t *testing.T, u *us1) *audit.Writer {

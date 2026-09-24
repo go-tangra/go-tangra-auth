@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/pkg/authclient"
+	"github.com/go-tangra/go-tangra-auth/sdk/v4/pkg/authclient"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // KeyStore persists signing keys (database-backed or in-memory for tests).

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/go-freya/freya/services/auth/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 )
 
 // US3Deps are the role and permission services.

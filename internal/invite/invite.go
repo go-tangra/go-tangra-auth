@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/email"
-	"github.com/go-freya/freya/services/auth/internal/password"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/services/auth/internal/user"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 )
 
 // Lifetime of an invitation token.

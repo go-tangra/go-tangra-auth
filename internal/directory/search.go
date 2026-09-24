@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // Preview statuses (contracts §A SearchResult.items[].status).

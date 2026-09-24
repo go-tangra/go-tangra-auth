@@ -5,7 +5,7 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/go-freya/freya/authn"
+	"github.com/go-tangra/go-tangra/v4/authn"
 )
 
 // Kind of actor.

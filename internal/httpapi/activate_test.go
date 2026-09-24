@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // Feature 016 US3: activation and removal of imported users over HTTP

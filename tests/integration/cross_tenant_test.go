@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // TestCrossTenantMatrix: SC-002 — every cross-tenant attempt by guessed id is

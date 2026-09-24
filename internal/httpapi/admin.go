@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/invite"
-	"github.com/go-freya/freya/services/auth/internal/session"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/services/auth/internal/user"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/invite"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // US2Deps are the administration services.

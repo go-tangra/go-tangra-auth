@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-freya/freya"
-	"github.com/go-freya/freya/authn"
-	"github.com/go-freya/freya/config"
-	authv1 "github.com/go-freya/freya/services/auth/api/proto/auth/v1"
-	demov1 "github.com/go-freya/freya/services/auth/api/proto/demo/v1"
-	"github.com/go-freya/freya/services/auth/pkg/authclient"
+	authv1 "github.com/go-tangra/go-tangra-auth/sdk/v4/api/proto/auth/v1"
+	"github.com/go-tangra/go-tangra-auth/sdk/v4/pkg/authclient"
+	demov1 "github.com/go-tangra/go-tangra-auth/v4/api/proto/demo/v1"
+	"github.com/go-tangra/go-tangra/v4"
+	"github.com/go-tangra/go-tangra/v4/authn"
+	"github.com/go-tangra/go-tangra/v4/config"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

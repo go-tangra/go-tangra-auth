@@ -4,7 +4,7 @@ syntax = "proto3";
 // over the Freya channel and echoes the verified identity.
 package demo.v1;
 
-option go_package = "github.com/go-freya/freya/services/auth/api/proto/demo/v1;demov1";
+option go_package = "github.com/go-tangra/go-tangra-auth/v4/api/proto/demo/v1;demov1";
 
 service Demo {
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);

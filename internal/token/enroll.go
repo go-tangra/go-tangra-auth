@@ -7,7 +7,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // EnrollAudience is the fixed audience of an lcm enrollment (join) token.

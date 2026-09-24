@@ -33,6 +33,7 @@ fuzz:
 
 generate:
 	buf generate
+	cd sdk && buf generate
 
 console-build:
 	cd console && npm ci && npm run build

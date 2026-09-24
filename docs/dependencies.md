@@ -2,7 +2,7 @@
 
 | Dependency | Version | Purpose | Alternatives rejected | Maintenance |
 |------------|---------|---------|------------------------|-------------|
-| `github.com/go-freya/freya` | local (`replace ../..`) | mTLS transports, identity, service policy, audit, observability, edge listener | — | this repository |
+| `github.com/go-tangra/go-tangra/v4` | local (`replace ../..`) | mTLS transports, identity, service policy, audit, observability, edge listener | — | this repository |
 | `github.com/openfga/go-sdk` | v0.8.2 | OpenFGA client (Check/BatchCheck/Write/model bootstrap) | raw gRPC to OpenFGA (re-implements the SDK) | Active (CNCF sandbox) |
 | `github.com/jackc/pgx/v5` | v5.11.0 | PostgreSQL/TimescaleDB driver and pool | database/sql + lib/pq (no COPY, weaker types) | Active |
 | `github.com/pressly/goose/v3` | v3.28.0 | Embedded SQL migrations with advisory lock | golang-migrate (heavier) | Active |

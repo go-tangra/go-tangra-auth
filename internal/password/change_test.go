@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/email"
-	"github.com/go-freya/freya/services/auth/internal/memstore"
-	"github.com/go-freya/freya/services/auth/internal/session"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 const tid = "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c55"

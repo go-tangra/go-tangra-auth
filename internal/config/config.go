@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	fconfig "github.com/go-freya/freya/config"
-	"github.com/go-freya/freya/transport/edge"
+	fconfig "github.com/go-tangra/go-tangra/v4/config"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 	"gopkg.in/yaml.v3"
 )
 

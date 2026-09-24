@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // Tuple is one relationship.

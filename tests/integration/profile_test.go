@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // upload sends raw bytes as the avatar.

@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
 )
 
 var (

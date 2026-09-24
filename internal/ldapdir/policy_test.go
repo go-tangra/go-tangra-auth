@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
 )
 
 // defaultTargets mirrors the D15 config default: no CIDR lists, the four LDAP

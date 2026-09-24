@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/memstore"
-	"github.com/go-freya/freya/services/auth/internal/password"
-	"github.com/go-freya/freya/services/auth/internal/session"
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 const (

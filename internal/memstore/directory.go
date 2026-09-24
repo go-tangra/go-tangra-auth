@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // Feature 016 state: directory connections and user directory links. Same

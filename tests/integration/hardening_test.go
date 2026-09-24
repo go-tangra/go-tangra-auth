@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // TestHardening sweeps the edge beyond the stories: body/header limits,

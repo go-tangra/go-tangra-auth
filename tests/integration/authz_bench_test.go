@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 )
 
 // BenchmarkCheck: SC-005 — p95 decision latency under 1,000 concurrent

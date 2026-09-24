@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 func conn(tid, id, name string) store.DirectoryConnection {

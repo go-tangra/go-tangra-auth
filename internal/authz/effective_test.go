@@ -3,7 +3,7 @@ package authz
 import (
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 func TestFoldEffectiveRoles(t *testing.T) {

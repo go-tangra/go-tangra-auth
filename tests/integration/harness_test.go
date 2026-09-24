@@ -34,16 +34,16 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/go-freya/freya"
-	fconfig "github.com/go-freya/freya/config"
-	"github.com/go-freya/freya/services/auth/internal/app"
-	"github.com/go-freya/freya/services/auth/internal/authz"
-	"github.com/go-freya/freya/services/auth/internal/config"
-	"github.com/go-freya/freya/services/auth/internal/password"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/services/auth/pkg/authclient"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/sdk/v4/pkg/authclient"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/app"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra/v4"
+	fconfig "github.com/go-tangra/go-tangra/v4/config"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // Env is a running service plus helpers.

@@ -10,8 +10,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/go-freya/freya/services/auth/api/openapi"
-	"github.com/go-freya/freya/services/gateway/pkg/gatewayclient"
+	"github.com/go-tangra/go-tangra-auth/v4/api/openapi"
+	"github.com/go-tangra/go-tangra-portal/sdk/v4/pkg/gatewayclient"
 )
 
 // Module is the registered module name; ConsolePrefix is where the console lives.

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // TestRecoveryImportedIsUnknown (feature 016, SR-006/SC-002): asking to reset

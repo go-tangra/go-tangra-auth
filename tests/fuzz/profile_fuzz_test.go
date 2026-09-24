@@ -9,7 +9,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/go-freya/freya/services/auth/internal/user"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 )
 
 func seedAvatars(f *testing.F) {

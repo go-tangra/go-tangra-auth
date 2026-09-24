@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/config"
-	"github.com/go-freya/freya/services/auth/pkg/authmanifest"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/pkg/authmanifest"
 )
 
 func TestGatewayModeConfig(t *testing.T) {

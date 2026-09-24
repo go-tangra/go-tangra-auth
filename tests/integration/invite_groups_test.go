@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 )
 
 // TestInviteIntoGroups: quickstart §5 — an invitation names a group and

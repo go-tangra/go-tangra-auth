@@ -21,7 +21,7 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/go-freya/freya/services/auth/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
 )
 
 // The real client is exercised against a scripted in-process LDAPv3 server on

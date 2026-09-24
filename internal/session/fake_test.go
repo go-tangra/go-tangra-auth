@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // fakeStore is an in-memory Store with the same semantics as the SQL.

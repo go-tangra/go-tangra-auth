@@ -16,7 +16,7 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
 )
 
 // LDAP result codes the fake reports as *ldapdir.DirectoryError, the same

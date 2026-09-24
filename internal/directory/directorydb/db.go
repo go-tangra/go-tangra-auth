@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/directory"
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/directory"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

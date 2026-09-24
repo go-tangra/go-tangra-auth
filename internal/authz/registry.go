@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 )
 
 // PermissionStore persists the per-tenant permission catalogue.

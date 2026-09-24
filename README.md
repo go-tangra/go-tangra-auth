@@ -1,7 +1,7 @@
 # services/auth — tenant authentication & authorization
 
 A multi-tenant authentication and authorization service built on the Freya
-framework (`github.com/go-freya/freya`). It signs users in through a Vue/Vuetify
+framework (`github.com/go-tangra/go-tangra/v4`). It signs users in through a Vue/Vuetify
 console, issues short-lived EdDSA tokens that platform services verify offline,
 answers fine-grained authorization decisions through OpenFGA and gives tenant
 administrators and platform operators an audited management surface.
@@ -80,8 +80,8 @@ directive pointing at the framework. To split it out:
 1. Copy `services/auth` to the new repository root; keep `go.mod`'s module path
    or rename it and update the import paths (`internal/...`, `pkg/authclient`,
    `api/proto/...`).
-2. Replace `replace github.com/go-freya/freya => ../..` with a tagged
-   `require github.com/go-freya/freya vX.Y.Z`.
+2. Replace `replace github.com/go-tangra/go-tangra/v4 => ../..` with a tagged
+   `require github.com/go-tangra/go-tangra/v4 vX.Y.Z`.
 3. Move `.github/workflows/ci.yml`'s `auth-service*` jobs into the new
    repository's workflow; they only reference paths inside the service.
 4. Regenerate the console API types (`npm run gen:api`) and protobuf code

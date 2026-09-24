@@ -2048,7 +2048,7 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x13RegisterPermissions\x12#.auth.v1.RegisterPermissionsRequest\x1a$.auth.v1.RegisterPermissionsResponse2\x9f\x01\n" +
 	"\bProfiles\x12I\n" +
 	"\x06Lookup\x12\x1e.auth.v1.LookupProfilesRequest\x1a\x1f.auth.v1.LookupProfilesResponse\x12H\n" +
-	"\vListMembers\x12\x1b.auth.v1.ListMembersRequest\x1a\x1c.auth.v1.ListMembersResponseBBZ@github.com/go-freya/freya/services/auth/api/proto/auth/v1;authv1b\x06proto3"
+	"\vListMembers\x12\x1b.auth.v1.ListMembersRequest\x1a\x1c.auth.v1.ListMembersResponseBEZCgithub.com/go-tangra/go-tangra-auth/sdk/v4/api/proto/auth/v1;authv1b\x06proto3"
 
 var (
 	file_auth_v1_auth_proto_rawDescOnce sync.Once

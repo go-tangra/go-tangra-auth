@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // Attempt is one recorded sign-in attempt.

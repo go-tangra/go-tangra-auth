@@ -3,7 +3,7 @@ package authz
 import (
 	"context"
 
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 // InviteEscalation is the grant check for invitations and activations

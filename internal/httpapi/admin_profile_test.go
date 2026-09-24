@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 )
 
 // TestAdminProfileHandlers: administrators read and edit any profile of their

@@ -1,13 +1,13 @@
-module github.com/go-freya/freya/services/auth
+module github.com/go-tangra/go-tangra-auth/v4
 
-go 1.26.0
+go 1.26.3
 
 toolchain go1.26.8
 
 require (
 	github.com/getkin/kin-openapi v0.149.0
-	github.com/go-freya/freya v0.0.0-00010101000000-000000000000
-	github.com/go-kratos/kratos/v3 v3.0.0
+	github.com/go-kratos/kratos/v3 v3.0.0 // indirect
+	github.com/go-tangra/go-tangra/v4 v4.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/openfga/go-sdk v0.8.2
@@ -24,6 +24,8 @@ require (
 require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-ldap/ldap/v3 v3.4.14
+	github.com/go-tangra/go-tangra-auth/sdk/v4 v4.0.0
+	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.0.0
 	golang.org/x/image v0.46.0
 )
 
@@ -46,7 +48,6 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/go-freya/freya/services/gateway v0.0.0-00010101000000-000000000000
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -104,7 +105,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
 )
-
-replace github.com/go-freya/freya => ../..
-
-replace github.com/go-freya/freya/services/gateway => ../gateway

@@ -159,7 +159,7 @@ const file_demo_v1_demo_proto_rawDesc = "" +
 	"\x03amr\x18\x05 \x03(\tR\x03amr\x12%\n" +
 	"\x0ecaller_service\x18\x06 \x01(\tR\rcallerService2A\n" +
 	"\x04Demo\x129\n" +
-	"\x06WhoAmI\x12\x16.demo.v1.WhoAmIRequest\x1a\x17.demo.v1.WhoAmIResponseBBZ@github.com/go-freya/freya/services/auth/api/proto/demo/v1;demov1b\x06proto3"
+	"\x06WhoAmI\x12\x16.demo.v1.WhoAmIRequest\x1a\x17.demo.v1.WhoAmIResponseBAZ?github.com/go-tangra/go-tangra-auth/v4/api/proto/demo/v1;demov1b\x06proto3"
 
 var (
 	file_demo_v1_demo_proto_rawDescOnce sync.Once

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/go-freya/freya/services/auth/internal/oauth"
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/oauth"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 func TestOAuthCodeFlow(t *testing.T) {

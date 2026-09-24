@@ -30,8 +30,8 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/go-freya/freya/services/auth/internal/config"
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
 )
 
 // ldapCorpus returns the contents of every file in testdata/ldap/sub in

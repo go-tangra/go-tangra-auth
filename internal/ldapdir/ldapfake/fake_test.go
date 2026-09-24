@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
-	"github.com/go-freya/freya/services/auth/internal/ldapdir"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir"
 )
 
 const (

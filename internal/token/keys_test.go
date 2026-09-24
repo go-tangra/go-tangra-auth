@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
 )
 
 func TestGenerateAndOpenKey(t *testing.T) {

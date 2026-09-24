@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // Feature 004 state: groups, memberships, group roles, avatars. Kept in a

@@ -13,11 +13,11 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 
-	"github.com/go-freya/freya/services/auth/api/openapi"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/transport"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/api/openapi"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra/v4/transport"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // ConsolePrefix is where the SPA is served (Vite base "/console/").

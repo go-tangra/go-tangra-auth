@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/go-freya/freya/services/auth/internal/mfa"
-	"github.com/go-freya/freya/services/auth/internal/password"
-	"github.com/go-freya/freya/services/auth/internal/user"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/mfa"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // US4Deps are the self-service account services.

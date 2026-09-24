@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/go-freya/freya/services/auth/internal/ldapdir/ldapfake"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/ldapdir/ldapfake"
 )
 
 // A zero result renders every list as [].

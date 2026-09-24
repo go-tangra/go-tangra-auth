@@ -5,13 +5,13 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/go-freya/freya/services/auth/internal/session"
-	"github.com/go-freya/freya/services/auth/internal/store"
-	"github.com/go-freya/freya/services/auth/internal/tenant"
-	"github.com/go-freya/freya/services/auth/internal/tenantctx"
-	"github.com/go-freya/freya/services/auth/internal/token"
-	"github.com/go-freya/freya/services/auth/internal/user"
-	"github.com/go-freya/freya/transport/edge"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/token"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
+	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
 // TenantResolver looks up a tenant for the pre-sign-in screen.

@@ -8,11 +8,11 @@ import (
 
 	"github.com/pquerna/otp/totp"
 
-	"github.com/go-freya/freya/services/auth/internal/cache"
-	"github.com/go-freya/freya/services/auth/internal/crypto"
-	"github.com/go-freya/freya/services/auth/internal/email"
-	"github.com/go-freya/freya/services/auth/internal/mfa"
-	"github.com/go-freya/freya/services/auth/internal/password"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/mfa"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
 )
 
 func TestAccountAndRecoveryHandlers(t *testing.T) {

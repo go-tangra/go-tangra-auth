@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-freya/freya/services/auth/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
 )
 
 // Payload is the encrypted outbox content.
