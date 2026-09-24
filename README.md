@@ -18,6 +18,20 @@ through the session identity and the gateway's `/gateway/v1/me`. See
 and `GET /api/v1/roles` for subject pickers, and `builtin_grants` on
 `RegisterPermissions` so modules seed their own role grants.
 
+Feature 016 adds **LDAP directory import** (`directory:manage`). Tenant
+administrators connect Active Directory, OpenLDAP or another LDAP directory
+over TLS 1.3 (with a per-connection TLS 1.2 opt-in and optional CA pinning;
+bind password sealed with the KEK). They search the directory with a
+validated RFC 4515 filter, preview the results and import selected people as
+inactive `imported` users. An imported user cannot sign in and looks like a
+non-existent account until an administrator **activates** them with an
+ordinary invitation, choosing their roles and groups. Outbound dials go
+through a dial-time target policy (loopback, link-local and metadata
+addresses are always refused; operators list platform CIDRs in
+`directory.targets.deny_cidrs`). Plain invitations now apply the same
+role-escalation check as role assignment. See `docs/security-model.md` and
+`docs/operations.md`; design in `specs/016-auth-ldap-import/`.
+
 ## Layout
 
 | Path | Purpose |
