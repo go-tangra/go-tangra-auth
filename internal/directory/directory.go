@@ -82,6 +82,10 @@ type Store interface {
 	UsersByEmails(ctx context.Context, tenantID string, emails []string) (map[string]store.User, error)
 	LinksByUIDs(ctx context.Context, tenantID, connID string, uids []string) (map[string]store.DirectoryLink, error)
 	User(ctx context.Context, tenantID, id string) (store.User, error)
+
+	// Atomic runs fn in one transaction under a tenant scope; fn receives
+	// an ImportTx (one per imported entry).
+	Atomic(ctx context.Context, scope store.Scope, fn func(tx any) error) error
 }
 
 // Deps wires the service.
