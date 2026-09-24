@@ -343,7 +343,7 @@ paths:
     post:
       operationId: signIn
       security: []
-      summary: Sign in with tenant + email + password (step 1)
+      summary: Sign in with email + password (+ tenant; omitted or blank → derived from the email domain) (step 1)
       requestBody:
         required: true
         content:
@@ -351,8 +351,8 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [tenant, email, password]
-              properties: { tenant: { type: string }, email: { type: string, format: email }, password: { type: string, maxLength: 1024 } }
+              required: [email, password]
+              properties: { tenant: { type: string, description: 'Tenant slug; omitted or blank → derived from the email domain (jane@acme.com → acme)' }, email: { type: string, format: email }, password: { type: string, maxLength: 1024 } }
       responses:
         '200': { description: 'signed in (session cookie set) or {"mfa_required": true, "challenge": "..."}' }
         '401': { description: invalid_credentials (identical for unknown email / wrong password / suspended tenant unless locked) }
@@ -435,7 +435,7 @@ paths:
       operationId: requestRecovery
       security: []
       summary: Request a password-recovery email (always 202)
-      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [tenant, email], properties: { tenant: { type: string }, email: { type: string } } } } } }
+      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [email], properties: { tenant: { type: string }, email: { type: string } } } } } }
       responses: { '202': { description: accepted regardless of existence } }
   /api/v1/recovery/complete:
     post:
