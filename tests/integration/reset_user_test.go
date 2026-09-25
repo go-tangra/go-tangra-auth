@@ -75,6 +75,9 @@ func TestResetUser(t *testing.T) {
 	if mail := e.LastMail(em); !strings.Contains(mail, res.AcceptURL) {
 		t.Fatalf("reset mail missing the accept link: %q", mail)
 	}
+	if r := e.LastSend(em); r.GetTemplateKey() != "auth.account_reset" || r.GetVariables()["valid_for"] != "7 days" {
+		t.Fatalf("reset send %+v", r)
+	}
 
 	tok := res.AcceptURL[strings.Index(res.AcceptURL, "token=")+6:]
 	b := e.Browser()

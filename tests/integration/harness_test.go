@@ -1,7 +1,9 @@
 //go:build integration
 
 // Package integration boots the service in-process against real TimescaleDB,
-// Valkey (TLS), OpenFGA and Mailpit containers.
+// Valkey (TLS) and OpenFGA containers. Mail goes to an in-process fake of
+// notification's Notifier (feature 017), which records template keys and
+// variables.
 package integration
 
 import (
@@ -33,11 +35,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"google.golang.org/grpc"
+
+	notificationv1 "github.com/go-tangra/go-tangra-notification/sdk/v4/api/proto/notification/v1"
 
 	"github.com/go-tangra/go-tangra-auth/sdk/v4/pkg/authclient"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/app"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/config"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/email/notifytest"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
@@ -50,8 +57,8 @@ import (
 type Env struct {
 	T      *testing.T
 	App    *app.App
-	Base   string // https://127.0.0.1:port
-	Mail   string // mailpit API base
+	Base   string             // https://127.0.0.1:port
+	Notify *notifytest.Server // fake notification: every send by key
 	Client *http.Client
 	Cancel context.CancelFunc
 	PGIP   string // TimescaleDB container address on the docker network
@@ -135,7 +142,8 @@ func Start(t *testing.T, mutate ...func(*config.Config, string)) *Env {
 		WaitingFor: wait.ForListeningPort("6379/tcp")})
 	_, fgaHost, fgaPorts := container(t, testcontainers.ContainerRequest{Image: "openfga/openfga:v1.20.0", ExposedPorts: []string{"8080/tcp"},
 		Cmd: []string{"run", "--authn-method=preshared", "--authn-preshared-keys=test-key", "--playground-enabled=false"}, WaitingFor: wait.ForHTTP("/healthz").WithPort("8080/tcp")})
-	_, mpHost, mpPorts := container(t, testcontainers.ContainerRequest{Image: "axllent/mailpit:latest", ExposedPorts: []string{"1025/tcp", "8025/tcp"}, WaitingFor: wait.ForListeningPort("8025/tcp")})
+	notify := notifytest.Start()
+	t.Cleanup(notify.Close)
 	kek := make([]byte, 32)
 	_, _ = rand.Read(kek)
 	kekPath := filepath.Join(dir, "kek.b64")
@@ -155,12 +163,14 @@ func Start(t *testing.T, mutate ...func(*config.Config, string)) *Env {
 	cfg.Valkey = config.Valkey{Addresses: []string{vkHost + ":" + vkPorts["6379/tcp"]}, Password: "test", CAFile: certPath}
 	cfg.OpenFGA = config.OpenFGA{URL: fmt.Sprintf("http://%s:%s", fgaHost, fgaPorts["8080/tcp"]), PresharedKey: "test-key", AllowPlaintext: true}
 	cfg.KEK = config.KEK{Source: "file", Path: kekPath}
-	cfg.Email = config.Email{Transport: "smtp", Host: mpHost, Port: atoi(mpPorts["1025/tcp"]), From: "auth@example.org", AllowPlaintext: true}
+	cfg.Email = config.Email{Transport: "notification"}
 	for _, m := range mutate {
 		m(&cfg, pgIP)
 	}
 
-	a, err := app.Build(ctx, cfg, app.Options{Migrate: true, Freya: []freya.Option{freya.WithInsecureLocalDev()}})
+	// The real notification deliverer, dialled lazily, against the fake server.
+	deliverer := email.NewNotifier(func(context.Context) (grpc.ClientConnInterface, error) { return notify.Dial() })
+	a, err := app.Build(ctx, cfg, app.Options{Migrate: true, Deliverer: deliverer, Freya: []freya.Option{freya.WithInsecureLocalDev()}})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -178,17 +188,9 @@ func Start(t *testing.T, mutate ...func(*config.Config, string)) *Env {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 10 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}} //nolint:gosec // dev self-signed edge cert
-	env := &Env{T: t, App: a, Base: "https://" + edgeAddr, Mail: fmt.Sprintf("http://%s:%s", mpHost, mpPorts["8025/tcp"]), Client: client, Cancel: cancel, PGIP: pgIP}
+	env := &Env{T: t, App: a, Base: "https://" + edgeAddr, Notify: notify, Client: client, Cancel: cancel, PGIP: pgIP}
 	env.waitReady()
 	return env
-}
-
-func atoi(s string) int {
-	n := 0
-	for _, c := range s {
-		n = n*10 + int(c-'0')
-	}
-	return n
 }
 
 func (e *Env) waitReady() {
@@ -257,32 +259,30 @@ func (e *Env) JSON(method, path string, body any, hdr ...string) (int, map[strin
 	return resp.StatusCode, out
 }
 
-// LastMail polls Mailpit for the newest message to an address and returns its text.
+// LastMail waits for the newest send to an address and returns its link (the
+// text of a legacy auth.message).
 func (e *Env) LastMail(to string) string {
 	e.T.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(e.Mail + "/api/v1/search?query=" + url.QueryEscape("to:"+to))
-		if err == nil {
-			var list struct {
-				Messages []struct{ ID string }
+		if r, ok := e.Notify.Last(to); ok {
+			if link := r.GetVariables()["link"]; link != "" {
+				return link
 			}
-			_ = json.NewDecoder(resp.Body).Decode(&list)
-			_ = resp.Body.Close()
-			if len(list.Messages) > 0 {
-				r2, err := http.Get(e.Mail + "/api/v1/message/" + list.Messages[0].ID)
-				if err == nil {
-					var m struct{ Text string }
-					_ = json.NewDecoder(r2.Body).Decode(&m)
-					_ = r2.Body.Close()
-					return m.Text
-				}
-			}
+			return r.GetVariables()["text"]
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 	e.T.Fatalf("no mail for %s", to)
 	return ""
+}
+
+// LastSend waits for the newest send to an address and returns it whole.
+func (e *Env) LastSend(to string) *notificationv1.SendRequest {
+	e.T.Helper()
+	_ = e.LastMail(to)
+	r, _ := e.Notify.Last(to)
+	return r
 }
 
 func TestHarnessBootsAndBootstraps(t *testing.T) {
@@ -300,6 +300,12 @@ func TestHarnessBootsAndBootstraps(t *testing.T) {
 	}
 	if mail := e.LastMail("ops@example.org"); !strings.Contains(mail, res.AcceptURL) {
 		t.Fatalf("invitation mail missing link: %q", mail)
+	}
+	// The first operator's invitation is auth.invite in the platform tenant,
+	// valid for seven days, correlated with its outbox row.
+	if r := e.LastSend("ops@example.org"); r.GetTemplateKey() != "auth.invite" || r.GetTenantId() != res.TenantID || r.GetVariables()["valid_for"] != "7 days" ||
+		r.GetVariables()["tenant"] != "Platform" || r.GetCorrelationId() == "" {
+		t.Fatalf("operator invitation send %+v", r)
 	}
 }
 

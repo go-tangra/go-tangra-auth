@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -264,24 +263,8 @@ func rawJSON(e *Env, method, path string, body any) (int, []byte) {
 	return resp.StatusCode, rb
 }
 
-// mailCount counts Mailpit messages to an address.
-func mailCount(e *Env, to string) int {
-	e.T.Helper()
-	resp, err := http.Get(e.Mail + "/api/v1/search?query=" + url.QueryEscape("to:"+to))
-	if err != nil {
-		e.T.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var list struct {
-		Messages []struct {
-			ID string `json:"ID"`
-		} `json:"messages"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		e.T.Fatal(err)
-	}
-	return len(list.Messages)
-}
+// mailCount counts sends to an address.
+func mailCount(e *Env, to string) int { return e.Notify.Count(to) }
 
 // TestLDAPDirectoryConnectTLS is quickstart Scenario 1 against the real
 // container: ldaps and StartTLS succeed with the pinned test CA; without the
@@ -517,6 +500,9 @@ func TestLDAPDirectorySearchImportActivate(t *testing.T) {
 		t.Fatalf("activate item: %v", item)
 	}
 	mail := e.LastMail("eng1@example.test")
+	if r := e.LastSend("eng1@example.test"); r.GetTemplateKey() != "auth.invite" || r.GetVariables()["valid_for"] != "72 hours" {
+		t.Fatalf("activation send %+v", r)
+	}
 	tok := regexp.MustCompile(`token=([A-Za-z0-9_-]+)`).FindStringSubmatch(mail)
 	if tok == nil {
 		t.Fatalf("no accept token in invitation: %q", mail)

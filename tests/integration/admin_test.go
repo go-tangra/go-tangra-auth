@@ -23,6 +23,9 @@ func TestAdminFlows(t *testing.T) {
 		t.Fatal(code)
 	}
 	mail := e.LastMail("new@acme.test")
+	if r := e.LastSend("new@acme.test"); r.GetTemplateKey() != "auth.invite" || r.GetTenantId() != tid || r.GetVariables()["valid_for"] != "72 hours" || r.GetVariables()["tenant"] == "" {
+		t.Fatalf("invitation send %+v", r)
+	}
 	tok := strings.TrimSpace(mail[strings.Index(mail, "token=")+6:])
 	if i := strings.IndexAny(tok, "\r\n "); i > 0 {
 		tok = tok[:i]
