@@ -17,6 +17,9 @@ import (
 // RecoveryLifetime bounds a reset link.
 const RecoveryLifetime = 30 * time.Minute
 
+// RecoveryValidFor is RecoveryLifetime as the recovery message states it.
+const RecoveryValidFor = "30 minutes"
+
 // ResetPath is the console route that completes a recovery.
 const ResetPath = "/console/reset"
 
@@ -85,7 +88,7 @@ func (r *Recovery) Request(ctx context.Context, tenantSlug, emailAddr, ipHash st
 	if err := r.st.InsertRecoveryRequest(ctx, req, ipHash); err != nil {
 		return nil
 	}
-	blob, err := r.outbox.Encode(addr, email.Payload{Subject: "Reset your password", Text: "Use this link within 30 minutes:\n\n" + r.issuer + ResetPath + "?token=" + tok + "\n\nIf you did not ask for this, ignore this message."})
+	blob, err := r.outbox.Encode(addr, email.Recovery(r.issuer+ResetPath+"?token="+tok, RecoveryValidFor))
 	if err != nil {
 		return nil
 	}

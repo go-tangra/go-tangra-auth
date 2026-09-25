@@ -24,7 +24,7 @@ const tP = "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c11"
 
 type sink struct{}
 
-func (sink) Send(context.Context, email.Message) error { return nil }
+func (sink) Deliver(context.Context, email.Message) (email.Outcome, error) { return email.Sent, nil }
 
 type fixture struct {
 	svc    *tenant.Service

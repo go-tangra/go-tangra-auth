@@ -24,6 +24,9 @@ import (
 // Lifetime of an invitation token.
 const Lifetime = 72 * time.Hour
 
+// ValidFor is Lifetime as the invitation message states it.
+const ValidFor = "72 hours"
+
 // Errors.
 var (
 	ErrInvalidToken = errors.New("invalid_token")
@@ -364,7 +367,15 @@ func (s *Service) Resend(ctx context.Context, actor tenantctx.Actor, tenantID, i
 
 func (s *Service) queue(ctx context.Context, tx Tx, tenantID, addr, tok string) error {
 	link := s.issuer + AcceptPath + "?token=" + tok
-	blob, err := s.outbox.Encode(addr, email.Payload{Subject: "You have been invited", Text: "Accept your invitation within 72 hours:\n\n" + link + "\n"})
+	// The tenant name is optional in the message; a lookup failure leaves it out.
+	name := ""
+	if t, err := tx.Tenant(ctx, tenantID); err == nil {
+		name = t.DisplayName
+		if name == "" {
+			name = t.Slug
+		}
+	}
+	blob, err := s.outbox.Encode(addr, email.Invite(link, ValidFor, name))
 	if err != nil {
 		return err
 	}

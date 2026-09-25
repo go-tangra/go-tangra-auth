@@ -29,28 +29,32 @@ func setup(t *testing.T) (*Service, *memstore.Store, *authz.Fake, *email.Outbox)
 	h, _ := crypto.HashPassword("existing-password-1", crypto.DefaultParams)
 	ms.AddUser(store.User{ID: "u-exists", TenantID: tid, Email: "exists@x.test", Status: "active", PasswordHash: &h})
 	env, _ := crypto.NewEnvelope(bytes.Repeat([]byte{6}, 32))
-	sender := &recorder{}
-	ob := email.NewOutbox(env, sender, nil, 3, nil)
+	ob := email.NewOutbox(env, nil, nil, 3, nil)
 	fga := authz.NewFake()
 	svc := New(ms, ob, authz.New(fga, cache.New(cache.NewMemory()), nil), nil, "https://auth.example.org")
 	return svc, ms, fga, ob
 }
 
-type recorder struct{ msgs []email.Message }
-
-func (r *recorder) Send(_ context.Context, m email.Message) error {
-	r.msgs = append(r.msgs, m)
-	return nil
+func tokenFrom(t *testing.T, ob *email.Outbox, it store.OutboxItem) string {
+	t.Helper()
+	p := invitePayload(t, ob, it)
+	i := strings.Index(p.Link(), "token=")
+	return p.Link()[i+6:]
 }
 
-func tokenFrom(t *testing.T, ob *email.Outbox, it store.OutboxItem) string {
+// invitePayload opens a queued invitation: the auth.invite template with the
+// accept link, a 72 hour validity and the tenant's name.
+func invitePayload(t *testing.T, ob *email.Outbox, it store.OutboxItem) email.Payload {
 	t.Helper()
 	p, err := ob.Decode(it.ToEmail, it.PayloadEnc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := strings.Index(p.Text, "token=")
-	return strings.TrimSpace(p.Text[i+6:])
+	if it.Kind != "invite" || p.Template != email.TemplateInvite || !strings.HasPrefix(p.Link(), "https://auth.example.org"+AcceptPath+"?token=") ||
+		p.Vars["valid_for"] != "72 hours" || p.Vars["tenant"] != "acme" || len(p.Vars) != 3 {
+		t.Fatalf("invitation payload %s %+v", it.Kind, p)
+	}
+	return p
 }
 
 func TestCreateResendAccept(t *testing.T) {
@@ -726,5 +730,20 @@ func TestAcceptActivation(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("user rows %d", n)
+	}
+}
+
+// TestInviteNamesTenant: the auth.invite tenant variable is the tenant's
+// display name when it has one (the slug otherwise, see invitePayload).
+func TestInviteNamesTenant(t *testing.T) {
+	svc, ms, _, ob := setup(t)
+	ms.AddTenant(store.Tenant{ID: tid, Slug: "acme", DisplayName: "Acme Ltd", Status: "active", Kind: "customer", Policy: []byte(`{}`)})
+	admin := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-admin", TenantID: tid}
+	if _, err := svc.Create(context.Background(), admin, tid, "x@x.test", nil); err != nil || len(ms.Outbox) != 1 {
+		t.Fatal(err)
+	}
+	p, err := ob.Decode("x@x.test", ms.Outbox[0].PayloadEnc)
+	if err != nil || p.Template != email.TemplateInvite || p.Vars["tenant"] != "Acme Ltd" || p.Vars["valid_for"] != "72 hours" {
+		t.Fatalf("%+v %v", p, err)
 	}
 }

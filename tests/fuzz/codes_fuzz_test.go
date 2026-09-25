@@ -21,7 +21,7 @@ import (
 
 type sink struct{}
 
-func (sink) Send(context.Context, email.Message) error { return nil }
+func (sink) Deliver(context.Context, email.Message) (email.Outcome, error) { return email.Sent, nil }
 
 func mfaFixture(f *testing.F) (*mfa.Service, string, []string) {
 	ms := memstore.New()

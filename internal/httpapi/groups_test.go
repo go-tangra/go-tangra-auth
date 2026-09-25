@@ -163,7 +163,7 @@ func TestInviteWithGroups(t *testing.T) {
 		t.Fatalf("unknown group -> %d", w.Code)
 	}
 	p, _ := u.outbox.Decode("new@x.test", u.ms.Outbox[len(u.ms.Outbox)-1].PayloadEnc)
-	tok := strings.TrimSpace(p.Text[strings.Index(p.Text, "token=")+6:])
+	tok := p.Link()[strings.Index(p.Link(), "token=")+6:]
 	w, out := u.call("POST", "/api/v1/invitations/accept", `{"token":"`+tok+`","display_name":"","password":"a-long-enough-password"}`)
 	if w.Code != 200 {
 		t.Fatalf("%d %v", w.Code, out)

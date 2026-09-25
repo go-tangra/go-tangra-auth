@@ -20,9 +20,20 @@ import (
 
 const tid = "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c55"
 
-type nullSender struct{}
-
-func (nullSender) Send(context.Context, email.Message) error { return nil }
+// recoveryToken opens a queued recovery message: the auth.recovery template
+// with the reset link and a 30 minute validity.
+func recoveryToken(t *testing.T, ob *email.Outbox, it store.OutboxItem) string {
+	t.Helper()
+	p, err := ob.Decode(it.ToEmail, it.PayloadEnc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := "https://auth.example.org" + ResetPath + "?token="
+	if it.Kind != "recovery" || p.Template != email.TemplateRecovery || !strings.HasPrefix(p.Link(), prefix) || p.Vars["valid_for"] != "30 minutes" || len(p.Vars) != 2 {
+		t.Fatalf("recovery payload %s %+v", it.Kind, p)
+	}
+	return strings.TrimPrefix(p.Link(), prefix)
+}
 
 func setup(t *testing.T) (*memstore.Store, *session.Manager, *email.Outbox) {
 	t.Helper()
@@ -32,7 +43,7 @@ func setup(t *testing.T) (*memstore.Store, *session.Manager, *email.Outbox) {
 	ms.AddUser(store.User{ID: "u1", TenantID: tid, Email: "alice@x.test", Status: "active", PasswordHash: &h})
 	sm := session.New(ms, cache.New(cache.NewMemory()), nil)
 	env, _ := crypto.NewEnvelope(bytes.Repeat([]byte{2}, 32))
-	return ms, sm, email.NewOutbox(env, nullSender{}, nil, 3, nil)
+	return ms, sm, email.NewOutbox(env, nil, nil, 3, nil)
 }
 
 func TestChange(t *testing.T) {
@@ -79,8 +90,7 @@ func TestRecovery(t *testing.T) {
 	if err := rec.Request(ctx, "acme", " Alice@X.test ", "ip"); err != nil || len(ms.Outbox) != 1 || len(ms.Recoveries) != 1 {
 		t.Fatal(err, len(ms.Outbox))
 	}
-	p, _ := ob.Decode("alice@x.test", ms.Outbox[0].PayloadEnc)
-	tok := strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok := recoveryToken(t, ob, ms.Outbox[0])
 	for _, r := range ms.Recoveries {
 		if r.TokenHash == tok || r.TokenHash != crypto.HashToken(tok) || time.Until(r.ExpiresAt) > RecoveryLifetime+time.Minute {
 			t.Fatal("token must be stored hashed with a 30 min expiry")
@@ -108,8 +118,7 @@ func TestRecovery(t *testing.T) {
 	if err := rec.Request(ctx, "acme", "alice@x.test", "ip"); err != nil {
 		t.Fatal(err)
 	}
-	p, _ = ob.Decode("alice@x.test", ms.Outbox[1].PayloadEnc)
-	tok2 := strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok2 := recoveryToken(t, ob, ms.Outbox[1])
 	ms.Now = func() time.Time { return time.Now().Add(RecoveryLifetime + time.Minute) }
 	if err := rec.Complete(ctx, tok2, "brand-new-password"); !errors.Is(err, ErrInvalidToken) {
 		t.Fatal("expired token accepted")
