@@ -34,6 +34,8 @@ email:
   # Development: links are printed to the log. Deployments use the default,
   # notification, which renders and sends the auth.* templates (feature 017).
   transport: log
+mfa:
+  issuer: Tangra # label shown in authenticator apps
 profile:
   avatar_max_bytes: 2097152
   avatar_size: 512

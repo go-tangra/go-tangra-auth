@@ -41,6 +41,14 @@ describe('sign-in view', () => {
     useSession().status = 'anonymous'
   })
 
+  it('names the product Tangra', async () => {
+    stubFetch(() => ({ status: 401, body: { reason: 'unauthenticated' } }))
+    const w = await mountSignIn()
+    expect(w.text()).toContain('Welcome to Tangra!')
+    expect(w.text()).not.toMatch(/Freya/)
+    w.unmount()
+  })
+
   it('validates the form with zod before posting anything', async () => {
     const fetch = stubFetch(() => ({ status: 401, body: { reason: 'unauthenticated' } }))
     const posted = () => fetch.mock.calls.filter((c) => String(c[0]).endsWith('/api/v1/signin')).length

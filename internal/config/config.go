@@ -32,6 +32,7 @@ type Config struct {
 	Session Session `yaml:"session"`
 	Gateway Gateway `yaml:"gateway"`
 	Profile Profile `yaml:"profile"`
+	MFA     MFA     `yaml:"mfa"`
 	// Directory bounds the LDAP directory import (feature 016).
 	Directory Directory `yaml:"directory"`
 }
@@ -74,6 +75,15 @@ type Profile struct {
 	AvatarSize              int   `yaml:"avatar_size"`               // stored square edge in pixels (default 512)
 	AvatarDecodeConcurrency int   `yaml:"avatar_decode_concurrency"` // concurrent decodes per instance (default 4)
 	LookupRatePerMinute     int   `yaml:"lookup_rate_per_minute"`    // per-user rate for /api/v1/users lookups (default 120)
+}
+
+// MFA configures second factors.
+type MFA struct {
+	// Issuer is the product name authenticator apps show next to the account
+	// (the otpauth URI label and issuer parameter). It is a display label only:
+	// codes are derived from the seed alone, so changing it never invalidates
+	// enrolled authenticators; it applies to enrolments made after the change.
+	Issuer string `yaml:"issuer"`
 }
 
 // Edge configures the browser-facing listener.
@@ -180,6 +190,7 @@ func Default() Config {
 		Token:   Token{AccessLifetime: 15 * time.Minute, RotationInterval: 24 * time.Hour, RetiringPeriod: 30 * time.Minute, ClockSkew: 60 * time.Second},
 		Session: Session{RevocationPoll: 5 * time.Second},
 		Gateway: Gateway{Service: "gateway"},
+		MFA:     MFA{Issuer: "Tangra"},
 		Profile: Profile{AvatarMaxBytes: 2 << 20, AvatarMaxPixels: 4096 * 4096, AvatarSize: 512, AvatarDecodeConcurrency: 4, LookupRatePerMinute: 120},
 		Directory: Directory{
 			Enabled:                 true,
@@ -244,6 +255,9 @@ func (c Config) Validate() error {
 	}
 	if c.Profile.AvatarDecodeConcurrency <= 0 || c.Profile.LookupRatePerMinute <= 0 {
 		return errors.New("config: profile.avatar_decode_concurrency and profile.lookup_rate_per_minute must be positive")
+	}
+	if c.MFA.Issuer == "" || len(c.MFA.Issuer) > 64 || strings.ContainsAny(c.MFA.Issuer, ":\r\n") {
+		return errors.New("config: mfa.issuer must be 1..64 characters without a colon or line break")
 	}
 	if c.DB.DSN == "" {
 		return errors.New("config: db.dsn is required")

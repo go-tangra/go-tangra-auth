@@ -19,7 +19,7 @@ func TestAccountAndRecoveryHandlers(t *testing.T) {
 	u := newUS1(t)
 	env, _ := crypto.NewEnvelope(bytes.Repeat([]byte{5}, 32))
 	ob := email.NewOutbox(env, nullSender{}, nil, 3, nil)
-	m := mfa.New(u.ms, cache.New(cache.NewMemory()), env, nil, "Freya")
+	m := mfa.New(u.ms, cache.New(cache.NewMemory()), env, nil, "Tangra")
 	u.signin.SetMFA(m)
 	ch := password.NewChanger(u.ms, u.sessions, nil)
 	ch.SetPad(func(time.Time) {})

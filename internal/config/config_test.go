@@ -35,7 +35,8 @@ func TestDefaults(t *testing.T) {
 	if c.Edge.Addr != ":8443" || c.Edge.RateLimit.PerSecond != 20 || c.Email.Transport != "notification" || c.Email.Mode() != "notification" || c.KEK.Source != "file" ||
 		c.Token.AccessLifetime != 15*time.Minute || c.Token.RotationInterval != 24*time.Hour || c.Token.RetiringPeriod != 30*time.Minute ||
 		c.Session.RevocationPoll != 5*time.Second || c.Valkey.AllowPlaintext || c.OpenFGA.AllowPlaintext || c.Email.AllowPlaintext ||
-		c.Profile.AvatarMaxBytes != 2<<20 || c.Profile.AvatarMaxPixels != 4096*4096 || c.Profile.AvatarSize != 512 || c.Profile.AvatarDecodeConcurrency != 4 || c.Profile.LookupRatePerMinute != 120 {
+		c.Profile.AvatarMaxBytes != 2<<20 || c.Profile.AvatarMaxPixels != 4096*4096 || c.Profile.AvatarSize != 512 || c.Profile.AvatarDecodeConcurrency != 4 || c.Profile.LookupRatePerMinute != 120 ||
+		c.MFA.Issuer != "Tangra" {
 		t.Fatalf("defaults %+v", c)
 	}
 }
@@ -60,6 +61,8 @@ func TestValidateRejects(t *testing.T) {
 		{"issuer https", func(c *Config) { c.Issuer = "http://auth.example.org" }, "issuer"},
 		{"issuer path", func(c *Config) { c.Issuer = "https://auth.example.org/x" }, "issuer"},
 		{"origin not https", func(c *Config) { c.Edge.AllowedOrigins = []string{"http://x"} }, "allowed_origins"},
+		{"mfa issuer required", func(c *Config) { c.MFA.Issuer = "" }, "mfa.issuer"},
+		{"mfa issuer without colon", func(c *Config) { c.MFA.Issuer = "Tangra:Auth" }, "mfa.issuer"},
 		{"db dsn required", func(c *Config) { c.DB.DSN = "" }, "db.dsn"},
 		{"avatar bytes bound", func(c *Config) { c.Profile.AvatarMaxBytes = 32 << 20 }, "avatar_max_bytes"},
 		{"avatar pixels bound", func(c *Config) { c.Profile.AvatarMaxPixels = 0 }, "avatar_max_pixels"},

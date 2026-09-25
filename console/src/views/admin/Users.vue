@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, UiCheckbox, useToast, useConfirm, type Column, type SelectOption } from '@go-tangra/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, useToast, useConfirm, type Column, type SelectOption } from '@go-tangra/ui'
 import type { components } from '@/api/schema'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage, userStatuses } from '@/api/vocab'
@@ -108,7 +108,7 @@ onMounted(async () => {
   await Promise.all([load(), loadRoles()])
 })
 const columns: Column<AdminUser>[] = [
-  { key: 'selection', label: 'Select', width: 'sm' },
+  { key: 'selection', label: 'Select' },
   { key: 'email', label: 'Email', sortable: true },
   { key: 'display_name', label: 'Name', sortable: true },
   { key: 'status', label: 'Status', width: 'sm' },
@@ -127,7 +127,7 @@ const columns: Column<AdminUser>[] = [
       </div>
     </template>
     <UiAlert v-if="error" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
-    <div class="mb-3 flex items-center gap-3">
+    <div class="mb-3 flex flex-wrap items-center gap-3">
       <UiButton variant="text" data-test="select-all" :disabled="busy || !imported.length" @click="selected = selected.length ? [] : imported.slice(0, 100).map((u) => u.id)">{{ selected.length ? 'Clear selection' : 'Select imported users (up to 100)' }}</UiButton>
       <UiButton data-test="activate-selected" :disabled="busy || !selected.length" @click="openActivation(users.filter((u) => selected.includes(u.id)))">Activate selected ({{ selected.length }})</UiButton>
     </div>
@@ -138,7 +138,7 @@ const columns: Column<AdminUser>[] = [
     <UiCard :padded="false">
       <UiDataTable :items="users" :columns="columns" caption="Users" empty-title="No users match" :row-attrs="() => ({ 'data-test': 'user-row' })" data-test="users">
         <template #cell-selection="{ row }">
-          <UiCheckbox :id="`activate-select-${row.id}`" :label="`Select ${row.email}`" :model-value="selected.includes(row.id)" :disabled="busy || row.status !== 'imported' || (selected.length >= 100 && !selected.includes(row.id))" @update:model-value="select(row, $event)" />
+          <input :id="`activate-select-${row.id}`" type="checkbox" class="checkbox checkbox-sm align-middle" data-test="row-select" :aria-label="`Select ${row.email}`" :checked="selected.includes(row.id)" :disabled="busy || row.status !== 'imported' || (selected.length >= 100 && !selected.includes(row.id))" @change="select(row, ($event.target as HTMLInputElement).checked)">
         </template>
         <template #cell-email="{ row }">
           <span class="inline-flex items-center gap-2">

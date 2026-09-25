@@ -31,7 +31,7 @@ func setup(t *testing.T) (*Service, *memstore.Store, *time.Time) {
 	ms.AddUser(store.User{ID: "op", TenantID: tP, Email: "ops@x.test", Status: "active"})
 	env, _ := crypto.NewEnvelope(bytes.Repeat([]byte{9}, 32))
 	now := time.Date(2026, 9, 16, 12, 0, 5, 0, time.UTC)
-	svc := New(ms, cache.New(cache.NewMemory()), env, nil, "Freya")
+	svc := New(ms, cache.New(cache.NewMemory()), env, nil, "Tangra")
 	svc.now = func() time.Time { return now }
 	return svc, ms, &now
 }
@@ -46,7 +46,7 @@ func TestEnrolConfirmVerifyReplay(t *testing.T) {
 	ctx := context.Background()
 	alice := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u1", TenantID: tA}
 	enr, err := svc.Enrol(ctx, alice)
-	if err != nil || !strings.HasPrefix(enr.URI, "otpauth://totp/Freya:alice@x.test?") || !strings.Contains(enr.URI, "secret="+enr.Secret) {
+	if err != nil || !strings.HasPrefix(enr.URI, "otpauth://totp/Tangra:alice@x.test?") || !strings.Contains(enr.URI, "secret="+enr.Secret) {
 		t.Fatalf("%+v %v", enr, err)
 	}
 	if u, _ := ms.User(ctx, tA, "u1"); u.MFAEnabled {
