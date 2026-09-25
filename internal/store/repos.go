@@ -733,11 +733,15 @@ func EnqueueOutbox(ctx context.Context, tx pgx.Tx, it OutboxItem) error {
 	return err
 }
 
-// ClaimOutbox returns due items and pushes their next attempt (system scope).
-func ClaimOutbox(ctx context.Context, tx pgx.Tx, limit int, backoff time.Duration) ([]OutboxItem, error) {
-	rows, err := tx.Query(ctx, `UPDATE outbox SET attempts = attempts + 1, next_attempt_at = now() + $2::interval
-		WHERE id IN (SELECT id FROM outbox WHERE sent_at IS NULL AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1 FOR UPDATE SKIP LOCKED)
-		RETURNING id, tenant_id, kind, to_email, payload_enc, attempts, next_attempt_at`, limit, backoff.String())
+// ClaimOutbox returns due, unretired items, counts the attempt and pushes the
+// next one out by 30 s · 2^attempts, capped at one hour (system scope). The
+// exponent is bounded so a long-lived row cannot overflow the interval.
+func ClaimOutbox(ctx context.Context, tx pgx.Tx, limit int) ([]OutboxItem, error) {
+	rows, err := tx.Query(ctx, `UPDATE outbox SET attempts = attempts + 1,
+		next_attempt_at = now() + least(interval '30 seconds' * power(2, least(attempts, 7)), interval '1 hour')
+		WHERE id IN (SELECT id FROM outbox WHERE sent_at IS NULL AND failed_at IS NULL AND next_attempt_at <= now()
+			ORDER BY next_attempt_at LIMIT $1 FOR UPDATE SKIP LOCKED)
+		RETURNING id, tenant_id, kind, to_email, payload_enc, attempts, next_attempt_at`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -756,6 +760,16 @@ func ClaimOutbox(ctx context.Context, tx pgx.Tx, limit int, backoff time.Duratio
 // MarkOutboxSent completes an item.
 func MarkOutboxSent(ctx context.Context, tx pgx.Tx, id string) error {
 	_, err := tx.Exec(ctx, "UPDATE outbox SET sent_at = now() WHERE id = $1", id)
+	return err
+}
+
+// MarkOutboxFailed retires an item: it is never claimed again. reason is
+// clipped to the column's 200 characters.
+func MarkOutboxFailed(ctx context.Context, tx pgx.Tx, id, reason string) error {
+	if r := []rune(reason); len(r) > 200 {
+		reason = string(r[:200])
+	}
+	_, err := tx.Exec(ctx, "UPDATE outbox SET failed_at = now(), last_error = $2 WHERE id = $1 AND sent_at IS NULL", id, reason)
 	return err
 }
 
