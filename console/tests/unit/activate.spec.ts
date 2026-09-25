@@ -178,6 +178,48 @@ describe('users: activate imported, remove imported, resend invitation', () => {
     w.unmount()
   })
 
+  it('renders the row selection as a bare checkbox in the first cell of every row', async () => {
+    stubFetch((url) => {
+      if (String(url).startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [ada, cy] } }
+      if (String(url).startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
+      return { status: 200, body: { items: [] } }
+    })
+    const w = mountView(Users)
+    await flushPromises()
+    expect(w.find('thead th').text()).toBe('Select')
+    for (const row of w.findAll('[data-test="user-row"]')) {
+      const first = row.find('td')
+      const boxes = first.findAll('input[type=checkbox]')
+      expect(boxes).toHaveLength(1)
+      // No visible label text beside the box: the name is carried by aria-label.
+      expect(first.text()).toBe('')
+      expect(boxes[0]!.attributes('aria-label')).toMatch(/^Select .+@/)
+      expect(row.findAll('input[type=checkbox]')).toHaveLength(1)
+    }
+    w.unmount()
+  })
+
+  it('stacks rows on a phone without a visible selection label', async () => {
+    const vw = globalThis as unknown as { __vw: number }
+    vw.__vw = 375
+    try {
+      stubFetch((url) => {
+        if (String(url).startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [cy] } }
+        if (String(url).startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
+        return { status: 200, body: { items: [] } }
+      })
+      const w = mountView(Users)
+      await flushPromises()
+      expect(w.find('table').exists()).toBe(false)
+      const card = w.find('li[data-test="user-row"]')
+      expect(card.find('input[type=checkbox]').attributes('aria-label')).toBe('Select cy@corp.test')
+      expect(card.text()).not.toContain('Select cy@corp.test')
+      w.unmount()
+    } finally {
+      vw.__vw = 1280
+    }
+  })
+
   it('limits the selection to imported rows and activates the selection in bulk', async () => {
     const fetch = stubFetch((url, init) => {
       if (String(url) === '/api/v1/admin/users/activate' && init?.method === 'POST')
