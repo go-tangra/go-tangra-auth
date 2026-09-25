@@ -1,0 +1,10 @@
+/* UiCheckbox and UiSwitch (@go-tangra/ui 4.x) wrap the control and its text in
+ * `label.label` expecting a flex row, but FlyonUI 2 has no `.label` rule and its
+ * `.label-text` is a block: the text drops below the box. Lay the pair out on
+ * one line, vertically centred. Remove once the kit styles the label itself. */
+@layer components {
+  .form-control > label.label {
+    display: flex;
+    align-items: center;
+  }
+}

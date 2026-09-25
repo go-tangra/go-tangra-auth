@@ -3,3 +3,4 @@
 @import "tailwindcss";
 @import "@go-tangra/ui/theme.css";
 @import "@go-tangra/ui/sources.css";
+@import "./kit-fixes.css";

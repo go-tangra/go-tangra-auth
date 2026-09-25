@@ -133,6 +133,33 @@ describe('users: activate imported, remove imported, resend invitation', () => {
     w.unmount()
   })
 
+  it('lays each role and group pick out as a label wrapping its checkbox and text', async () => {
+    stubFetch((url) => {
+      if (String(url).startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [cy] } }
+      if (String(url).startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
+      if (String(url).startsWith('/api/v1/admin/groups')) return { status: 200, body: { items: [group] } }
+      return { status: 404, body: { reason: 'not_found' } }
+    })
+    const w = mountView(Users)
+    await flushPromises()
+    await click('[data-test="activate"]')
+    const boxes = [...pickerBoxes('activate-roles'), ...pickerBoxes('activate-groups')]
+    expect(boxes).toHaveLength(3)
+    for (const box of boxes) {
+      const label = box.closest('label')!
+      expect(label).not.toBeNull()
+      expect(label.htmlFor).toBe(box.id)
+      expect(label.classList.contains('label')).toBe(true)
+      expect(label.parentElement!.classList.contains('form-control')).toBe(true)
+      expect(label.textContent!.trim().length).toBeGreaterThan(0)
+    }
+    // Clicking the text toggles the box.
+    boxes[0]!.closest('label')!.querySelector('span')!.click()
+    await flushPromises()
+    expect(pickerBoxes('activate-roles')[0]!.checked).toBe(true)
+    w.unmount()
+  })
+
   it('posts only user_ids and an empty role list when no picks are made', async () => {
     const fetch = stubFetch((url, init) => {
       if (String(url) === '/api/v1/admin/users/activate' && init?.method === 'POST')
