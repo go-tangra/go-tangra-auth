@@ -5,7 +5,6 @@ package emaildb
 
 import (
 	"context"
-	"time"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
@@ -15,10 +14,10 @@ import (
 // StoreQueue is the outbox table behind the Queue interface.
 type StoreQueue struct{ Store *store.Store }
 
-func (q StoreQueue) Claim(ctx context.Context, limit int, backoff time.Duration) ([]email.Item, error) {
+func (q StoreQueue) Claim(ctx context.Context, limit int) ([]email.Item, error) {
 	var out []email.Item
 	err := q.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
-		items, err := store.ClaimOutbox(ctx, tx, limit, backoff)
+		items, err := store.ClaimOutbox(ctx, tx, limit)
 		if err != nil {
 			return err
 		}
@@ -32,4 +31,8 @@ func (q StoreQueue) Claim(ctx context.Context, limit int, backoff time.Duration)
 
 func (q StoreQueue) MarkSent(ctx context.Context, id string) error {
 	return q.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { return store.MarkOutboxSent(ctx, tx, id) })
+}
+
+func (q StoreQueue) MarkFailed(ctx context.Context, id, reason string) error {
+	return q.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { return store.MarkOutboxFailed(ctx, tx, id, reason) })
 }

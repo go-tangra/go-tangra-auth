@@ -69,6 +69,9 @@ const (
 	DirectorySearched          EventType = "directory_searched"
 	DirectoryImported          EventType = "directory_imported"
 	ImportedUserDeleted        EventType = "imported_user_deleted"
+	// Feature 017: an outbox message retired without delivery (permanent
+	// failure or attempts exhausted). Reported once; details name the row.
+	EmailGivenUp EventType = "email_given_up"
 )
 
 var known = map[EventType]struct{}{}
@@ -80,7 +83,7 @@ func init() {
 		OperatorGrantCreated, OperatorGrantUsed, ClientRegistered, PolicyUpdated, CrossTenantRefused, AuthzDenied, TokenExchanged,
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
-		DirectoryImported, ImportedUserDeleted} {
+		DirectoryImported, ImportedUserDeleted, EmailGivenUp} {
 		known[t] = struct{}{}
 	}
 }
