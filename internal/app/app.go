@@ -14,6 +14,9 @@ import (
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc"
+
+	"github.com/go-tangra/go-tangra-notification/sdk/v4/pkg/notifyclient"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit/auditdb"
@@ -53,51 +56,51 @@ import (
 
 // Options override infrastructure (tests) and attach story handlers.
 type Options struct {
-	Logger   slog.Handler
-	KV       cache.KV      // nil = Valkey from config
-	FGA      authz.Backend // nil = OpenFGA from config
-	Sender   email.Sender  // nil = from config
-	Console  fs.FS         // nil = no console
-	Remote   fs.FS         // nil = no federated remote (gateway mode)
-	Sessions httpapi.SessionResolver
-	GRPC     grpcapi.Handlers
-	Freya    []freya.Option
-	Migrate  bool
+	Logger    slog.Handler
+	KV        cache.KV        // nil = Valkey from config
+	FGA       authz.Backend   // nil = OpenFGA from config
+	Deliverer email.Deliverer // nil = from config (notification, or the log sink)
+	Console   fs.FS           // nil = no console
+	Remote    fs.FS           // nil = no federated remote (gateway mode)
+	Sessions  httpapi.SessionResolver
+	GRPC      grpcapi.Handlers
+	Freya     []freya.Option
+	Migrate   bool
 }
 
 // App holds every wired component.
 type App struct {
-	Cfg      config.Config
-	Log      *slog.Logger
-	Freya    *freya.App
-	Store    *store.Store
-	Cache    *cache.Cache
-	FGA      authz.Backend
-	Authz    *authz.Client
-	Envelope *crypto.Envelope
-	Sender   email.Sender
-	Outbox   *email.Outbox
-	Audit    *audit.Writer
-	HTTP     *httpapi.Server
-	Sessions *session.Manager
-	Signin   *user.Service
-	Ring     *token.Ring
-	Tokens   *token.Issuer
-	OAuth    *oauth.Service
-	Invites  *invite.Service
-	Admin    *user.Admin
-	Assigner *authz.Assigner
-	Groups   *authz.Groups
-	Profiles *user.Profiles
-	Avatars  *user.Avatars
-	Registry *authz.Registry
-	Roles    *authz.Roles
-	Decider  *authz.Decider
-	MFA      *mfa.Service
-	Changer  *password.Changer
-	Recovery *password.Recovery
-	Tenants  *tenant.Service
-	Grants   *tenant.Grants
+	Cfg       config.Config
+	Log       *slog.Logger
+	Freya     *freya.App
+	Store     *store.Store
+	Cache     *cache.Cache
+	FGA       authz.Backend
+	Authz     *authz.Client
+	Envelope  *crypto.Envelope
+	Deliverer email.Deliverer
+	Outbox    *email.Outbox
+	Audit     *audit.Writer
+	HTTP      *httpapi.Server
+	Sessions  *session.Manager
+	Signin    *user.Service
+	Ring      *token.Ring
+	Tokens    *token.Issuer
+	OAuth     *oauth.Service
+	Invites   *invite.Service
+	Admin     *user.Admin
+	Assigner  *authz.Assigner
+	Groups    *authz.Groups
+	Profiles  *user.Profiles
+	Avatars   *user.Avatars
+	Registry  *authz.Registry
+	Roles     *authz.Roles
+	Decider   *authz.Decider
+	MFA       *mfa.Service
+	Changer   *password.Changer
+	Recovery  *password.Recovery
+	Tenants   *tenant.Service
+	Grants    *tenant.Grants
 	// Directories is nil when directory.enabled is false (feature 016).
 	Directories *directory.Service
 	closers     []func()
@@ -179,18 +182,17 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Audit = audit.NewWriter(a.Store, func(err error) { log.Error("audit write failed", "err", err) })
 	a.closers = append(a.closers, a.Audit.Close)
 	a.Authz = authz.New(a.FGA, a.Cache, a.onRefusal)
-	a.Sender = o.Sender
-	if a.Sender == nil {
-		switch cfg.Email.Transport {
+	a.Deliverer = o.Deliverer
+	if a.Deliverer == nil {
+		switch cfg.Email.Mode() {
 		case "log":
-			a.Sender = email.LogSink{Log: log}
+			a.Deliverer = email.LogSink{Log: log}
 		default:
-			if a.Sender, err = email.NewSMTP(email.SMTPConfig{Host: cfg.Email.Host, Port: cfg.Email.Port, Username: cfg.Email.Username, Password: cfg.Email.Password, From: cfg.Email.From, AllowPlaintext: cfg.Email.AllowPlaintext}); err != nil {
-				return nil, err
-			}
+			a.Deliverer = email.NewNotifier(a.notificationConn)
 		}
 	}
-	a.Outbox = email.NewOutbox(a.Envelope, a.Sender, emaildb.StoreQueue{Store: a.Store}, 8, func(err error) { log.Warn("email delivery", "err", err) })
+	a.Outbox = email.NewOutbox(a.Envelope, a.Deliverer, emaildb.StoreQueue{Store: a.Store}, 8, func(err error) { log.Warn("email delivery", "err", err) }).
+		OnGiveUp(a.onEmailGivenUp)
 	fopts := append([]freya.Option{freya.WithLogger(handler)}, o.Freya...)
 	if a.Freya, err = freya.New(cfg.Config, fopts...); err != nil {
 		return nil, err
@@ -393,6 +395,28 @@ func (a *App) Close() {
 	a.closers = nil
 }
 
+// notificationConn is the mesh connection to notification. The outbox is
+// built before the Freya app and asks for it on its first delivery.
+func (a *App) notificationConn(ctx context.Context) (grpc.ClientConnInterface, error) {
+	if a.Freya == nil {
+		return nil, errors.New("app: freya runtime not built yet")
+	}
+	return a.Freya.Client(ctx, notifyclient.Service)
+}
+
+// onEmailGivenUp reports a retired outbox message once: a warning and an
+// email_given_up audit event in the message's tenant.
+func (a *App) onEmailGivenUp(g email.GiveUp) {
+	a.Log.Warn("email given up", "id", g.ID, "tenant", g.TenantID, "kind", g.Kind, "attempts", g.Attempts, "reason", g.Reason)
+	_ = a.Audit.Emit(emailGivenUpEvent(g))
+}
+
+// emailGivenUpEvent names the outbox row, never the recipient or the link.
+func emailGivenUpEvent(g email.GiveUp) audit.Event {
+	return audit.Event{Type: audit.EmailGivenUp, TenantID: g.TenantID, ActorKind: "system", Outcome: "failed", Reason: "delivery_failed",
+		SubjectKind: "email", SubjectID: g.ID, Details: map[string]any{"kind": g.Kind, "attempts": g.Attempts, "error": g.Reason}}
+}
+
 func (a *App) onRefusal(r tenantctx.Refusal) {
 	_ = a.Audit.Emit(audit.Event{Type: audit.CrossTenantRefused, TenantID: r.TargetTenant, ActorKind: string(r.Actor.Kind), ActorUserID: r.Actor.UserID,
 		ActorService: r.Actor.ServiceID, Outcome: "refused", Reason: r.Reason, Details: map[string]any{"actor_tenant": r.ActorTenant}})
@@ -489,8 +513,7 @@ func (a *App) Bootstrap(ctx context.Context, operatorEmail string) (BootstrapRes
 				}
 				res.InvitationID = inv.ID
 				res.AcceptURL = a.Cfg.Issuer + httpapi.ConsolePrefix + "/invite/accept?token=" + tok
-				blob, err := a.Outbox.Encode(operatorEmail, email.Payload{Subject: "You have been invited as a platform operator",
-					Text: "Accept your invitation within 7 days:\n\n" + res.AcceptURL + "\n"})
+				blob, err := a.Outbox.Encode(operatorEmail, operatorInvitePayload(res.AcceptURL, t.DisplayName))
 				if err != nil {
 					return err
 				}

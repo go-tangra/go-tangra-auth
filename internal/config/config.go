@@ -117,15 +117,43 @@ type KEK struct {
 	Env    string `yaml:"env"`
 }
 
-// Email configures the SMTP sender.
+// Email configures delivery. Mail is rendered and sent by notification
+// (feature 017); auth holds no relay. The relay keys below are what auth ≤ 4.1
+// used: they still load so existing files keep working, are ignored, and are
+// named in one start-up warning.
 type Email struct {
-	Transport      string `yaml:"transport"` // smtp | log
+	Transport      string `yaml:"transport"` // notification (default) | log (development only); smtp = notification
 	Host           string `yaml:"host"`
 	Port           int    `yaml:"port"`
 	Username       string `yaml:"username"`
 	Password       string `yaml:"password"`
 	From           string `yaml:"from"`
 	AllowPlaintext bool   `yaml:"allow_plaintext"`
+}
+
+// Mode is the effective transport: "notification" or "log".
+func (e Email) Mode() string {
+	if e.Transport == "log" {
+		return "log"
+	}
+	return "notification"
+}
+
+// ignored lists the relay keys that are set (names only, never values).
+func (e Email) ignored() []string {
+	var keys []string
+	if e.Transport == "smtp" {
+		keys = append(keys, "transport smtp")
+	}
+	for _, k := range []struct {
+		name string
+		set  bool
+	}{{"host", e.Host != ""}, {"port", e.Port != 0}, {"username", e.Username != ""}, {"password", e.Password != ""}, {"from", e.From != ""}, {"allow_plaintext", e.AllowPlaintext}} {
+		if k.set {
+			keys = append(keys, k.name)
+		}
+	}
+	return keys
 }
 
 // Token configures proofs of identity and key rotation.
@@ -148,7 +176,7 @@ func Default() Config {
 		Edge:    Edge{Addr: ":8443", RateLimit: edge.RateLimit{PerSecond: 20, Burst: 40, Routes: map[string]edge.RateLimit{"/api/v1/signin": {PerSecond: 2, Burst: 5}, "/api/v1/recovery": {PerSecond: 1, Burst: 3}}}},
 		DB:      DB{MaxConns: 16},
 		KEK:     KEK{Source: "file"},
-		Email:   Email{Transport: "smtp", Port: 465},
+		Email:   Email{Transport: "notification"},
 		Token:   Token{AccessLifetime: 15 * time.Minute, RotationInterval: 24 * time.Hour, RetiringPeriod: 30 * time.Minute, ClockSkew: 60 * time.Second},
 		Session: Session{RevocationPoll: 5 * time.Second},
 		Gateway: Gateway{Service: "gateway"},
@@ -246,22 +274,13 @@ func (c Config) Validate() error {
 		return err
 	}
 	switch c.Email.Transport {
-	case "smtp":
-		if c.Email.Host == "" || c.Email.Port <= 0 {
-			return errors.New("config: email.host and email.port are required")
-		}
+	case "notification", "smtp":
 	case "log":
 		if prod {
 			return errors.New("config: email.transport=log is not permitted in production")
 		}
 	default:
-		return fmt.Errorf("config: email.transport %q must be smtp or log", c.Email.Transport)
-	}
-	if c.Email.From == "" {
-		return errors.New("config: email.from is required")
-	}
-	if prod && c.Email.AllowPlaintext {
-		return errors.New("config: email.allow_plaintext is not permitted in production")
+		return fmt.Errorf("config: email.transport %q must be notification or log", c.Email.Transport)
 	}
 	if c.Token.AccessLifetime <= 0 || c.Token.AccessLifetime > 15*time.Minute {
 		return errors.New("config: token.access_lifetime must be within 1s..15m")
@@ -329,8 +348,11 @@ func (c Config) Warnings() []string {
 	if c.OpenFGA.AllowPlaintext {
 		w = append(w, "openfga connection without TLS (allow_plaintext)")
 	}
-	if c.Email.AllowPlaintext || c.Email.Transport == "log" {
-		w = append(w, "email delivery without TLS or to the log sink")
+	if keys := c.Email.ignored(); len(keys) > 0 {
+		w = append(w, "email: "+strings.Join(keys, ", ")+" ignored: mail is delivered by notification (remove these keys; they are refused in v5)")
+	}
+	if c.Email.Mode() == "log" {
+		w = append(w, "email goes to the log sink with its links (development only)")
 	}
 	if !strings.Contains(c.DB.DSN, "sslmode=verify-full") && !strings.Contains(c.DB.DSN, "sslmode=verify-ca") {
 		w = append(w, "db.dsn sslmode is weaker than verify-full")

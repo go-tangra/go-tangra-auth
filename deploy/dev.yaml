@@ -28,11 +28,9 @@ kek:
   source: file
   path: deploy/dev-kek.b64
 email:
-  transport: smtp
-  host: 127.0.0.1
-  port: 1025
-  from: auth@example.org
-  allow_plaintext: true
+  # Development: links are printed to the log. Deployments use the default,
+  # notification, which renders and sends the auth.* templates (feature 017).
+  transport: log
 profile:
   avatar_max_bytes: 2097152
   avatar_size: 512

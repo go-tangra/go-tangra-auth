@@ -19,7 +19,9 @@ import (
 
 type nullSender struct{}
 
-func (nullSender) Send(context.Context, email.Message) error { return nil }
+func (nullSender) Deliver(context.Context, email.Message) (email.Outcome, error) {
+	return email.Sent, nil
+}
 
 func withUS2(t *testing.T, u *us1) (*audit.Writer, *email.Outbox) {
 	t.Helper()
@@ -81,7 +83,7 @@ func TestAdminHandlers(t *testing.T) {
 	}
 	// Accept the (latest) token: account active, signed in, auditor role.
 	p, _ := ob.Decode("new@x.test", u.ms.Outbox[len(u.ms.Outbox)-1].PayloadEnc)
-	tok := strings.TrimSpace(p.Text[strings.Index(p.Text, "token=")+6:])
+	tok := p.Link()[strings.Index(p.Link(), "token=")+6:]
 	if w, out := u.call("POST", "/api/v1/invitations/accept", `{"token":"`+tok+`","display_name":"New","password":"short"}`); w.Code != 400 || out["reason"] != "password_policy" {
 		t.Fatalf("%d %v", w.Code, out)
 	}

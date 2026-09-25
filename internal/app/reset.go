@@ -29,6 +29,18 @@ type ResetResult struct {
 	RevokedInvitation int64    `json:"revoked_invitations"`
 }
 
+// breakGlassValidFor is the seven-day invitation lifetime of a reset or the
+// first operator's invitation, as the message states it.
+const breakGlassValidFor = "7 days"
+
+// resetPayload is the message for an account reset by an administrator.
+func resetPayload(link string) email.Payload { return email.AccountReset(link, breakGlassValidFor) }
+
+// operatorInvitePayload is the first platform operator's invitation.
+func operatorInvitePayload(link, tenant string) email.Payload {
+	return email.Invite(link, breakGlassValidFor, tenant)
+}
+
 // ErrResetNotAllowed is returned for users that cannot be reset: unknown,
 // imported (they must be activated instead) or deactivated (reactivate first).
 var ErrResetNotAllowed = errors.New("reset: user not found or not in an active/invited state")
@@ -104,8 +116,7 @@ func (a *App) ResetUser(ctx context.Context, tenantSlug, userEmail string) (Rese
 		}
 		res.InvitationID = inv.ID
 		res.AcceptURL = a.Cfg.Issuer + httpapi.ConsolePrefix + "/invite/accept?token=" + tok
-		blob, err := a.Outbox.Encode(u.Email, email.Payload{Subject: "Your account was reset",
-			Text: "Your password and two-factor authentication were reset by an administrator.\nSet them up again within 7 days:\n\n" + res.AcceptURL + "\n"})
+		blob, err := a.Outbox.Encode(u.Email, resetPayload(res.AcceptURL))
 		if err != nil {
 			return err
 		}

@@ -102,7 +102,7 @@ func TestAccountAndRecoveryHandlers(t *testing.T) {
 		}
 	}
 	p, _ := ob.Decode("alice@x.test", last)
-	tok := strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok := p.Link()[strings.Index(p.Link(), "token=")+6:]
 	if w, out := u.call("POST", "/api/v1/recovery/complete", `{"token":"`+tok+`","new_password":"short"}`); w.Code != 400 || out["reason"] != "password_policy" {
 		t.Fatalf("%d %v", w.Code, out)
 	}

@@ -327,6 +327,25 @@ Reviewed and found sound (no change):
   answer `not_found` and audit `cross_tenant_refused` through a system-scope
   lookup that returns nothing to the caller.
 
+## Email (feature 017)
+
+- Links leave auth **only** through notification: the outbox payload is a
+  template key and its variables, sealed with the KEK (AAD `email:<recipient>`)
+  until the worker hands it to `notification.v1.Notifier/Send` over the mTLS
+  mesh. auth holds no relay credentials and opens no SMTP connection; the
+  relay keys of older configurations are ignored (one start-up warning).
+- notification marks `link` and `text` as secret variables: its log keeps
+  only the redacted rendering, and failure reasons are scrubbed of their
+  values. The reasons auth stores (`outbox.last_error`, ≤ 200 characters) and
+  reports (warning log, `email_given_up` audit event) come from those
+  scrubbed answers or from auth's own fixed texts; they never include the
+  recipient, a link or payload bytes.
+- Key sends are confined to auth's namespace: notification accepts only
+  `auth.*` keys from `svc/auth`, and auth refuses to queue any other key.
+- A message that cannot be delivered is retired once (`failed_at`) instead of
+  being re-claimed and logged forever (denial of service by a poison row).
+- The `log` transport prints links and is refused in production.
+
 ## What the service never does
 
 - Store or log passwords, session secrets, challenge ids, codes or tokens in
@@ -357,6 +376,8 @@ Reviewed and found sound (no change):
 | **T** LDAP filter injection | compile + canonicalise, AND with the base filter, base-DN scoping, no alias deref, per-entry DN re-check | `ldapdir` filter/DN tests, `FuzzCompileUserFilter`, `FuzzCombine`, `FuzzScopeBase` |
 | **I** enumeration of imported users | sign-in/recovery/accept treat `imported` as unknown, no lockout oracle, deactivate/reactivate refused | `TestAdminRefusesImported`, sign-in and recovery tests |
 | **I** bind password exfiltration by re-pointing a connection | the stored password is reused only for the same `url`/`tls_mode`/`ca_pem`; otherwise it must be typed again (T070 F1) | `TestReviewStoredPasswordNotReplayedToNewTarget` |
+| **I** links in mail infrastructure logs | links leave auth only through notification (secret variables redacted in its log); no relay in auth; given-up reasons scrubbed | `internal/email` tests, `TestEmailGivenUpOnce` |
+| **D** poison outbox row re-claimed forever | exponential backoff capped at 1 h, retirement with `failed_at`, one `email_given_up` report | `TestOutboxDeliversAndRetires`, `TestOutboxRetire`, `TestEmailGivenUpOnce` |
 | **E** granting roles through an invitation or activation | shared `MayAssign` / `MayJoin` escalation check on activation and plain invitations | `TestMayAssign`, `invite` and `activate` tests |
 
 ## Contracts

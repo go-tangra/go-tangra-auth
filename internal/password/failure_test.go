@@ -156,8 +156,7 @@ func TestFailurePaths(t *testing.T) {
 	if err := rec.Request(ctx, "acme", "alice@x.test", "ip"); err != nil || len(ms.Outbox) != 1 {
 		t.Fatal(err)
 	}
-	p, _ := ob.Decode("alice@x.test", ms.Outbox[0].PayloadEnc)
-	tok := strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok := recoveryToken(t, ob, ms.Outbox[0])
 	fs.fail["tenant"] = true
 	if err := rec.Complete(ctx, tok, "brand-new-password"); !errors.Is(err, ErrInvalidToken) {
 		t.Fatal("tenant failure on complete")
@@ -182,16 +181,14 @@ func TestFailurePaths(t *testing.T) {
 	restore()
 	// The token was consumed by the failed attempt above; request another.
 	_ = rec.Request(ctx, "acme", "alice@x.test", "ip")
-	p, _ = ob.Decode("alice@x.test", ms.Outbox[len(ms.Outbox)-1].PayloadEnc)
-	tok = strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok = recoveryToken(t, ob, ms.Outbox[len(ms.Outbox)-1])
 	fs.fail["setPassword"] = true
 	if err := rec.Complete(ctx, tok, "brand-new-password"); !errors.Is(err, errDown) {
 		t.Fatal("setPassword failure on complete")
 	}
 	fs.fail["setPassword"] = false
 	_ = rec.Request(ctx, "acme", "alice@x.test", "ip")
-	p, _ = ob.Decode("alice@x.test", ms.Outbox[len(ms.Outbox)-1].PayloadEnc)
-	tok = strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok = recoveryToken(t, ob, ms.Outbox[len(ms.Outbox)-1])
 	fs.fail["revokeUser"] = true
 	if err := rec.Complete(ctx, tok, "brand-new-password"); !errors.Is(err, errDown) {
 		t.Fatal("revoke failure on complete")
@@ -199,8 +196,7 @@ func TestFailurePaths(t *testing.T) {
 	fs.fail["revokeUser"] = false
 	// Suspended tenant refuses completion; inactive users are never mailed.
 	_ = rec.Request(ctx, "acme", "alice@x.test", "ip")
-	p, _ = ob.Decode("alice@x.test", ms.Outbox[len(ms.Outbox)-1].PayloadEnc)
-	tok = strings.TrimSpace(strings.Split(p.Text[strings.Index(p.Text, "token=")+6:], "\n")[0])
+	tok = recoveryToken(t, ob, ms.Outbox[len(ms.Outbox)-1])
 	tn.Status = "suspended"
 	ms.AddTenant(tn)
 	if err := rec.Complete(ctx, tok, "brand-new-password"); !errors.Is(err, ErrInvalidToken) {

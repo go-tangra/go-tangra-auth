@@ -75,7 +75,7 @@ by the integration suite instead.
 ## Run locally
 
 ```bash
-make compose-up                           # TimescaleDB, Valkey, OpenFGA, Mailpit
+make compose-up                           # TimescaleDB, Valkey, OpenFGA
 go run ./cmd/authsvc bootstrap -config deploy/dev.yaml -operator-email ops@example.org
 go run -tags "console remote" ./cmd/authsvc -config deploy/dev.yaml   # after the console build
 ```

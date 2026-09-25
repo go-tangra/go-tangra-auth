@@ -27,13 +27,12 @@ func valid(t *testing.T) Config {
 	kek := filepath.Join(t.TempDir(), "kek")
 	_ = os.WriteFile(kek, []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), 0o600)
 	c.KEK.Source, c.KEK.Path = "file", kek
-	c.Email.Host, c.Email.From = "smtp.example.org", "auth@example.org"
 	return c
 }
 
 func TestDefaults(t *testing.T) {
 	c := Default()
-	if c.Edge.Addr != ":8443" || c.Edge.RateLimit.PerSecond != 20 || c.Email.Port != 465 || c.KEK.Source != "file" ||
+	if c.Edge.Addr != ":8443" || c.Edge.RateLimit.PerSecond != 20 || c.Email.Transport != "notification" || c.Email.Mode() != "notification" || c.KEK.Source != "file" ||
 		c.Token.AccessLifetime != 15*time.Minute || c.Token.RotationInterval != 24*time.Hour || c.Token.RetiringPeriod != 30*time.Minute ||
 		c.Session.RevocationPoll != 5*time.Second || c.Valkey.AllowPlaintext || c.OpenFGA.AllowPlaintext || c.Email.AllowPlaintext ||
 		c.Profile.AvatarMaxBytes != 2<<20 || c.Profile.AvatarMaxPixels != 4096*4096 || c.Profile.AvatarSize != 512 || c.Profile.AvatarDecodeConcurrency != 4 || c.Profile.LookupRatePerMinute != 120 {
@@ -79,8 +78,8 @@ func TestValidateRejects(t *testing.T) {
 		{"openfga key required", func(c *Config) { c.OpenFGA.PresharedKey = "" }, "openfga.preshared_key"},
 		{"kek missing", func(c *Config) { c.KEK.Path = "/nonexistent" }, "kek"},
 		{"kek env unknown", func(c *Config) { c.KEK.Source = "vault" }, "kek.source"},
-		{"email plaintext in production", func(c *Config) { c.Env = "production"; c.Email.AllowPlaintext = true }, "email.allow_plaintext"},
-		{"email from", func(c *Config) { c.Email.From = "" }, "email.from"},
+		{"email log sink in production", func(c *Config) { c.Env = "production"; c.Email.Transport = "log" }, "email.transport=log"},
+		{"email transport unknown", func(c *Config) { c.Email.Transport = "sendmail" }, "email.transport"},
 		{"access lifetime >15m", func(c *Config) { c.Token.AccessLifetime = 16 * time.Minute }, "token.access_lifetime"},
 		{"retiring shorter than access lifetime", func(c *Config) { c.Token.RetiringPeriod = 10 * time.Minute }, "token.retiring_period"},
 		{"edge cert required in production", func(c *Config) { c.Env = "production"; c.Edge.CertFile = "" }, "edge.cert_file"},
@@ -132,6 +131,55 @@ func TestWarningsAndKEK(t *testing.T) {
 	c.KEK.Source, c.KEK.Path = "file", bad
 	if _, err := c.KEK.Load(); err == nil {
 		t.Fatal("short kek must fail")
+	}
+}
+
+// Feature 017: mail goes through notification. The relay keys of auth ≤ 4.1
+// still load (strict decoding), are ignored — even the production refusal of
+// allow_plaintext no longer applies to a value nothing reads — and are named
+// in one start-up warning. transport smtp means notification.
+func TestEmailRelayKeysIgnored(t *testing.T) {
+	c := valid(t)
+	c.Env = "production"
+	c.Email = Email{Transport: "smtp", Host: "smtp.example.org", Port: 587, Username: "u", Password: "p", From: "auth@example.org", AllowPlaintext: true}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Email.Mode() != "notification" {
+		t.Fatalf("smtp is notification: %q", c.Email.Mode())
+	}
+	var mail []string
+	for _, w := range c.Warnings() {
+		if strings.Contains(w, "email") {
+			mail = append(mail, w)
+		}
+	}
+	if len(mail) != 1 {
+		t.Fatalf("one email warning expected: %q", mail)
+	}
+	for _, k := range []string{"transport smtp", "host", "port", "username", "password", "from", "allow_plaintext", "notification"} {
+		if !strings.Contains(mail[0], k) {
+			t.Errorf("warning %q does not name %s", mail[0], k)
+		}
+	}
+	if strings.Contains(mail[0], "smtp.example.org") || strings.Contains(mail[0], "auth@example.org") {
+		t.Fatalf("the warning names keys, not values: %q", mail[0])
+	}
+	// Only the keys actually set are named.
+	c.Email = Email{Transport: "notification", From: "auth@example.org"}
+	if w := strings.Join(c.Warnings(), "\n"); !strings.Contains(w, "from") || strings.Contains(w, "host") || strings.Contains(w, "transport smtp") {
+		t.Fatalf("warnings %q", w)
+	}
+	// Development: the log sink is accepted and warned about.
+	c.Env = "dev"
+	c.Email = Email{Transport: "log"}
+	if err := c.Validate(); err != nil || c.Email.Mode() != "log" || !strings.Contains(strings.Join(c.Warnings(), "\n"), "log sink") {
+		t.Fatalf("log sink: %v %q", err, c.Warnings())
+	}
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	_ = os.WriteFile(p, []byte("email:\n  transport: smtp\n  host: 127.0.0.1\n  port: 1025\n  username: u\n  password: p\n  from: a@x\n  allow_plaintext: true\n"), 0o600)
+	if l, err := Load(p); err != nil || l.Email.Mode() != "notification" || l.Email.Host != "127.0.0.1" {
+		t.Fatalf("relay keys must still load: %+v %v", l.Email, err)
 	}
 }
 

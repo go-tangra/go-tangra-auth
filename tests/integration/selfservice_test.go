@@ -69,6 +69,9 @@ func TestRecovery(t *testing.T) {
 		t.Fatal(st)
 	}
 	mail := e.LastMail("alice@acme.test")
+	if r := e.LastSend("alice@acme.test"); r.GetTemplateKey() != "auth.recovery" || r.GetVariables()["valid_for"] != "30 minutes" {
+		t.Fatalf("recovery send %+v", r)
+	}
 	tok := strings.TrimSpace(strings.Split(mail[strings.Index(mail, "token=")+6:], "\n")[0])
 	if st, _ := e.JSON(http.MethodPost, "/api/v1/recovery/complete", map[string]string{"token": tok, "new_password": "yet-another-long-password"}); st != 204 {
 		t.Fatal(st)
