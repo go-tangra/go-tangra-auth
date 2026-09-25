@@ -391,22 +391,25 @@ func TestCompileUserFilterExtensibleMatch(t *testing.T) {
 		"(cn:=fred)",
 		"(:caseExactMatch:=fred)",
 		"(:2.5.13.5:=fred)",
+		// :dn: also matches DN components (e.g. exclude an OU).
+		"(cn:dn:caseExactMatch:=fred)",
+		"(cn:dn:=fred)",
+		"(o:dn:=Ace)",
+		"(:dn:2.4.6.8.10:=Dino)",
+		"(&(objectClass=person)(|(uid=a)(ou:dn:=Eng)))",
+		"(!(ou:dn:=SystemAccounts))",
+		"(&(objectCategory=person)(objectClass=user)(!(ou:dn:=SystemAccounts))(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
 	} {
 		if _, err := CompileUserFilter(in); err != nil {
 			t.Errorf("CompileUserFilter(%q): %v", in, err)
 		}
 	}
-	// :dn: lets a filter match on DN components; refused in every spelling,
-	// including the case variants go-ldap parses as a matching-rule name.
+	// go-ldap parses a non-lowercase :DN: as a matching rule named DN, which
+	// no server knows: refused with a hint instead of failing at the server.
 	for _, in := range []string{
-		"(cn:dn:caseExactMatch:=fred)",
-		"(cn:dn:=fred)",
-		"(o:dn:=Ace)",
-		"(:dn:2.4.6.8.10:=Dino)",
 		"(cn:DN:=fred)",
 		"(cn:Dn:caseExactMatch:=fred)",
-		"(&(objectClass=person)(|(uid=a)(ou:dn:=Eng)))",
-		"(!(cn:dn:=x))",
+		"(!(cn:DN:=x))",
 		// Matching rules must be a descriptor or an OID.
 		"(cn:bad_rule:=fred)",
 		"(cn:1.2.:=fred)",

@@ -60,9 +60,8 @@ type ttFixture struct {
 }
 
 type ttOpts struct {
-	rate       int
-	production bool
-	plaintext  bool
+	rate      int
+	plaintext bool
 	// wrap, when set, decorates the fake before it is handed to the service.
 	wrap func(ldapdir.Directory) ldapdir.Directory
 }
@@ -102,14 +101,13 @@ func ttSetup(t *testing.T, o ttOpts) *ttFixture {
 		d = o.wrap(dir)
 	}
 	svc := New(Deps{
-		Store:      ms,
-		Directory:  d,
-		Envelope:   env,
-		Policy:     pol,
-		Cache:      cache.New(cache.NewMemory()),
-		Audit:      aw,
-		Config:     cfg,
-		Production: o.production,
+		Store:     ms,
+		Directory: d,
+		Envelope:  env,
+		Policy:    pol,
+		Cache:     cache.New(cache.NewMemory()),
+		Audit:     aw,
+		Config:    cfg,
 	})
 	f := &ttFixture{svc: svc, ms: ms, dir: dir, env: env, aw: aw, cfg: cfg}
 	f.seed(t, ttTenant, ttConnID, "Corp LDAP", ttStoredPW)
@@ -662,28 +660,17 @@ func TestTestPlaintext(t *testing.T) {
 	in := ttInput()
 	in.URL, in.TLSMode = ttPtr("ldap://ldap.example.test:389"), ttPtr(ldapdir.TLSModePlain)
 
-	// Production refuses plaintext even with the opt-out set (config
-	// validation refuses that combination too; the service must not rely on it).
-	f := ttSetup(t, ttOpts{production: true, plaintext: true})
-	_, err := f.svc.Test(context.Background(), ttAdmin(ttTenant), ttTenant, in, "")
-	if !errors.Is(err, ErrInsecureTransport) || err.Error() != "insecure_transport" {
-		t.Fatalf("production: want ErrInsecureTransport, got %v", err)
-	}
-	if len(f.dir.Opens()) != 0 {
-		t.Fatal("plaintext dialled in production")
-	}
-
-	// Non-production without the opt-out: refused as well.
-	f = ttSetup(t, ttOpts{})
+	// Without the opt-out: refused before any dial.
+	f := ttSetup(t, ttOpts{})
 	if _, err := f.svc.Test(context.Background(), ttAdmin(ttTenant), ttTenant, in, ""); !errors.Is(err, ErrInsecureTransport) {
-		t.Fatalf("dev without opt-out: %v", err)
+		t.Fatalf("without opt-out: %v", err)
 	}
 
-	// Development with allow_plaintext: runs, and reports no TLS.
+	// With allow_plaintext (any environment): runs, and reports no TLS.
 	f = ttSetup(t, ttOpts{plaintext: true})
 	res, err := f.svc.Test(context.Background(), ttAdmin(ttTenant), ttTenant, in, "")
 	if err != nil || !res.OK || res.TLS != nil {
-		t.Fatalf("dev plaintext: res=%+v err=%v", res, err)
+		t.Fatalf("plaintext: res=%+v err=%v", res, err)
 	}
 	if p := f.dir.Opens()[0]; p.TLSMode != ldapdir.TLSModePlain {
 		t.Fatalf("params %+v", p)

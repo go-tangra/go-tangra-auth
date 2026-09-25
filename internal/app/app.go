@@ -325,7 +325,7 @@ func (a *App) buildDirectory() error {
 		return err
 	}
 	a.Directories = directory.New(directory.Deps{Store: directorydb.DBStore{St: a.Store}, Directory: ldapdir.NewClient(pol), Envelope: a.Envelope,
-		Policy: pol, Config: cfg, Production: a.Cfg.IsProduction(), Cache: a.Cache, Audit: a.Audit})
+		Policy: pol, Config: cfg, Cache: a.Cache, Audit: a.Audit})
 	return nil
 }
 

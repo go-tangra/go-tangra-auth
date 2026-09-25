@@ -209,7 +209,12 @@ func checkExtensible(p *ber.Packet) string {
 		switch c.Tag {
 		case ldap.MatchingRuleAssertionMatchingRule:
 			rule := packetString(c)
-			if strings.EqualFold(rule, "dn") || !isDescriptor(rule) && !isOID(rule) {
+			if strings.EqualFold(rule, "dn") {
+				// go-ldap reads a non-lowercase ":DN:" as a matching rule
+				// named DN, which no server knows.
+				return "write the :dn: flag in lower case"
+			}
+			if !isDescriptor(rule) && !isOID(rule) {
 				return "filter matching rule is not allowed"
 			}
 		case ldap.MatchingRuleAssertionType:
@@ -221,7 +226,9 @@ func checkExtensible(p *ber.Packet) string {
 				return d
 			}
 		case ldap.MatchingRuleAssertionDNAttributes:
-			return "filter uses :dn: matching, which is not allowed"
+			// :dn: also matches the entry's DN components, e.g.
+			// (!(ou:dn:=SystemAccounts)) excludes an OU. Results are still
+			// re-checked against the base DN, so it cannot widen the search.
 		default:
 			return "filter is not valid"
 		}

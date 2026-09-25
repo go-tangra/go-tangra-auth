@@ -57,7 +57,6 @@ type crudFixture struct {
 
 type crudOpt func(*Deps)
 
-func crudProduction(d *Deps)     { d.Production = true }
 func crudAllowPlaintext(d *Deps) { d.Config.AllowPlaintext = true }
 func crudMaxConns(n int) crudOpt { return func(d *Deps) { d.Config.MaxConnectionsPerTenant = n } }
 
@@ -405,10 +404,8 @@ func TestPlaintextTransport(t *testing.T) {
 		opts []crudOpt
 		ok   bool
 	}{
-		{"production", []crudOpt{crudProduction}, false},
-		{"production even with allow_plaintext", []crudOpt{crudProduction, crudAllowPlaintext}, false},
-		{"development without opt-out", nil, false},
-		{"development with allow_plaintext", []crudOpt{crudAllowPlaintext}, true},
+		{"without allow_plaintext", nil, false},
+		{"with allow_plaintext", []crudOpt{crudAllowPlaintext}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -418,7 +415,7 @@ func TestPlaintextTransport(t *testing.T) {
 			v, err := f.svc.Create(ctx, a, crudTenantA, plain("Dev LDAP"))
 			if tc.ok {
 				if err != nil || v.TLSMode != "plain" {
-					t.Fatalf("plain with dev opt-out: %v", err)
+					t.Fatalf("plain with allow_plaintext: %v", err)
 				}
 				return
 			}

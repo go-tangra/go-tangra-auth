@@ -17,8 +17,8 @@ content **at the grammar level** — independent of freya policy — so table
 tests can glob and assert without surprises:
 
 - `valid-*` — grammar-valid and inside every policy cap (length ≤ 4 KiB,
-  depth ≤ 16, ≤ 64 components, valid attribute description, no `:dn:`
-  extensible match, no NUL). Must be accepted by `ldapdir.CompileUserFilter`.
+  depth ≤ 16, ≤ 64 components, valid attribute description and matching
+  rule, no NUL; lower-case `:dn:` is allowed). Must be accepted by `ldapdir.CompileUserFilter`.
   `valid-empty.txt` (0 bytes) is the empty-input case → `(objectClass=*)`.
 - `invalid-*` — rejected by the underlying grammar itself
   (`ldap.CompileFilter`, `ldap.ParseDN`, `url.Parse`). No freya code runs.
@@ -29,7 +29,8 @@ tests can glob and assert without surprises:
   from research D6): `policy-nul-raw.bin` (raw 0x00 byte), `policy-nul-escaped.txt`
   (`\00`), `policy-overlong-6kib.txt` (exactly 6144 bytes), `policy-deep-nesting-16.txt`
   / `policy-deep-nesting-20.txt`, `policy-components-70.txt`, `policy-attr-desc-underscore.txt`,
-  `policy-extensible-dn.txt`. `ldap.CompileFilter` accepts all of these; only
+  `policy-extensible-dn.txt` (`:DN:` in upper case, parsed as a matching rule
+  named DN). `ldap.CompileFilter` accepts all of these; only
   freya's policy layer refuses them.
 - `odd-*` — grammar-valid edges whose acceptance is a freya policy decision,
   not a grammar fact: empty `(&)`/`(|)`, `(uid=)`, `(uid==x)`, `cn=`, and the

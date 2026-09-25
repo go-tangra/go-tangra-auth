@@ -217,16 +217,19 @@ func TestDirectoryValidateAcceptsBounds(t *testing.T) {
 	}
 }
 
-func TestDirectoryPlaintextRefusedInProduction(t *testing.T) {
-	c := valid(t)
-	c.Directory.AllowPlaintext = true
-	c.Env = "dev"
-	if err := c.Validate(); err != nil {
-		t.Fatalf("dev opt-out must be accepted: %v", err)
-	}
-	c.Env = "production"
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "directory.allow_plaintext") {
-		t.Fatalf("got %v, want directory.allow_plaintext refusal", err)
+// directory.allow_plaintext is an explicit operator opt-in in every
+// environment (a directory without LDAPS/StartTLS); it is always warned.
+func TestDirectoryPlaintextAcceptedWithWarning(t *testing.T) {
+	for _, env := range []string{"dev", "production"} {
+		c := valid(t)
+		c.Env = env
+		c.Directory.AllowPlaintext = true
+		if err := c.Validate(); err != nil {
+			t.Fatalf("%s: allow_plaintext refused: %v", env, err)
+		}
+		if w := strings.Join(c.Warnings(), "\n"); !strings.Contains(w, "directory.allow_plaintext") {
+			t.Fatalf("%s: no allow_plaintext warning in %q", env, w)
+		}
 	}
 }
 

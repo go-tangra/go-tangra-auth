@@ -98,15 +98,14 @@ type Store interface {
 
 // Deps wires the service.
 type Deps struct {
-	Store      Store
-	Directory  ldapdir.Directory
-	Envelope   *crypto.Envelope
-	Policy     *ldapdir.TargetPolicy
-	Config     config.Directory
-	Production bool
-	Cache      *cache.Cache
-	Audit      *audit.Writer
-	Now        func() time.Time // defaults to time.Now
+	Store     Store
+	Directory ldapdir.Directory
+	Envelope  *crypto.Envelope
+	Policy    *ldapdir.TargetPolicy
+	Config    config.Directory
+	Cache     *cache.Cache
+	Audit     *audit.Writer
+	Now       func() time.Time // defaults to time.Now
 }
 
 // Service manages a tenant's directory connections.
@@ -515,18 +514,18 @@ func (s *Service) checkTarget(rawURL, mode string) error {
 	if (ep.Scheme == "ldaps") != (mode == ldapdir.TLSModeLDAPS) {
 		return ldapdir.ErrInvalidURL
 	}
-	if mode == ldapdir.TLSModePlain && (s.d.Production || !s.d.Config.AllowPlaintext) {
+	if mode == ldapdir.TLSModePlain && !s.d.Config.AllowPlaintext {
 		return ErrInsecureTransport
 	}
 	return nil
 }
 
 // usable refuses a stored plain connection that this deployment no longer
-// allows (production, or the development opt-out withdrawn) before its
+// allows (directory.allow_plaintext withdrawn) before its
 // password is unsealed: the save-time check alone would keep binding in clear
 // text after the setting changed (T070).
 func (s *Service) usable(c *store.DirectoryConnection) error {
-	if c.TLSMode == ldapdir.TLSModePlain && (s.d.Production || !s.d.Config.AllowPlaintext) {
+	if c.TLSMode == ldapdir.TLSModePlain && !s.d.Config.AllowPlaintext {
 		return ErrInsecureTransport
 	}
 	return nil
@@ -615,7 +614,7 @@ func validDN(dn string) bool {
 }
 
 // canonicalFilter checks a base filter with the same policy as a search's
-// user filter (length, depth, components, attribute names, no :dn:) and
+// user filter (length, depth, components, attribute names and matching rules) and
 // returns its canonical form; "" (no base filter) stays "". A filter saved
 // with the bare compiler would pass here and then fail every search (T070).
 func canonicalFilter(f string) (string, error) {
