@@ -89,7 +89,7 @@ describe('console views on the kit (T060)', () => {
   it('MFA enrolment: QR + manual key, confirm, recovery codes legible and copyable, continue only after the saved checkbox', async () => {
     useSession().apply({ user: { id: 'u1', email: 'a@x.test' }, tenant: { id: 't1' }, roles: [], mfa_setup_required: true })
     const fetch = stubFetch((url) => {
-      if (url.endsWith('/me/mfa/enroll')) return { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/Freya:a@x.test?secret=JBSWY3DPEHPK3PXP' } }
+      if (url.endsWith('/me/mfa/enroll')) return { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/Tangra:a@x.test?secret=JBSWY3DPEHPK3PXP' } }
       if (url.endsWith('/me/mfa/confirm')) return { status: 200, body: { recovery_codes: ['AAAAA-BBBBB', 'CCCCC-DDDDD'] } }
       return { status: 200, body: { user: { id: 'u1', email: 'a@x.test', mfa_enabled: true }, tenant: { id: 't1' }, roles: [] } }
     })

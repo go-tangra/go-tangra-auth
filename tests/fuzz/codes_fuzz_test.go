@@ -28,7 +28,7 @@ func mfaFixture(f *testing.F) (*mfa.Service, string, []string) {
 	ms.AddTenant(store.Tenant{ID: tid, Slug: "acme", Status: "active", Kind: "customer", Policy: []byte("{}")})
 	ms.AddUser(store.User{ID: "u1", TenantID: tid, Email: "a@x.test", Status: "active"})
 	env, _ := crypto.NewEnvelope(bytes.Repeat([]byte{3}, 32))
-	svc := mfa.New(ms, cache.New(cache.NewMemory()), env, nil, "Freya")
+	svc := mfa.New(ms, cache.New(cache.NewMemory()), env, nil, "Tangra")
 	actor := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u1", TenantID: tid}
 	enr, err := svc.Enrol(context.Background(), actor)
 	if err != nil {

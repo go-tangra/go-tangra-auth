@@ -246,7 +246,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Roles = authz.NewRoles(authzdb.DBRoleCRUDStore{DBRoleStore: roleStore}, a.Authz, authz.NewEscalation(a.Authz), a.Audit)
 	a.Decider = authz.NewDecider(authzdb.DBStatusStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
 	a.HTTP.RegisterUS3(httpapi.US3Deps{Roles: a.Roles, Registry: a.Registry})
-	a.MFA = mfa.New(mfadb.DBStore{St: a.Store}, a.Cache, a.Envelope, a.Audit, cfg.ServiceName)
+	a.MFA = mfa.New(mfadb.DBStore{St: a.Store}, a.Cache, a.Envelope, a.Audit, cfg.MFA.Issuer)
 	a.Signin.SetMFA(a.MFA)
 	a.Changer = password.NewChanger(passworddb.DBChangeStore{St: a.Store}, a.Sessions, a.Audit)
 	a.Recovery = password.NewRecovery(passworddb.DBRecoveryStore{St: a.Store}, a.Outbox, a.Sessions, a.Audit, cfg.Issuer)

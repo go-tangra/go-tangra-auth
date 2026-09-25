@@ -37,7 +37,7 @@ describe('account security', () => {
 
   it('runs the enrolment wizard: QR from otpauth, confirm, recovery codes shown once', async () => {
     stubFetch((url) => {
-      if (url.endsWith('/me/mfa/enroll')) return { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/Freya:a@x.test?secret=JBSWY3DPEHPK3PXP' } }
+      if (url.endsWith('/me/mfa/enroll')) return { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/Tangra:a@x.test?secret=JBSWY3DPEHPK3PXP' } }
       if (url.endsWith('/me/mfa/confirm')) return { status: 200, body: { recovery_codes: ['AAAAA-BBBBB', 'CCCCC-DDDDD'] } }
       if (url.endsWith('/api/v1/session')) return { status: 200, body: { user: { id: 'u1', email: 'a@x.test', mfa_enabled: true }, tenant: { id: 't1' }, roles: [] } }
       return { status: 404, body: {} }

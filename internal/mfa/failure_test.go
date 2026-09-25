@@ -103,7 +103,7 @@ func TestFailurePaths(t *testing.T) {
 	kv := &failKV{Memory: cache.NewMemory()}
 	aw := audit.NewWriter(ms, nil)
 	defer aw.Close()
-	svc = New(fs, cache.New(kv), svc.env, aw, "Freya")
+	svc = New(fs, cache.New(kv), svc.env, aw, "Tangra")
 	svc.now = func() time.Time { return *now }
 	alice := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u1", TenantID: tA}
 	fs.fail["user"] = true

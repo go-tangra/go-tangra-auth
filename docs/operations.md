@@ -90,6 +90,13 @@ use `transport: log`: every message, link included, is printed as
 Never point `db.dsn` at a superuser or a role with `BYPASSRLS`: row-level
 security is the last line of tenant isolation.
 
+## Authenticator label
+
+`mfa.issuer` (default `Tangra`) is the name authenticator apps show next to
+the account. It is written into the `otpauth://` URI at enrolment only; codes
+depend on the seed alone, so changing it never breaks enrolled authenticators
+(they keep the label they were enrolled with).
+
 ## Groups and profiles (feature 004)
 
 - Migration `0005_groups_profiles.sql` adds `groups`, `group_members`,
