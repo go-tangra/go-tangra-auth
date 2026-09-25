@@ -177,13 +177,13 @@ that, the auth service could be used to scan the platform network.
   connection. Leave it empty to use the system roots. `ServerName` is always
   the URL host. There is no skip-verify option; a private CA is handled by
   pinning it.
-- **`plain`** (`ldap://` without TLS) exists only for development. It is
-  refused unless `directory.allow_plaintext: true`, which is refused in
-  production and logged as a start-up warning. Saving a plain connection is
+- **`plain`** (`ldap://` without TLS) sends the bind password in clear text.
+  It is refused unless the operator sets `directory.allow_plaintext: true`
+  (accepted in every environment, for directories without LDAPS/StartTLS),
+  which is logged as a start-up warning. Saving a plain connection is
   audited. The check runs again every time a connection is used (test,
   search, import), so a plain connection saved under the opt-out stops
-  working as soon as the opt-out is withdrawn or the deployment is
-  production.
+  working as soon as the opt-out is withdrawn.
 
 ### Credentials and data
 
@@ -202,7 +202,10 @@ that, the auth service could be used to scan the platform network.
   a server they control and receive the password in the bind request.
 - **Filters**: at most 4 KiB, valid UTF-8, no NUL, at most 16 levels deep and
   at most 64 components. Attribute names must be plain names or OIDs, and
-  `:dn:` extensible matching is refused. The same rules apply to the
+  `:dn:` extensible matching is allowed (it also matches DN components, e.g.
+  `(!(ou:dn:=SystemAccounts))`; results are still re-checked against the base
+  DN), but only spelled in lower case: go-ldap reads `:DN:` as an unknown
+  matching rule, which is refused. The same rules apply to the
   connection's base filter when it is saved. The filter is compiled and
   re-serialised to canonical form before anything is sent. The base filter
   and the user filter are compiled independently and AND-combined, so the

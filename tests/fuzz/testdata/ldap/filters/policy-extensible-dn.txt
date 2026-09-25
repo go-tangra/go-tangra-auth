@@ -1,1 +1,1 @@
-(cn:dn:caseExactMatch:=fred)
+(cn:DN:caseExactMatch:=fred)

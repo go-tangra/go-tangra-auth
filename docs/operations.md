@@ -71,8 +71,8 @@ service version that writes a new model id on start.
 ## Configuration checks in production
 
 `env: production` refuses plaintext Valkey/OpenFGA/SMTP, weak `sslmode`, a
-missing edge certificate, a dev KEK and `directory.allow_plaintext`. Warnings
-(not failures) are logged for loopback listeners, permissive CORS origins and
+missing edge certificate and a dev KEK. Warnings (not failures) are logged for
+loopback listeners, permissive CORS origins, `directory.allow_plaintext` and
 every `directory.targets.allow_cidrs` entry.
 
 ## Member-level lookups and module role grants (feature 005)
@@ -97,7 +97,7 @@ the console shows a "Directories" entry to holders. Security design:
 ```yaml
 directory:
   enabled: true                 # false: routes answer 404, nav entry hidden
-  allow_plaintext: false        # ldap:// without TLS; development only, refused in production
+  allow_plaintext: false        # ldap:// without TLS (bind password in clear text); warned at start
   targets:
     deny_cidrs:                 # platform-internal networks (list yours, see below)
       - 10.0.0.0/8
@@ -151,7 +151,9 @@ an allowed range.
   the system roots, which is the answer for private or self-signed CAs. There
   is no skip-verify.
 - `tls_mode: plain` is accepted only when `directory.allow_plaintext: true`
-  and the environment is not production. Use it only for the local stack.
+  (any environment, warned at start). The bind password then crosses the
+  network in clear text: use it only for a directory that offers neither
+  LDAPS nor StartTLS, on a network you trust.
   This is also checked on every use: once the opt-out is removed, tests,
   searches and imports on existing plain connections fail with
   `insecure_transport`.

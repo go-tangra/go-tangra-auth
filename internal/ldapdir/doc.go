@@ -13,8 +13,8 @@
 //     against a pinned CA or the system roots. TLS 1.3 is the floor unless a
 //     connection opts into TLS 1.2 with approved AEAD/ECDHE suites. There is no
 //     skip-verify option, and a failed StartTLS never falls back to plaintext.
-//   - User filters are compiled (RFC 4515), size/depth capped, stripped of :dn:
-//     extensible matches and re-serialised canonically before being ANDed with
+//   - User filters are compiled (RFC 4515), size/depth capped, checked for
+//     attribute and matching-rule names and re-serialised canonically before being ANDed with
 //     the base filter, so input cannot escape the combination. Returned entry
 //     DNs are re-checked against the base; aliases are not dereferenced and
 //     referrals are not followed.

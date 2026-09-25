@@ -128,7 +128,7 @@ func TestReviewPlaintextRefusedAtUse(t *testing.T) {
 func TestReviewBaseFilterPolicyAtSave(t *testing.T) {
 	f := newCRUD(t)
 	for name, filter := range map[string]string{
-		"dn matching":   "(cn:dn:=People)",
+		"DN rule":       "(cn:DN:=People)",
 		"bad attribute": "(1abc=x)",
 		"escaped NUL":   `(cn=a\00b)`,
 	} {

@@ -350,7 +350,7 @@ func TestSearchRefusedBeforeDirectory(t *testing.T) {
 		{"injection close and or", SearchRequest{Filter: "(department=Eng))(|(objectClass=*)"}, ldapdir.ErrInvalidFilter, "invalid_filter"},
 		{"trailing garbage", SearchRequest{Filter: "(cn=a)(cn=b)"}, ldapdir.ErrInvalidFilter, "invalid_filter"},
 		{"too long", SearchRequest{Filter: long}, ldapdir.ErrInvalidFilter, "invalid_filter"},
-		{"dn extensible match", SearchRequest{Filter: "(ou:dn:=Sales)"}, ldapdir.ErrInvalidFilter, "invalid_filter"},
+		{"DN matching rule", SearchRequest{Filter: "(ou:DN:=Sales)"}, ldapdir.ErrInvalidFilter, "invalid_filter"},
 		{"nul", SearchRequest{Filter: "(cn=a\x00)"}, ldapdir.ErrInvalidFilter, "invalid_filter"},
 		{"base outside", SearchRequest{Base: stSalesDN}, ldapdir.ErrInvalidBase, "invalid_base"},
 		{"base parent", SearchRequest{Base: "dc=example,dc=test"}, ldapdir.ErrInvalidBase, "invalid_base"},

@@ -40,7 +40,7 @@ type Config struct {
 // (research D5, D15). Validated even when disabled.
 type Directory struct {
 	Enabled                 bool             `yaml:"enabled"`         // false removes the routes and the nav entry
-	AllowPlaintext          bool             `yaml:"allow_plaintext"` // ldap:// without StartTLS; development only
+	AllowPlaintext          bool             `yaml:"allow_plaintext"` // ldap:// without StartTLS: bind password in clear text; warned at start
 	Targets                 DirectoryTargets `yaml:"targets"`
 	DialTimeout             time.Duration    `yaml:"dial_timeout"`               // (0, 30s], default 5s
 	MaxSizeLimit            int              `yaml:"max_size_limit"`             // [1, 1000] entries per search
@@ -279,9 +279,6 @@ func (c Config) Validate() error {
 }
 
 func (d *Directory) validate(prod bool) error {
-	if prod && d.AllowPlaintext {
-		return errors.New("config: directory.allow_plaintext is not permitted in production")
-	}
 	for _, s := range d.Targets.DenyCIDRs {
 		if _, err := netip.ParsePrefix(s); err != nil {
 			return fmt.Errorf("config: directory.targets.deny_cidrs: %q is not a CIDR", s)
