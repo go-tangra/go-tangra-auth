@@ -9,6 +9,74 @@ an operator invitation (also printed as an accept link) and creates the
 initial signing key. Run it once per deployment, and again whenever a new
 first operator is needed.
 
+## Email (feature 017)
+
+auth sends no mail itself. Invitations, account resets and recovery links are
+queued in the `outbox` table (sealed with the KEK, bound to the recipient) and
+handed to the **notification** module over the mesh (`notification.v1.Notifier/Send`)
+by template key; notification renders the text and delivers it through the
+tenant's default email channel or the platform channel.
+
+| Message | Template key | Variables |
+|---|---|---|
+| invitation, resend, directory activation | `auth.invite` | `link`, `valid_for` ("72 hours"), `tenant` |
+| first operator (`authsvc bootstrap`) | `auth.invite` | `link`, `valid_for` ("7 days"), `tenant` |
+| administrator reset (`authsvc reset-user`) | `auth.account_reset` | `link`, `valid_for` ("7 days") |
+| password recovery | `auth.recovery` | `link`, `valid_for` ("30 minutes") |
+| rows queued by auth ≤ 4.1 | `auth.message` | `subject`, `text` |
+
+The wording is edited in notification (system templates); auth only supplies
+the variables. The tenant of a send is the message's tenant and the
+correlation id is the outbox row id, so a notification log entry can be
+matched to its row.
+
+```yaml
+email:
+  transport: notification   # default; log = print links to the log (development only, refused in production)
+```
+
+The relay keys of auth ≤ 4.1 (`host`, `port`, `username`, `password`,
+`from`, `allow_plaintext`, and `transport: smtp`) still load, are **ignored**,
+and are named in one warning at start. Remove them; they are refused in v5.
+The relay is configured once, in notification (`platform_email`).
+
+### Delivery, retries and given-up messages
+
+The worker polls every 5 s and claims up to 50 due rows. Each claim counts an
+attempt and schedules the next one 30 s · 2^attempts later, capped at one
+hour. The outcome decides what happens next:
+
+- **sent** — `sent_at` is set.
+- **retry** — notification unreachable or not yet registered, throttled
+  (`ResourceExhausted`), a transient relay error (SMTP 4xx, network): the row
+  stays pending. Each retry logs `email delivery` at warning level.
+- **failed** — a permanent answer (unknown template key, no email channel
+  configured — `email_not_configured` —, SMTP 5xx, invalid recipient, relay
+  certificate or TLS refusal), a payload that cannot be opened, or the 8th
+  attempt without success.
+
+A failed row is **retired**: `failed_at` and `last_error` (scrubbed, at most
+200 characters) are set and it is never claimed again. The retirement is
+reported **once**: a warning `email given up` (row id, tenant, kind,
+attempts, reason) and an `email_given_up` audit event in the message's tenant
+(subject `email` = row id; details `kind`, `attempts`, `error`). Neither
+carries the recipient or the link.
+
+To resend, issue a new invitation/reset/recovery; the link in a given-up row
+is not recoverable (it is sealed and the token is stored hashed). Rows that
+auth ≤ 4.1 had already tried more than 8 times are retired, and reported, on
+their first claim after the upgrade.
+
+```sql
+-- Given-up messages (system scope)
+SELECT id, tenant_id, kind, attempts, failed_at, last_error FROM outbox
+WHERE failed_at IS NOT NULL ORDER BY failed_at DESC LIMIT 50;
+```
+
+Development configurations (`deploy/dev*.yaml`, `deploy/gateway-mode.yaml`)
+use `transport: log`: every message, link included, is printed as
+`email (dev sink)`.
+
 ## Key material
 
 | Secret | Where | Rotation |
@@ -70,8 +138,9 @@ service version that writes a new model id on start.
 
 ## Configuration checks in production
 
-`env: production` refuses plaintext Valkey/OpenFGA/SMTP, weak `sslmode`, a
-missing edge certificate and a dev KEK. Warnings (not failures) are logged for
+`env: production` refuses plaintext Valkey/OpenFGA, weak `sslmode`, a
+missing edge certificate, a dev KEK and `email.transport: log`. The ignored
+email relay keys are warned about, not refused (see Email). Warnings (not failures) are logged for
 loopback listeners, permissive CORS origins, `directory.allow_plaintext` and
 every `directory.targets.allow_cidrs` entry.
 
