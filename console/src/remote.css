@@ -3,7 +3,6 @@
  * and the kit's component CSS come from the shell. */
 @import "tailwindcss/theme.css" reference;
 @import "tailwindcss/utilities.css";
-@import "./kit-fixes.css";
 @plugin "flyonui" {
   themes: false;
   exclude: rootcolor, rootscrollgutter, scrollbar, svg, properties;
