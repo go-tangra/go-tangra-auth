@@ -53,10 +53,10 @@ async function resolveTenant(): Promise<void> {
   <UiCard data-test="signin">
     <div class="flex items-center gap-3" aria-hidden="true">
       <span class="rounded-field bg-primary text-primary-content flex size-9 items-center justify-center"><UiIcon name="mdi-shield-half-full" /></span>
-      <span class="text-base-content text-xl font-bold tracking-tight">Freya</span>
+      <span class="text-base-content text-xl font-bold tracking-tight">Tangra</span>
     </div>
     <div>
-      <h1 class="text-base-content mb-1.5 text-2xl font-semibold">Welcome to Freya! 👋</h1>
+      <h1 class="text-base-content mb-1.5 text-2xl font-semibold">Welcome to Tangra! 👋</h1>
       <p class="text-base-content/80">Sign in to your organisation to continue.</p>
     </div>
     <UiForm :form="form">
