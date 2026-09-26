@@ -1095,12 +1095,16 @@ func (x *VerifyEnrollmentTokenResponse) GetJti() string {
 }
 
 type CheckRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Resource      string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`                                                                         // e.g. "invoices"
-	Action        string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`                                                                             // e.g. "read"
-	Context       map[string]string      `protobuf:"bytes,5,rep,name=context,proto3" json:"context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // reserved for conditions
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	UserId   string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Resource string                 `protobuf:"bytes,3,opt,name=resource,proto3" json:"resource,omitempty"`                                                                         // e.g. "invoices"
+	Action   string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`                                                                             // e.g. "read"
+	Context  map[string]string      `protobuf:"bytes,5,rep,name=context,proto3" json:"context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // reserved for conditions
+	// Module owning the permission (feature 019). Empty: the caller's module
+	// (services) or the legacy permission (gateway). A service other than the
+	// gateway may only name its own module.
+	Module        string `protobuf:"bytes,6,opt,name=module,proto3" json:"module,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1168,6 +1172,13 @@ func (x *CheckRequest) GetContext() map[string]string {
 		return x.Context
 	}
 	return nil
+}
+
+func (x *CheckRequest) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
 }
 
 type CheckResponse struct {
@@ -1294,6 +1305,7 @@ type PermissionRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	Module        string                 `protobuf:"bytes,3,opt,name=module,proto3" json:"module,omitempty"` // same rules as CheckRequest.module (feature 019)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1338,6 +1350,13 @@ func (x *PermissionRef) GetResource() string {
 func (x *PermissionRef) GetAction() string {
 	if x != nil {
 		return x.Action
+	}
+	return ""
+}
+
+func (x *PermissionRef) GetModule() string {
+	if x != nil {
+		return x.Module
 	}
 	return ""
 }
@@ -1395,6 +1414,15 @@ type RegisterPermissionsRequest struct {
 	// (owner, admin, member, auditor, operator) of every tenant; idempotent.
 	// Permissions not in this request are refused (feature 005).
 	BuiltinGrants []*BuiltinGrant `protobuf:"bytes,3,rep,name=builtin_grants,json=builtinGrants,proto3" json:"builtin_grants,omitempty"`
+	// Module the registration is for (feature 019). Empty: the caller's service
+	// name (gateway without module: legacy rows only). Must equal the caller's
+	// service name unless the caller is the gateway.
+	Module            string           `protobuf:"bytes,4,opt,name=module,proto3" json:"module,omitempty"`
+	ModuleDisplayName string           `protobuf:"bytes,5,opt,name=module_display_name,json=moduleDisplayName,proto3" json:"module_display_name,omitempty"` // 1-120 chars; kept when empty
+	Roles             []*ModuleRoleDef `protobuf:"bytes,6,rep,name=roles,proto3" json:"roles,omitempty"`                                                    // at most 20; refused from the gateway
+	// true: roles is the module's complete role set (absent slugs are retired).
+	// false: roles are left unchanged (gateway, old modules).
+	DeclaresRoles bool `protobuf:"varint,7,opt,name=declares_roles,json=declaresRoles,proto3" json:"declares_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1450,6 +1478,103 @@ func (x *RegisterPermissionsRequest) GetBuiltinGrants() []*BuiltinGrant {
 	return nil
 }
 
+func (x *RegisterPermissionsRequest) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *RegisterPermissionsRequest) GetModuleDisplayName() string {
+	if x != nil {
+		return x.ModuleDisplayName
+	}
+	return ""
+}
+
+func (x *RegisterPermissionsRequest) GetRoles() []*ModuleRoleDef {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *RegisterPermissionsRequest) GetDeclaresRoles() bool {
+	if x != nil {
+		return x.DeclaresRoles
+	}
+	return false
+}
+
+// ModuleRoleDef is a locked role a module provides in every tenant (feature 019).
+type ModuleRoleDef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`                                  // ^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // e.g. "Warden viewer"
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`                    // at most 256 characters
+	Permissions   []string               `protobuf:"bytes,4,rep,name=permissions,proto3" json:"permissions,omitempty"`                    // "resource:action" of this request, 1-200
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModuleRoleDef) Reset() {
+	*x = ModuleRoleDef{}
+	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModuleRoleDef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModuleRoleDef) ProtoMessage() {}
+
+func (x *ModuleRoleDef) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModuleRoleDef.ProtoReflect.Descriptor instead.
+func (*ModuleRoleDef) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ModuleRoleDef) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *ModuleRoleDef) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *ModuleRoleDef) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ModuleRoleDef) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
 type BuiltinGrant struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
@@ -1460,7 +1585,7 @@ type BuiltinGrant struct {
 
 func (x *BuiltinGrant) Reset() {
 	*x = BuiltinGrant{}
-	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	mi := &file_auth_v1_auth_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1472,7 +1597,7 @@ func (x *BuiltinGrant) String() string {
 func (*BuiltinGrant) ProtoMessage() {}
 
 func (x *BuiltinGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	mi := &file_auth_v1_auth_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1485,7 +1610,7 @@ func (x *BuiltinGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuiltinGrant.ProtoReflect.Descriptor instead.
 func (*BuiltinGrant) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{24}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *BuiltinGrant) GetRole() string {
@@ -1513,7 +1638,7 @@ type PermissionDef struct {
 
 func (x *PermissionDef) Reset() {
 	*x = PermissionDef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[25]
+	mi := &file_auth_v1_auth_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1525,7 +1650,7 @@ func (x *PermissionDef) String() string {
 func (*PermissionDef) ProtoMessage() {}
 
 func (x *PermissionDef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[25]
+	mi := &file_auth_v1_auth_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1538,7 +1663,7 @@ func (x *PermissionDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionDef.ProtoReflect.Descriptor instead.
 func (*PermissionDef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{25}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *PermissionDef) GetResource() string {
@@ -1564,14 +1689,18 @@ func (x *PermissionDef) GetDescription() string {
 
 type RegisterPermissionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Registered    uint32                 `protobuf:"varint,1,opt,name=registered,proto3" json:"registered,omitempty"`
+	Registered    uint32                 `protobuf:"varint,1,opt,name=registered,proto3" json:"registered,omitempty"`                            // permissions x tenants
+	SkippedGrants []*SkippedGrant        `protobuf:"bytes,2,rep,name=skipped_grants,json=skippedGrants,proto3" json:"skipped_grants,omitempty"`  // built-in grants that found no role (feature 019)
+	RoleErrors    []*RoleError           `protobuf:"bytes,3,rep,name=role_errors,json=roleErrors,proto3" json:"role_errors,omitempty"`           // roles rejected individually
+	RolesUpserted uint32                 `protobuf:"varint,4,opt,name=roles_upserted,json=rolesUpserted,proto3" json:"roles_upserted,omitempty"` // definitions created or changed
+	RolesRetired  []string               `protobuf:"bytes,5,rep,name=roles_retired,json=rolesRetired,proto3" json:"roles_retired,omitempty"`     // slugs retired by this registration
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterPermissionsResponse) Reset() {
 	*x = RegisterPermissionsResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[26]
+	mi := &file_auth_v1_auth_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1583,7 +1712,7 @@ func (x *RegisterPermissionsResponse) String() string {
 func (*RegisterPermissionsResponse) ProtoMessage() {}
 
 func (x *RegisterPermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[26]
+	mi := &file_auth_v1_auth_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1596,7 +1725,7 @@ func (x *RegisterPermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPermissionsResponse.ProtoReflect.Descriptor instead.
 func (*RegisterPermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{26}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *RegisterPermissionsResponse) GetRegistered() uint32 {
@@ -1604,6 +1733,156 @@ func (x *RegisterPermissionsResponse) GetRegistered() uint32 {
 		return x.Registered
 	}
 	return 0
+}
+
+func (x *RegisterPermissionsResponse) GetSkippedGrants() []*SkippedGrant {
+	if x != nil {
+		return x.SkippedGrants
+	}
+	return nil
+}
+
+func (x *RegisterPermissionsResponse) GetRoleErrors() []*RoleError {
+	if x != nil {
+		return x.RoleErrors
+	}
+	return nil
+}
+
+func (x *RegisterPermissionsResponse) GetRolesUpserted() uint32 {
+	if x != nil {
+		return x.RolesUpserted
+	}
+	return 0
+}
+
+func (x *RegisterPermissionsResponse) GetRolesRetired() []string {
+	if x != nil {
+		return x.RolesRetired
+	}
+	return nil
+}
+
+// SkippedGrant reports a built-in grant whose role does not exist in some tenants.
+type SkippedGrant struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Role            string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`                                                // built-in slug, e.g. "operator"
+	Tenants         uint32                 `protobuf:"varint,2,opt,name=tenants,proto3" json:"tenants,omitempty"`                                         // tenants without that role
+	SampleTenantIds []string               `protobuf:"bytes,3,rep,name=sample_tenant_ids,json=sampleTenantIds,proto3" json:"sample_tenant_ids,omitempty"` // at most 5
+	Reason          string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`                                            // role_missing
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SkippedGrant) Reset() {
+	*x = SkippedGrant{}
+	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkippedGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkippedGrant) ProtoMessage() {}
+
+func (x *SkippedGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkippedGrant.ProtoReflect.Descriptor instead.
+func (*SkippedGrant) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SkippedGrant) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *SkippedGrant) GetTenants() uint32 {
+	if x != nil {
+		return x.Tenants
+	}
+	return 0
+}
+
+func (x *SkippedGrant) GetSampleTenantIds() []string {
+	if x != nil {
+		return x.SampleTenantIds
+	}
+	return nil
+}
+
+func (x *SkippedGrant) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// RoleError names a module role the registration refused.
+type RoleError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // invalid_slug | invalid_name | foreign_permission | too_many_permissions | duplicate
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleError) Reset() {
+	*x = RoleError{}
+	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleError) ProtoMessage() {}
+
+func (x *RoleError) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleError.ProtoReflect.Descriptor instead.
+func (*RoleError) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RoleError) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *RoleError) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type ListMembersRequest struct {
@@ -1618,7 +1897,7 @@ type ListMembersRequest struct {
 
 func (x *ListMembersRequest) Reset() {
 	*x = ListMembersRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[27]
+	mi := &file_auth_v1_auth_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1630,7 +1909,7 @@ func (x *ListMembersRequest) String() string {
 func (*ListMembersRequest) ProtoMessage() {}
 
 func (x *ListMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[27]
+	mi := &file_auth_v1_auth_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1643,7 +1922,7 @@ func (x *ListMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListMembersRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{27}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListMembersRequest) GetTenantId() string {
@@ -1684,7 +1963,7 @@ type ListMembersResponse struct {
 
 func (x *ListMembersResponse) Reset() {
 	*x = ListMembersResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	mi := &file_auth_v1_auth_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1696,7 +1975,7 @@ func (x *ListMembersResponse) String() string {
 func (*ListMembersResponse) ProtoMessage() {}
 
 func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	mi := &file_auth_v1_auth_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1709,7 +1988,7 @@ func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListMembersResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{28}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListMembersResponse) GetUserIds() []string {
@@ -1736,7 +2015,7 @@ type LookupProfilesRequest struct {
 
 func (x *LookupProfilesRequest) Reset() {
 	*x = LookupProfilesRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	mi := &file_auth_v1_auth_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1748,7 +2027,7 @@ func (x *LookupProfilesRequest) String() string {
 func (*LookupProfilesRequest) ProtoMessage() {}
 
 func (x *LookupProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	mi := &file_auth_v1_auth_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1761,7 +2040,7 @@ func (x *LookupProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupProfilesRequest.ProtoReflect.Descriptor instead.
 func (*LookupProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{29}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *LookupProfilesRequest) GetTenantId() string {
@@ -1789,7 +2068,7 @@ type PublicProfile struct {
 
 func (x *PublicProfile) Reset() {
 	*x = PublicProfile{}
-	mi := &file_auth_v1_auth_proto_msgTypes[30]
+	mi := &file_auth_v1_auth_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1801,7 +2080,7 @@ func (x *PublicProfile) String() string {
 func (*PublicProfile) ProtoMessage() {}
 
 func (x *PublicProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[30]
+	mi := &file_auth_v1_auth_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1814,7 +2093,7 @@ func (x *PublicProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicProfile.ProtoReflect.Descriptor instead.
 func (*PublicProfile) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{30}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *PublicProfile) GetUserId() string {
@@ -1847,7 +2126,7 @@ type LookupProfilesResponse struct {
 
 func (x *LookupProfilesResponse) Reset() {
 	*x = LookupProfilesResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[31]
+	mi := &file_auth_v1_auth_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1859,7 +2138,7 @@ func (x *LookupProfilesResponse) String() string {
 func (*LookupProfilesResponse) ProtoMessage() {}
 
 func (x *LookupProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[31]
+	mi := &file_auth_v1_auth_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1872,7 +2151,7 @@ func (x *LookupProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupProfilesResponse.ProtoReflect.Descriptor instead.
 func (*LookupProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{31}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *LookupProfilesResponse) GetProfiles() []*PublicProfile {
@@ -1970,13 +2249,14 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x1dVerifyEnrollmentTokenResponse\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12!\n" +
 	"\fspiffe_paths\x18\x02 \x03(\tR\vspiffePaths\x12\x10\n" +
-	"\x03jti\x18\x03 \x01(\tR\x03jti\"\xf2\x01\n" +
+	"\x03jti\x18\x03 \x01(\tR\x03jti\"\x8a\x02\n" +
 	"\fCheckRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1a\n" +
 	"\bresource\x18\x03 \x01(\tR\bresource\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12<\n" +
-	"\acontext\x18\x05 \x03(\v2\".auth.v1.CheckRequest.ContextEntryR\acontext\x1a:\n" +
+	"\acontext\x18\x05 \x03(\v2\".auth.v1.CheckRequest.ContextEntryR\acontext\x12\x16\n" +
+	"\x06module\x18\x06 \x01(\tR\x06module\x1a:\n" +
 	"\fContextEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"h\n" +
@@ -1987,28 +2267,51 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x11BatchCheckRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x128\n" +
-	"\vpermissions\x18\x03 \x03(\v2\x16.auth.v1.PermissionRefR\vpermissions\"C\n" +
+	"\vpermissions\x18\x03 \x03(\v2\x16.auth.v1.PermissionRefR\vpermissions\"[\n" +
 	"\rPermissionRef\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x12\x16\n" +
-	"\x06action\x18\x02 \x01(\tR\x06action\"F\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x16\n" +
+	"\x06module\x18\x03 \x01(\tR\x06module\"F\n" +
 	"\x12BatchCheckResponse\x120\n" +
-	"\aresults\x18\x01 \x03(\v2\x16.auth.v1.CheckResponseR\aresults\"\xb3\x01\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.auth.v1.CheckResponseR\aresults\"\xd0\x02\n" +
 	"\x1aRegisterPermissionsRequest\x128\n" +
 	"\vpermissions\x18\x01 \x03(\v2\x16.auth.v1.PermissionDefR\vpermissions\x12\x1d\n" +
 	"\n" +
 	"tenant_ids\x18\x02 \x03(\tR\ttenantIds\x12<\n" +
-	"\x0ebuiltin_grants\x18\x03 \x03(\v2\x15.auth.v1.BuiltinGrantR\rbuiltinGrants\"D\n" +
+	"\x0ebuiltin_grants\x18\x03 \x03(\v2\x15.auth.v1.BuiltinGrantR\rbuiltinGrants\x12\x16\n" +
+	"\x06module\x18\x04 \x01(\tR\x06module\x12.\n" +
+	"\x13module_display_name\x18\x05 \x01(\tR\x11moduleDisplayName\x12,\n" +
+	"\x05roles\x18\x06 \x03(\v2\x16.auth.v1.ModuleRoleDefR\x05roles\x12%\n" +
+	"\x0edeclares_roles\x18\a \x01(\bR\rdeclaresRoles\"\x8a\x01\n" +
+	"\rModuleRoleDef\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12 \n" +
+	"\vpermissions\x18\x04 \x03(\tR\vpermissions\"D\n" +
 	"\fBuiltinGrant\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12 \n" +
 	"\vpermissions\x18\x02 \x03(\tR\vpermissions\"e\n" +
 	"\rPermissionDef\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"=\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xfc\x01\n" +
 	"\x1bRegisterPermissionsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\rR\n" +
-	"registered\"z\n" +
+	"registered\x12<\n" +
+	"\x0eskipped_grants\x18\x02 \x03(\v2\x15.auth.v1.SkippedGrantR\rskippedGrants\x123\n" +
+	"\vrole_errors\x18\x03 \x03(\v2\x12.auth.v1.RoleErrorR\n" +
+	"roleErrors\x12%\n" +
+	"\x0eroles_upserted\x18\x04 \x01(\rR\rrolesUpserted\x12#\n" +
+	"\rroles_retired\x18\x05 \x03(\tR\frolesRetired\"\x80\x01\n" +
+	"\fSkippedGrant\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12\x18\n" +
+	"\atenants\x18\x02 \x01(\rR\atenants\x12*\n" +
+	"\x11sample_tenant_ids\x18\x03 \x03(\tR\x0fsampleTenantIds\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"7\n" +
+	"\tRoleError\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"z\n" +
 	"\x12ListMembersRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
@@ -2062,7 +2365,7 @@ func file_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_auth_v1_auth_proto_rawDescData
 }
 
-var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_auth_v1_auth_proto_goTypes = []any{
 	(*ListKeysRequest)(nil),               // 0: auth.v1.ListKeysRequest
 	(*ListKeysResponse)(nil),              // 1: auth.v1.ListKeysResponse
@@ -2088,65 +2391,71 @@ var file_auth_v1_auth_proto_goTypes = []any{
 	(*PermissionRef)(nil),                 // 21: auth.v1.PermissionRef
 	(*BatchCheckResponse)(nil),            // 22: auth.v1.BatchCheckResponse
 	(*RegisterPermissionsRequest)(nil),    // 23: auth.v1.RegisterPermissionsRequest
-	(*BuiltinGrant)(nil),                  // 24: auth.v1.BuiltinGrant
-	(*PermissionDef)(nil),                 // 25: auth.v1.PermissionDef
-	(*RegisterPermissionsResponse)(nil),   // 26: auth.v1.RegisterPermissionsResponse
-	(*ListMembersRequest)(nil),            // 27: auth.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),           // 28: auth.v1.ListMembersResponse
-	(*LookupProfilesRequest)(nil),         // 29: auth.v1.LookupProfilesRequest
-	(*PublicProfile)(nil),                 // 30: auth.v1.PublicProfile
-	(*LookupProfilesResponse)(nil),        // 31: auth.v1.LookupProfilesResponse
-	nil,                                   // 32: auth.v1.CheckRequest.ContextEntry
-	(*timestamppb.Timestamp)(nil),         // 33: google.protobuf.Timestamp
+	(*ModuleRoleDef)(nil),                 // 24: auth.v1.ModuleRoleDef
+	(*BuiltinGrant)(nil),                  // 25: auth.v1.BuiltinGrant
+	(*PermissionDef)(nil),                 // 26: auth.v1.PermissionDef
+	(*RegisterPermissionsResponse)(nil),   // 27: auth.v1.RegisterPermissionsResponse
+	(*SkippedGrant)(nil),                  // 28: auth.v1.SkippedGrant
+	(*RoleError)(nil),                     // 29: auth.v1.RoleError
+	(*ListMembersRequest)(nil),            // 30: auth.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),           // 31: auth.v1.ListMembersResponse
+	(*LookupProfilesRequest)(nil),         // 32: auth.v1.LookupProfilesRequest
+	(*PublicProfile)(nil),                 // 33: auth.v1.PublicProfile
+	(*LookupProfilesResponse)(nil),        // 34: auth.v1.LookupProfilesResponse
+	nil,                                   // 35: auth.v1.CheckRequest.ContextEntry
+	(*timestamppb.Timestamp)(nil),         // 36: google.protobuf.Timestamp
 }
 var file_auth_v1_auth_proto_depIdxs = []int32{
 	2,  // 0: auth.v1.ListKeysResponse.keys:type_name -> auth.v1.Key
-	33, // 1: auth.v1.Key.not_after:type_name -> google.protobuf.Timestamp
+	36, // 1: auth.v1.Key.not_after:type_name -> google.protobuf.Timestamp
 	6,  // 2: auth.v1.RevokedSinceResponse.revocations:type_name -> auth.v1.Revocation
-	33, // 3: auth.v1.Revocation.ts:type_name -> google.protobuf.Timestamp
-	33, // 4: auth.v1.IntrospectResponse.expires_at:type_name -> google.protobuf.Timestamp
+	36, // 3: auth.v1.Revocation.ts:type_name -> google.protobuf.Timestamp
+	36, // 4: auth.v1.IntrospectResponse.expires_at:type_name -> google.protobuf.Timestamp
 	10, // 5: auth.v1.ExchangeResponse.identity:type_name -> auth.v1.SessionIdentity
-	33, // 6: auth.v1.ExchangeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	36, // 6: auth.v1.ExchangeResponse.expires_at:type_name -> google.protobuf.Timestamp
 	10, // 7: auth.v1.MintTokenResponse.identity:type_name -> auth.v1.SessionIdentity
-	33, // 8: auth.v1.MintTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
-	33, // 9: auth.v1.MintEnrollmentTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
-	32, // 10: auth.v1.CheckRequest.context:type_name -> auth.v1.CheckRequest.ContextEntry
+	36, // 8: auth.v1.MintTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	36, // 9: auth.v1.MintEnrollmentTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	35, // 10: auth.v1.CheckRequest.context:type_name -> auth.v1.CheckRequest.ContextEntry
 	21, // 11: auth.v1.BatchCheckRequest.permissions:type_name -> auth.v1.PermissionRef
 	19, // 12: auth.v1.BatchCheckResponse.results:type_name -> auth.v1.CheckResponse
-	25, // 13: auth.v1.RegisterPermissionsRequest.permissions:type_name -> auth.v1.PermissionDef
-	24, // 14: auth.v1.RegisterPermissionsRequest.builtin_grants:type_name -> auth.v1.BuiltinGrant
-	30, // 15: auth.v1.LookupProfilesResponse.profiles:type_name -> auth.v1.PublicProfile
-	0,  // 16: auth.v1.Keys.List:input_type -> auth.v1.ListKeysRequest
-	3,  // 17: auth.v1.Sessions.RevokedSince:input_type -> auth.v1.RevokedSinceRequest
-	5,  // 18: auth.v1.Sessions.Watch:input_type -> auth.v1.WatchRequest
-	7,  // 19: auth.v1.Sessions.Introspect:input_type -> auth.v1.IntrospectRequest
-	9,  // 20: auth.v1.Sessions.Exchange:input_type -> auth.v1.ExchangeRequest
-	12, // 21: auth.v1.Sessions.MintToken:input_type -> auth.v1.MintTokenRequest
-	14, // 22: auth.v1.Enrollment.MintEnrollmentToken:input_type -> auth.v1.MintEnrollmentTokenRequest
-	16, // 23: auth.v1.Enrollment.VerifyEnrollmentToken:input_type -> auth.v1.VerifyEnrollmentTokenRequest
-	18, // 24: auth.v1.Authorization.Check:input_type -> auth.v1.CheckRequest
-	20, // 25: auth.v1.Authorization.BatchCheck:input_type -> auth.v1.BatchCheckRequest
-	23, // 26: auth.v1.Authorization.RegisterPermissions:input_type -> auth.v1.RegisterPermissionsRequest
-	29, // 27: auth.v1.Profiles.Lookup:input_type -> auth.v1.LookupProfilesRequest
-	27, // 28: auth.v1.Profiles.ListMembers:input_type -> auth.v1.ListMembersRequest
-	1,  // 29: auth.v1.Keys.List:output_type -> auth.v1.ListKeysResponse
-	4,  // 30: auth.v1.Sessions.RevokedSince:output_type -> auth.v1.RevokedSinceResponse
-	6,  // 31: auth.v1.Sessions.Watch:output_type -> auth.v1.Revocation
-	8,  // 32: auth.v1.Sessions.Introspect:output_type -> auth.v1.IntrospectResponse
-	11, // 33: auth.v1.Sessions.Exchange:output_type -> auth.v1.ExchangeResponse
-	13, // 34: auth.v1.Sessions.MintToken:output_type -> auth.v1.MintTokenResponse
-	15, // 35: auth.v1.Enrollment.MintEnrollmentToken:output_type -> auth.v1.MintEnrollmentTokenResponse
-	17, // 36: auth.v1.Enrollment.VerifyEnrollmentToken:output_type -> auth.v1.VerifyEnrollmentTokenResponse
-	19, // 37: auth.v1.Authorization.Check:output_type -> auth.v1.CheckResponse
-	22, // 38: auth.v1.Authorization.BatchCheck:output_type -> auth.v1.BatchCheckResponse
-	26, // 39: auth.v1.Authorization.RegisterPermissions:output_type -> auth.v1.RegisterPermissionsResponse
-	31, // 40: auth.v1.Profiles.Lookup:output_type -> auth.v1.LookupProfilesResponse
-	28, // 41: auth.v1.Profiles.ListMembers:output_type -> auth.v1.ListMembersResponse
-	29, // [29:42] is the sub-list for method output_type
-	16, // [16:29] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	26, // 13: auth.v1.RegisterPermissionsRequest.permissions:type_name -> auth.v1.PermissionDef
+	25, // 14: auth.v1.RegisterPermissionsRequest.builtin_grants:type_name -> auth.v1.BuiltinGrant
+	24, // 15: auth.v1.RegisterPermissionsRequest.roles:type_name -> auth.v1.ModuleRoleDef
+	28, // 16: auth.v1.RegisterPermissionsResponse.skipped_grants:type_name -> auth.v1.SkippedGrant
+	29, // 17: auth.v1.RegisterPermissionsResponse.role_errors:type_name -> auth.v1.RoleError
+	33, // 18: auth.v1.LookupProfilesResponse.profiles:type_name -> auth.v1.PublicProfile
+	0,  // 19: auth.v1.Keys.List:input_type -> auth.v1.ListKeysRequest
+	3,  // 20: auth.v1.Sessions.RevokedSince:input_type -> auth.v1.RevokedSinceRequest
+	5,  // 21: auth.v1.Sessions.Watch:input_type -> auth.v1.WatchRequest
+	7,  // 22: auth.v1.Sessions.Introspect:input_type -> auth.v1.IntrospectRequest
+	9,  // 23: auth.v1.Sessions.Exchange:input_type -> auth.v1.ExchangeRequest
+	12, // 24: auth.v1.Sessions.MintToken:input_type -> auth.v1.MintTokenRequest
+	14, // 25: auth.v1.Enrollment.MintEnrollmentToken:input_type -> auth.v1.MintEnrollmentTokenRequest
+	16, // 26: auth.v1.Enrollment.VerifyEnrollmentToken:input_type -> auth.v1.VerifyEnrollmentTokenRequest
+	18, // 27: auth.v1.Authorization.Check:input_type -> auth.v1.CheckRequest
+	20, // 28: auth.v1.Authorization.BatchCheck:input_type -> auth.v1.BatchCheckRequest
+	23, // 29: auth.v1.Authorization.RegisterPermissions:input_type -> auth.v1.RegisterPermissionsRequest
+	32, // 30: auth.v1.Profiles.Lookup:input_type -> auth.v1.LookupProfilesRequest
+	30, // 31: auth.v1.Profiles.ListMembers:input_type -> auth.v1.ListMembersRequest
+	1,  // 32: auth.v1.Keys.List:output_type -> auth.v1.ListKeysResponse
+	4,  // 33: auth.v1.Sessions.RevokedSince:output_type -> auth.v1.RevokedSinceResponse
+	6,  // 34: auth.v1.Sessions.Watch:output_type -> auth.v1.Revocation
+	8,  // 35: auth.v1.Sessions.Introspect:output_type -> auth.v1.IntrospectResponse
+	11, // 36: auth.v1.Sessions.Exchange:output_type -> auth.v1.ExchangeResponse
+	13, // 37: auth.v1.Sessions.MintToken:output_type -> auth.v1.MintTokenResponse
+	15, // 38: auth.v1.Enrollment.MintEnrollmentToken:output_type -> auth.v1.MintEnrollmentTokenResponse
+	17, // 39: auth.v1.Enrollment.VerifyEnrollmentToken:output_type -> auth.v1.VerifyEnrollmentTokenResponse
+	19, // 40: auth.v1.Authorization.Check:output_type -> auth.v1.CheckResponse
+	22, // 41: auth.v1.Authorization.BatchCheck:output_type -> auth.v1.BatchCheckResponse
+	27, // 42: auth.v1.Authorization.RegisterPermissions:output_type -> auth.v1.RegisterPermissionsResponse
+	34, // 43: auth.v1.Profiles.Lookup:output_type -> auth.v1.LookupProfilesResponse
+	31, // 44: auth.v1.Profiles.ListMembers:output_type -> auth.v1.ListMembersResponse
+	32, // [32:45] is the sub-list for method output_type
+	19, // [19:32] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_auth_v1_auth_proto_init() }
@@ -2160,7 +2469,7 @@ func file_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   33,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
