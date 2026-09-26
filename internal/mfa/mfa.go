@@ -1,6 +1,8 @@
 // Package mfa implements the second factor: TOTP enrolment/confirmation with
 // an envelope-encrypted seed, ±1-step verification with counter replay
-// protection, single-use recovery codes and policy-aware disabling.
+// protection, single-use recovery codes and policy-aware disabling. Security
+// keys (internal/webauthn, feature 018) share the recovery codes, the
+// "asks for a second step" flag and the last-factor rule kept here.
 package mfa
 
 import (
@@ -38,6 +40,7 @@ type Store interface {
 	ReplaceRecoveryCodes(ctx context.Context, tenantID, userID string, hashes []string) error
 	ListRecoveryCodeHashes(ctx context.Context, tenantID, userID string) ([]string, error)
 	UseRecoveryCode(ctx context.Context, tenantID, userID, hash string) error
+	ListWebAuthnCredentials(ctx context.Context, tenantID, userID string) ([]store.WebAuthnCredential, error)
 }
 
 // Constants.
@@ -113,6 +116,12 @@ func (s *Service) Confirm(ctx context.Context, actor tenantctx.Actor, code strin
 	if !ok {
 		return nil, ErrInvalidCode
 	}
+	// Security keys already protect the account: the app is a further
+	// factor and the existing recovery codes stay (FR-003).
+	keys, err := s.st.ListWebAuthnCredentials(ctx, actor.TenantID, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.st.SetMFA(ctx, actor.TenantID, actor.UserID, true, []byte(raw)); err != nil {
 		return nil, err
 	}
@@ -120,11 +129,14 @@ func (s *Service) Confirm(ctx context.Context, actor tenantctx.Actor, code strin
 		return nil, err
 	}
 	_ = s.cache.KV().Del(ctx, cache.ChallengeKey("enrol:"+actor.UserID))
-	codes, err := s.regenerate(ctx, actor)
-	if err != nil {
-		return nil, err
+	var codes []string
+	if len(keys) == 0 {
+		if codes, err = s.regenerate(ctx, actor); err != nil {
+			return nil, err
+		}
 	}
-	s.emit(audit.Event{Type: audit.MFAEnrolled, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok"})
+	s.emit(audit.Event{Type: audit.MFAEnrolled, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok",
+		Details: map[string]any{"method": "totp"}})
 	return codes, nil
 }
 
@@ -152,11 +164,14 @@ func (s *Service) Verify(ctx context.Context, tenantID, userID, code string) (st
 	if err != nil {
 		return "", ErrInvalidCode
 	}
-	if !u.MFAEnabled || len(u.MFASecretEnc) == 0 {
+	if !u.MFAEnabled {
 		return "", ErrNotEnrolled
 	}
 	code = strings.TrimSpace(code)
 	if isDigits(code) {
+		if len(u.MFASecretEnc) == 0 {
+			return "", ErrInvalidCode // security keys only: no authenticator app
+		}
 		secret, err := s.env.Decrypt(u.MFASecretEnc, seedAD(userID))
 		if err != nil {
 			return "", err
@@ -189,8 +204,10 @@ func (s *Service) Verify(ctx context.Context, tenantID, userID, code string) (st
 	return "", ErrInvalidCode
 }
 
-// Disable turns the factor off after a valid code, unless the tenant
-// requires MFA.
+// Disable turns the authenticator app off after a valid code. While security
+// keys remain the account keeps asking for a second step and keeps its
+// recovery codes; as the last factor it is refused when the tenant requires
+// MFA.
 func (s *Service) Disable(ctx context.Context, actor tenantctx.Actor, code string) error {
 	t, err := s.st.Tenant(ctx, actor.TenantID)
 	if err != nil {
@@ -200,20 +217,34 @@ func (s *Service) Disable(ctx context.Context, actor tenantctx.Actor, code strin
 	if err != nil {
 		return err
 	}
-	if pol.MFARequired {
+	keys, err := s.st.ListWebAuthnCredentials(ctx, actor.TenantID, actor.UserID)
+	if err != nil {
+		return err
+	}
+	if pol.MFARequired && usableKeys(keys) == 0 {
 		return ErrRequired
 	}
 	if _, err := s.Verify(ctx, actor.TenantID, actor.UserID, code); err != nil {
 		return err
 	}
-	if err := s.st.SetMFA(ctx, actor.TenantID, actor.UserID, false, nil); err != nil {
+	if len(keys) > 0 {
+		if err := s.st.SetMFA(ctx, actor.TenantID, actor.UserID, true, nil); err != nil {
+			return err
+		}
+	} else if err := s.clear(ctx, actor.TenantID, actor.UserID); err != nil {
 		return err
 	}
-	if err := s.st.ReplaceRecoveryCodes(ctx, actor.TenantID, actor.UserID, nil); err != nil {
-		return err
-	}
-	s.emit(audit.Event{Type: audit.MFARemoved, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok"})
+	s.emit(audit.Event{Type: audit.MFARemoved, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok",
+		Details: map[string]any{"method": "totp", "reason": "user"}})
 	return nil
+}
+
+// clear turns the second step off and invalidates unused recovery codes.
+func (s *Service) clear(ctx context.Context, tid, uid string) error {
+	if err := s.st.SetMFA(ctx, tid, uid, false, nil); err != nil {
+		return err
+	}
+	return s.st.ReplaceRecoveryCodes(ctx, tid, uid, nil)
 }
 
 // Regenerate replaces the recovery codes after a valid code.

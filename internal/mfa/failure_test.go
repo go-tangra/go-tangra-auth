@@ -77,6 +77,12 @@ func (f *failing) ListRecoveryCodeHashes(ctx context.Context, tid, uid string) (
 	}
 	return f.Store.ListRecoveryCodeHashes(ctx, tid, uid)
 }
+func (f *failing) ListWebAuthnCredentials(ctx context.Context, tid, uid string) ([]store.WebAuthnCredential, error) {
+	if f.fail["keys"] {
+		return nil, errDown
+	}
+	return f.Store.ListWebAuthnCredentials(ctx, tid, uid)
+}
 func (f *failing) UseRecoveryCode(ctx context.Context, tid, uid, h string) error {
 	if f.fail["use"] {
 		return errDown
