@@ -304,13 +304,16 @@ func TestWebAuthnManagementRoutes(t *testing.T) {
 	}
 	// Adding TOTP next to the last key, then removing the key with a TOTP code.
 	w, out := e.call("POST", "/api/v1/me/mfa/enroll", "", sc)
+	if w.Code != 200 {
+		t.Fatalf("enroll → %d %v", w.Code, out)
+	}
 	secret := out["secret"].(string)
 	c, _ := totp.GenerateCode(secret, time.Now())
 	if w, out = e.call("POST", "/api/v1/me/mfa/confirm", `{"code":"`+c+`"}`, sc); w.Code != 200 || out["recovery_codes"] != nil {
 		t.Fatalf("totp next to a key must keep the codes: %d %v", w.Code, out)
 	}
 	w, out = e.call("GET", "/api/v1/me/mfa", "", sc)
-	if out["totp"] != true || len(out["keys"].([]any)) != 1 || out["recovery_codes_left"].(float64) != float64(mfa.RecoveryCount) {
+	if w.Code != 200 || out["totp"] != true || len(out["keys"].([]any)) != 1 || out["recovery_codes_left"].(float64) != float64(mfa.RecoveryCount) {
 		t.Fatalf("%v", out)
 	}
 	c, _ = totp.GenerateCode(secret, time.Now().Add(30*time.Second))
@@ -400,7 +403,7 @@ func TestWebAuthnAdminRoutes(t *testing.T) {
 		t.Fatal("bob's session must end")
 	}
 	w, out = e.call("GET", "/api/v1/admin/users/u2/mfa", "", alice)
-	if len(out["keys"].([]any)) != 0 || out["recovery_codes_left"].(float64) != 0 {
+	if w.Code != 200 || len(out["keys"].([]any)) != 0 || out["recovery_codes_left"].(float64) != 0 {
 		t.Fatalf("%v", out)
 	}
 	e.aw.Flush()

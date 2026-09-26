@@ -1,5 +1,5 @@
 import { expect, test, type CDPSession, type Page } from '@playwright/test'
-import { signIn } from './helpers'
+import { expectAccessible, signIn } from './helpers'
 
 // Feature 018 (T026): register a security key, sign out, sign in with password
 // + key and remove the key again, using the Chrome DevTools virtual
@@ -42,6 +42,7 @@ test.describe('security keys', () => {
     await page.getByTestId('codes-dismiss').click()
     await expect(page.getByTestId('key-row')).toHaveCount(1)
     await expect(page.getByTestId('key-row')).toContainText('Virtual key')
+    await expectAccessible(page)
     const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId: id })
     expect(credentials).toHaveLength(1)
 
@@ -50,6 +51,8 @@ test.describe('security keys', () => {
     await expect(page).toHaveURL(/\/signin/)
     await signIn(page, user.tenant, user.email, user.password)
     await expect(page).toHaveURL(/\/signin\/mfa/)
+    await expect(page.getByTestId('use-key')).toBeVisible()
+    await expectAccessible(page)
     await page.getByTestId('use-key').click()
     await expect(page).not.toHaveURL(/\/signin/)
     const after = await cdp.send('WebAuthn.getCredentials', { authenticatorId: id })
