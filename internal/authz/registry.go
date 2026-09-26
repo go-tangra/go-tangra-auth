@@ -79,14 +79,15 @@ func (r *Registry) Register(ctx context.Context, tenantID, module, registrant st
 	if err != nil {
 		return 0, err
 	}
-	known := map[PermissionRef]bool{}
+	known := map[PermissionRef]string{}
 	for _, p := range existing {
-		known[p.Ref()] = true
+		known[p.Ref()] = p.Description
 	}
 	var tuples []Tuple
+	isNew := map[PermissionRef]bool{}
 	for _, ref := range refs {
-		if !known[ref] {
-			known[ref] = true
+		if _, ok := known[ref]; !ok && !isNew[ref] {
+			isNew[ref] = true
 			tuples = append(tuples, PermissionTenantTuple(tenantID, ref))
 		}
 	}
@@ -96,10 +97,16 @@ func (r *Registry) Register(ctx context.Context, tenantID, module, registrant st
 		}
 	}
 	for i, d := range defs {
+		// Unchanged rows are not rewritten: a periodic registration of 200
+		// permissions in every tenant would otherwise rewrite them all.
+		if desc, ok := known[refs[i]]; ok && desc == d.Description {
+			continue
+		}
 		p := store.Permission{Module: module, Resource: refs[i].Resource, Action: refs[i].Action, Description: d.Description}
 		if err := r.st.UpsertPermission(ctx, tenantID, p, registrant); err != nil {
 			return 0, err
 		}
+		known[refs[i]] = d.Description
 	}
 	if len(defs) > 0 {
 		r.emit(audit.Event{Type: audit.PermissionRegistered, TenantID: tenantID, ActorKind: "service", ActorService: registrant, Outcome: "ok", Details: map[string]any{"count": len(defs), "module": module}})
