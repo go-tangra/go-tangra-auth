@@ -36,7 +36,9 @@ const mfaPath = computed(() => `/api/v1/admin/users/${encodeURIComponent(id.valu
 const fmt = (at: string) => new Date(at).toLocaleString()
 async function loadMfa(): Promise<void> {
   try {
-    mfa.value = await api<UserMfa>('GET', mfaPath.value)
+    const r = await api<Partial<UserMfa>>('GET', mfaPath.value)
+    // Normalise: an older or partial answer must not break the page.
+    mfa.value = { totp: !!r.totp, keys: Array.isArray(r.keys) ? r.keys : [], recovery_codes_left: r.recovery_codes_left ?? 0 }
   } catch (err) {
     mfa.value = null
     if (err instanceof ApiError && err.status !== 404) mfaError.value = reasonMessage(err.reason)
