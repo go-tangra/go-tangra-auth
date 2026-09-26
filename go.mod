@@ -26,10 +26,20 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-tangra/go-tangra-auth/sdk/v4 v4.0.0
 	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.0.0
+	github.com/go-webauthn/webauthn v0.18.2
 	golang.org/x/image v0.46.0
 )
 
-require github.com/Azure/go-ntlmssp v0.1.1 // indirect
+require (
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/go-webauthn/x v0.3.1 // indirect
+	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/tinylib/msgp v1.6.4 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
@@ -56,7 +66,7 @@ require (
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/go-playground/form/v4 v4.3.0 // indirect
 	github.com/go-tangra/go-tangra-notification/sdk/v4 v4.2.0
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

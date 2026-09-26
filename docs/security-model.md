@@ -26,8 +26,10 @@ the service-to-service channel the auth service itself runs on.
    `lockout`) with the closed vocabulary from `data-model.md`.
 5. When the account has TOTP enabled, step one returns `{"mfa_required": true,
    "challenge": "<opaque>"}`; the challenge is stored hashed in Valkey for five
-   minutes and consumed exactly once by `POST /api/v1/signin/mfa`. MFA failures
-   count towards the same lockout.
+   minutes and consumed exactly once by `POST /api/v1/signin/mfa` (or by the
+   security-key step, below). MFA failures count towards the same lockout.
+   From feature 018 the answer also lists `mfa_methods` (`webauthn`, `totp`,
+   `recovery`) — only after a correct password.
 
 ## Sessions
 
@@ -346,6 +348,60 @@ Reviewed and found sound (no change):
   being re-claimed and logged forever (denial of service by a poison row).
 - The `log` transport prints links and is refused in production.
 
+## Security keys (feature 018)
+
+Security keys (WebAuthn, `internal/webauthn` over
+`github.com/go-webauthn/webauthn`) are a second factor, never a replacement
+for the password.
+
+- **Relying party and origin.** Assertions and registrations are verified by
+  the library against the configured relying party (RP ID hash in the
+  authenticator data) and the allowed origins (client data): a phishing site
+  on another origin cannot use a relayed ceremony. The relying party is the
+  host of `issuer` unless configured; IP issuers disable keys (browsers
+  refuse IP relying parties).
+- **Ceremonies.** Challenges come from the library's CSPRNG. Each pending
+  ceremony is a Valkey record consumed with GETDEL (single use), expiring
+  with `webauthn.timeout_seconds` (default 5 minutes) and bound to the tenant,
+  the user and the purpose: registration (`reg:<user>`, created by the
+  signed-in user), sign-in (`signin:<hash of the MFA challenge>`, created only
+  from a pending challenge after a correct password) and removal step-up
+  (`stepup:<user>`). A record of another purpose or user is treated as
+  missing. The MFA challenge itself is consumed on success or lockout only.
+- **Flags.** User presence is always required; user verification is
+  `preferred` (or `required` by configuration). Attestation is `none`
+  (privacy; any compliant key works); keys are non-discoverable
+  (`residentKey: discouraged`).
+- **Clones.** A signature counter that does not increase (library clone
+  warning; keys that always report 0 are not flagged) refuses the sign-in or
+  confirmation, sets `clone_flagged_at`, counts as a failure and writes
+  `mfa_clone_suspected`. Flagged keys are never offered or accepted again
+  until removed.
+- **Brute force.** Key failures share `rl:fail:<user>`, the tenant lockout
+  threshold and the `signin_failed` / `lockout` vocabulary with codes; the
+  options call is rate-limited per account and refused for a locked account.
+  Wrong confirmations of a removal count toward the same counter.
+- **Parsing.** WebAuthn routes accept at most 64 KiB (strict JSON decoding);
+  responses are parsed through size-checked wrappers (`ParseCreation`,
+  `ParseAssertion`) fuzzed by `FuzzWebAuthnCreation` / `FuzzWebAuthnAssertion`;
+  stored fields are bounded again (credential id 16–1023 bytes, public key ≤
+  2 KiB, ≤ 8 transports, name 1–64 characters) and by database CHECKs.
+- **Account binding and privacy.** Registration options are only issued to
+  the signed-in user, for that user's random 32-byte handle (never the user
+  id). Credential ids are unique across the platform (`already_registered`).
+- **Removal and last factor.** Removing a key requires a current factor (an
+  authenticator or recovery code, or an assertion of a usable key). Removing
+  the last factor is refused while the tenant requires two-step sign-in;
+  otherwise the account stops asking for a second step and unused recovery
+  codes are deleted.
+- **Administrators.** The admin view lists methods, names and times only; the
+  reset needs `users:manage`, follows the deactivation privilege rules
+  (never self, never a more privileged user), revokes the user's sessions and
+  is audited (`mfa_reset`, actor and target, methods removed).
+- **Never logged.** Credential ids, public keys, client data, signatures and
+  ceremony records are not logged or audited; audit details carry the method,
+  the internal key id and the model AAGUID only.
+
 ## What the service never does
 
 - Store or log passwords, session secrets, challenge ids, codes or tokens in
@@ -379,6 +435,13 @@ Reviewed and found sound (no change):
 | **I** links in mail infrastructure logs | links leave auth only through notification (secret variables redacted in its log); no relay in auth; given-up reasons scrubbed | `internal/email` tests, `TestEmailGivenUpOnce` |
 | **D** poison outbox row re-claimed forever | exponential backoff capped at 1 h, retirement with `failed_at`, one `email_given_up` report | `TestOutboxDeliversAndRetires`, `TestOutboxRetire`, `TestEmailGivenUpOnce` |
 | **E** granting roles through an invitation or activation | shared `MayAssign` / `MayJoin` escalation check on activation and plain invitations | `TestMayAssign`, `invite` and `activate` tests |
+| **S** phishing / relayed security-key ceremony | RP ID hash and origin verified by go-webauthn against configuration; keys bound to the public host | `TestAssertionRefusals`, `TestRegistrationRefusals` (wrong origin / RP) |
+| **S/T** replayed or foreign security-key ceremony | single-use (GETDEL) records bound to tenant, user and purpose, 5 min | `TestAssertionRefusals`, `TestSecurityKeyEndToEnd` |
+| **T** cloned security key | counter regression → refuse, flag, audit `mfa_clone_suspected`, count as failure | `TestCloneSignal`, `TestSigninCloneAndOptionsLimits` |
+| **S** brute force on the key step | shared failure counter and lockout with TOTP; options rate-limited | `TestSharedLockoutAcrossMethods`, `TestRemovalLockout` |
+| **D** oversized / malformed authenticator data | 64 KiB body cap, size-checked parse wrappers, bounded stored fields | `FuzzWebAuthnCreation`, `FuzzWebAuthnAssertion`, `TestWebAuthnRegistrationRoutes` |
+| **E** hijacked session removes the victim's key | removal confirmed by a current factor; wrong confirmations count toward lockout | `TestRenameAndRemove`, `TestWebAuthnManagementRoutes` |
+| **E** admin resets a more privileged user's factors | deactivation privilege rules, `users:manage`, audit `mfa_reset` | `TestAdminResetMFAFailures`, `TestWebAuthnAdminRoutes` |
 
 ## Contracts
 

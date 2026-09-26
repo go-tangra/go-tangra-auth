@@ -114,6 +114,8 @@ func TestAvatarBombNeverDecodes(t *testing.T) {
 func TestAvatarConcurrencyLimit(t *testing.T) {
 	l := testLimits()
 	l.Concurrency = 1
+	// Limits travel by value; the semaphore must be shared by every copy.
+	l = l.shared()
 	var inFlight, peak atomic.Int32
 	l.onDecode = func() {
 		n := inFlight.Add(1)
@@ -200,5 +202,19 @@ func TestAvatarSetAndRemove(t *testing.T) {
 	}
 	if updated != 2 || removed != 1 {
 		t.Fatalf("audit updated=%d removed=%d", updated, removed)
+	}
+}
+
+// The service built for production shares one semaphore across requests:
+// every request gets a copy of the limits, so a per-copy semaphore would
+// never limit anything.
+func TestNewAvatarsSharesTheDecodeLimit(t *testing.T) {
+	a := NewAvatars(nil, nil, AvatarLimits{Concurrency: 1})
+	if a.limits.sem == nil {
+		t.Fatal("NewAvatars must create the shared semaphore")
+	}
+	c := a.limits
+	if c.sem != a.limits.sem {
+		t.Fatal("copies of the limits must share the semaphore")
 	}
 }

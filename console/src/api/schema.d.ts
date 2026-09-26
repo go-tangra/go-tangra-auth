@@ -47,7 +47,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sign in with tenant + email + password (step 1) */
+        /** Sign in with email + password (+ tenant; omitted or blank → derived from the email domain) (step 1) */
         post: operations["signIn"];
         delete?: never;
         options?: never;
@@ -66,6 +66,40 @@ export interface paths {
         put?: never;
         /** Complete sign-in with a TOTP or recovery code (step 2) */
         post: operations["signInMfa"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signin/mfa/webauthn/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Security-key request options for a pending sign-in (feature 018; the user's usable keys) */
+        post: operations["signInWebAuthnOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signin/mfa/webauthn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete sign-in with a security-key assertion (step 2; failures count toward the lockout like a wrong code) */
+        post: operations["signInWebAuthn"];
         delete?: never;
         options?: never;
         head?: never;
@@ -236,6 +270,92 @@ export interface paths {
         put?: never;
         /** Regenerate recovery codes */
         post: operations["regenerateRecoveryCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My second factors (authenticator app, security keys, recovery codes left, tenant requirement) */
+        get: operations["getMyMfa"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mfa/webauthn/register/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start registering a named security key (attestation none; my keys excluded) */
+        post: operations["webAuthnRegisterOptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mfa/webauthn/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish registering a security key; the first factor returns recovery codes once */
+        post: operations["webAuthnRegister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mfa/webauthn/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove one of my security keys after confirming a current factor (code, recovery code or key assertion) */
+        delete: operations["removeSecurityKey"];
+        options?: never;
+        head?: never;
+        /** Rename one of my security keys */
+        patch: operations["renameSecurityKey"];
+        trace?: never;
+    };
+    "/api/v1/me/mfa/stepup/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Security-key request options that confirm a removal */
+        post: operations["stepUpOptions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -437,6 +557,40 @@ export interface paths {
         put?: never;
         /** Force sign-out everywhere */
         post: operations["revokeUserSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/mfa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A user's second-factor methods (admin; key names and use, never key material or credential ids) */
+        get: operations["getUserMfa"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/mfa/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove a user's authenticator app, security keys and recovery codes and end their sessions (admin; not self, not a more privileged user) */
+        post: operations["resetUserMfa"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1117,6 +1271,40 @@ export interface components {
              */
             invitation_id?: string | null;
         };
+        /** @description A registered security key (feature 018). Never the credential id or public key. */
+        SecurityKey: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            last_used_at?: string | null;
+            /** @description possibly cloned (signature counter did not increase); refused until removed */
+            flagged?: boolean;
+        };
+        MfaState: {
+            totp?: boolean;
+            keys?: components["schemas"]["SecurityKey"][];
+            recovery_codes_left?: number;
+            /** @description tenant policy requires a second factor */
+            required?: boolean;
+            webauthn?: {
+                enabled?: boolean;
+                /** @description host name keys are bound to */
+                rp_id?: string;
+            };
+        };
+        /** @description PublicKeyCredential.toJSON() (W3C JSON serialisation, base64url fields); parsed server-side within 64 KiB */
+        WebAuthnCredential: {
+            id: string;
+            rawId?: string;
+            /** @enum {string} */
+            type: "public-key";
+            response: Record<string, never>;
+            authenticatorAttachment?: string | null;
+            clientExtensionResults?: Record<string, never>;
+        };
         Role: {
             /** Format: uuid */
             id?: string;
@@ -1495,7 +1683,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    tenant: string;
+                    /** @description Tenant slug; omitted or blank → derived from the email domain (jane@acme.com → acme) */
+                    tenant?: string;
                     /** Format: email */
                     email: string;
                     password: string;
@@ -1558,6 +1747,90 @@ export interface operations {
             };
             /** @description invalid_credentials */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    signInWebAuthnOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    challenge: string;
+                };
+            };
+        };
+        responses: {
+            /** @description {"publicKey": PublicKeyCredentialRequestOptions} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_challenge */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    signInWebAuthn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    challenge: string;
+                    credential: components["schemas"]["WebAuthnCredential"];
+                };
+            };
+        };
+        responses: {
+            /** @description signed in (as /signin/mfa) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description mfa_failed | key_flagged */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1820,6 +2093,253 @@ export interface operations {
             };
         };
     };
+    getMyMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaState"];
+                };
+            };
+        };
+    };
+    webAuthnRegisterOptions: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description {"publicKey": PublicKeyCredentialCreationOptions} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description webauthn_disabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description name_taken | key_limit */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    webAuthnRegister: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    credential: components["schemas"]["WebAuthnCredential"];
+                };
+            };
+        };
+        responses: {
+            /** @description {"key": SecurityKey, "recovery_codes"?: [..]} */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description registration_failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description already_registered | name_taken | key_limit */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    removeSecurityKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code?: string;
+                    credential?: components["schemas"]["WebAuthnCredential"];
+                };
+            };
+        };
+        responses: {
+            /** @description removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description confirmation_failed (counts toward the lockout) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description last_factor_required */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    renameSecurityKey: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description {"key": SecurityKey} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description name_taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stepUpOptions: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description {"publicKey": PublicKeyCredentialRequestOptions} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description webauthn_disabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no_keys */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     requestRecovery: {
         parameters: {
             query?: never;
@@ -1830,7 +2350,7 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    tenant: string;
+                    tenant?: string;
                     email: string;
                 };
             };
@@ -2196,6 +2716,83 @@ export interface operations {
         responses: {
             /** @description revoked */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getUserMfa: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description {"totp", "keys": [{name, created_at, last_used_at, flagged}], "recovery_codes_left"} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resetUserMfa: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description reset */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description invalid_state (imported user) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

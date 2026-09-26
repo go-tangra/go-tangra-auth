@@ -8,6 +8,8 @@ export interface SignInResponse {
   signed_in?: boolean
   mfa_required?: boolean
   challenge?: string
+  /** Second-step methods of the user: webauthn, totp, recovery (feature 018). */
+  mfa_methods?: string[]
   session_id?: string
   roles?: string[]
   mfa_setup_required?: boolean
@@ -26,9 +28,10 @@ export function safeNext(raw: unknown): string {
 }
 
 // The MFA challenge lives here (memory only) between the two sign-in steps so
-// it never appears in the URL or in storage.
+// it never appears in the URL or in storage; methods lists what the second
+// step offers (empty: an authenticator app or recovery code).
 export const useSignin = defineStore('signin', {
-  state: () => ({ challenge: '' as string, next: '/' as string }),
+  state: () => ({ challenge: '' as string, next: '/' as string, methods: [] as string[] }),
   actions: {
     /** Human-readable, cause-agnostic message for a sign-in failure. */
     messageFor(err: unknown): string {
@@ -48,6 +51,7 @@ export const useSignin = defineStore('signin', {
       await session.load(true)
       const target = res.mfa_setup_required ? '/console/security/enrol' : this.next
       this.challenge = ''
+      this.methods = []
       this.next = '/'
       await leaveTo(navigate, target)
     },

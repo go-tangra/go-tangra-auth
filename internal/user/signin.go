@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/webauthn"
 )
 
 // Refusals (mapped to reasons at the API).
@@ -24,6 +26,8 @@ var (
 	ErrInvalidCredentials = errors.New("invalid_credentials")
 	ErrLocked             = errors.New("locked")
 	ErrRateLimited        = errors.New("rate_limited")
+	// ErrKeyFlagged: the security key is flagged as possibly cloned.
+	ErrKeyFlagged = webauthn.ErrKeyFlagged
 )
 
 // Limits for the sliding windows (per FR: per account and per origin).
@@ -51,6 +55,19 @@ type MFAVerifier interface {
 	Verify(ctx context.Context, tenantID, userID, code string) (method string, err error)
 }
 
+// MethodLister lists a user's second-factor methods (implemented by
+// *mfa.Service): "webauthn", "totp", "recovery".
+type MethodLister interface {
+	Methods(ctx context.Context, tenantID, userID string) ([]string, error)
+}
+
+// KeyVerifier runs the security-key step of a pending sign-in (implemented by
+// *webauthn.Service); ref binds the ceremony to the MFA challenge.
+type KeyVerifier interface {
+	SigninOptions(ctx context.Context, ref, tenantID, userID string) (any, error)
+	VerifySignin(ctx context.Context, ref, tenantID, userID string, response []byte) error
+}
+
 // Service performs sign-in.
 type Service struct {
 	st       Store
@@ -58,6 +75,8 @@ type Service struct {
 	audit    *audit.Writer
 	sessions *session.Manager
 	mfa      MFAVerifier
+	methods  MethodLister
+	keys     KeyVerifier
 	now      func() time.Time
 	pad      func(time.Time)
 }
@@ -73,6 +92,12 @@ func (s *Service) SetPad(f func(time.Time)) { s.pad = f }
 // SetMFA installs the second-factor verifier after construction.
 func (s *Service) SetMFA(v MFAVerifier) { s.mfa = v }
 
+// SetMethods installs the method lister for the mfa_required answer.
+func (s *Service) SetMethods(m MethodLister) { s.methods = m }
+
+// SetKeys installs the security-key step (nil: keys are disabled).
+func (s *Service) SetKeys(k KeyVerifier) { s.keys = k }
+
 // Input is a sign-in request.
 type Input struct {
 	TenantSlug, Email, Password string
@@ -84,6 +109,8 @@ type Result struct {
 	// MFARequired means a challenge must be completed before a session exists.
 	MFARequired bool
 	Challenge   string
+	// MFAMethods lists what the second step offers this user (feature 018).
+	MFAMethods []string
 	// Session and Secret are set once signed in.
 	Session store.Session
 	Secret  string
@@ -194,7 +221,7 @@ func (s *Service) Start(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 		s.attempt(ctx, t.ID, u.ID, emailHash, ipHash, "ok", "mfa_pending")
-		return Result{MFARequired: true, Challenge: id}, nil
+		return Result{MFARequired: true, Challenge: id, MFAMethods: s.mfaMethods(ctx, t.ID, u.ID)}, nil
 	}
 	res, err := s.establish(ctx, challenge{TenantID: t.ID, UserID: u.ID, IPHash: ipHash, UserAgent: in.UserAgent, Roles: roles, Operator: t.Kind == "platform", Policy: pol}, []string{"pwd"}, emailHash)
 	if err != nil {
@@ -204,28 +231,98 @@ func (s *Service) Start(ctx context.Context, in Input) (Result, error) {
 	return res, nil
 }
 
-// CompleteMFA performs step two with a TOTP or recovery code.
-func (s *Service) CompleteMFA(ctx context.Context, challengeID, code, ip, ua string) (Result, error) {
-	start := s.now()
-	defer s.pad(start)
+// mfaMethods lists the user's second-factor methods; when they cannot be
+// read every method this instance supports is offered. "webauthn" is dropped
+// while security keys are disabled.
+func (s *Service) mfaMethods(ctx context.Context, tid, uid string) []string {
+	all := []string{"webauthn", "totp", "recovery"}
+	if s.methods != nil {
+		if m, err := s.methods.Methods(ctx, tid, uid); err == nil {
+			all = m
+		}
+	}
+	if s.keys == nil {
+		all = slices.DeleteFunc(slices.Clone(all), func(m string) bool { return m == "webauthn" })
+	}
+	return all
+}
+
+// pending loads the MFA challenge of step one; it is not consumed here.
+func (s *Service) pending(ctx context.Context, challengeID string) (challenge, string, error) {
 	key := cache.ChallengeKey(crypto.HashToken(challengeID))
 	raw, ok, err := s.cache.KV().Get(ctx, key)
 	if err != nil || !ok || challengeID == "" {
-		return Result{}, ErrInvalidCredentials
+		return challenge{}, "", ErrInvalidCredentials
 	}
 	var c challenge
 	if json.Unmarshal([]byte(raw), &c) != nil {
-		return Result{}, ErrInvalidCredentials
+		return challenge{}, "", ErrInvalidCredentials
+	}
+	return c, key, nil
+}
+
+// CompleteMFA performs step two with a TOTP or recovery code.
+func (s *Service) CompleteMFA(ctx context.Context, challengeID, code, ip, ua string) (Result, error) {
+	return s.complete(ctx, challengeID, ip, ua, func(c challenge) (string, error) {
+		if s.mfa == nil {
+			return "", ErrInvalidCredentials
+		}
+		return s.mfa.Verify(ctx, c.TenantID, c.UserID, code)
+	})
+}
+
+// WebAuthnOptions returns security-key request options for a pending
+// sign-in (the user's usable keys), bound to the challenge and the user.
+func (s *Service) WebAuthnOptions(ctx context.Context, challengeID string) (any, error) {
+	c, _, err := s.pending(ctx, challengeID)
+	if err != nil {
+		return nil, err
+	}
+	if locked, _ := s.cache.Locked(ctx, c.UserID); locked {
+		return nil, ErrLocked
+	}
+	if n, err := s.cache.Count(ctx, cache.RateKey("webauthn_options", c.UserID), AccountWindow); err == nil && n > AccountLimit {
+		return nil, ErrRateLimited
+	}
+	if s.keys == nil {
+		return nil, ErrInvalidCredentials
+	}
+	opts, err := s.keys.SigninOptions(ctx, crypto.HashToken(challengeID), c.TenantID, c.UserID)
+	if errors.Is(err, webauthn.ErrNoKeys) {
+		return nil, ErrInvalidCredentials
+	}
+	return opts, err
+}
+
+// CompleteWebAuthn performs step two with a security-key assertion. A
+// failure counts toward the same lockout as a wrong code; a key flagged as
+// possibly cloned is ErrKeyFlagged. Success records amr ["pwd","hwk"].
+func (s *Service) CompleteWebAuthn(ctx context.Context, challengeID string, response []byte, ip, ua string) (Result, error) {
+	return s.complete(ctx, challengeID, ip, ua, func(c challenge) (string, error) {
+		if s.keys == nil {
+			return "", ErrInvalidCredentials
+		}
+		if err := s.keys.VerifySignin(ctx, crypto.HashToken(challengeID), c.TenantID, c.UserID, response); err != nil {
+			return "", err
+		}
+		return "hwk", nil
+	})
+}
+
+// complete runs step two: lockout check, verification, the shared failure
+// counter and lockout, and the session on success (the challenge is single
+// use).
+func (s *Service) complete(ctx context.Context, challengeID, ip, ua string, verify func(challenge) (string, error)) (Result, error) {
+	start := s.now()
+	defer s.pad(start)
+	c, key, err := s.pending(ctx, challengeID)
+	if err != nil {
+		return Result{}, err
 	}
 	if locked, _ := s.cache.Locked(ctx, c.UserID); locked {
 		return Result{}, ErrLocked
 	}
-	method := ""
-	if s.mfa != nil {
-		method, err = s.mfa.Verify(ctx, c.TenantID, c.UserID, code)
-	} else {
-		err = ErrInvalidCredentials
-	}
+	method, err := verify(c)
 	if err != nil {
 		n, _ := s.cache.Count(ctx, cache.RateKey("fail", c.UserID), c.Policy.LockoutDuration.D())
 		reason := "mfa_failed"
@@ -237,6 +334,9 @@ func (s *Service) CompleteMFA(ctx context.Context, challengeID, code, ip, ua str
 		}
 		s.attempt(ctx, c.TenantID, c.UserID, "", HashIP(ip), "refused", reason)
 		s.emit(audit.Event{Type: audit.SigninFailed, TenantID: c.TenantID, ActorKind: "user", ActorUserID: c.UserID, Outcome: "refused", Reason: reason, OriginIPHash: HashIP(ip), UserAgent: ua})
+		if errors.Is(err, ErrKeyFlagged) {
+			return Result{}, ErrKeyFlagged
+		}
 		return Result{}, ErrInvalidCredentials
 	}
 	_ = s.cache.KV().Del(ctx, key)

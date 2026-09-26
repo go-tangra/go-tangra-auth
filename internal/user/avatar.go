@@ -50,6 +50,15 @@ type semaphore struct {
 	ch   chan struct{}
 }
 
+// shared returns the limits with their semaphore created, so every copy
+// (limits travel by value into NormaliseAvatar) bounds the same decodes.
+func (l AvatarLimits) shared() AvatarLimits {
+	if l.sem == nil {
+		l.sem = &semaphore{}
+	}
+	return l
+}
+
 func (l *AvatarLimits) acquire() func() {
 	if l.Concurrency <= 0 {
 		return func() {}
@@ -149,7 +158,7 @@ type Avatars struct {
 
 // NewAvatars wires the service.
 func NewAvatars(st AvatarStore, a *audit.Writer, l AvatarLimits) *Avatars {
-	return &Avatars{st: st, audit: a, limits: l}
+	return &Avatars{st: st, audit: a, limits: l.shared()}
 }
 
 // Set replaces the target's avatar with the normalised upload and returns its URL.

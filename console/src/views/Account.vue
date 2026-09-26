@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { UiPage, UiCard, UiForm, UiInput, UiSecretField, UiButton, UiAlert, UiIcon } from '@go-tangra/ui'
 import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useMfa } from '@/composables/useMfa'
+import type { MfaState } from '@/composables/useWebAuthn'
 import { announceSessionChanged, useSession } from '@/stores/session'
 import { changePasswordSchema, mfaEnrolSchema, totpSchema } from '@/schemas'
 import ProfileForm from '@/components/ProfileForm.vue'
 import RecoveryCodes from '@/components/RecoveryCodes.vue'
+import SecurityKeys from '@/components/SecurityKeys.vue'
 
 const session = useSession()
 async function profileChanged(): Promise<void> {
@@ -36,15 +38,31 @@ const password = useZodForm(changePasswordSchema(), {
   },
 })
 
-// --- second factor ---
+// --- second factors (authenticator app + security keys, feature 018) ---
 const { enrolment, qr, recoveryCodes, error: mfaError, busy: mfaBusy, start, confirm } = useMfa()
 const mfaNotice = ref<string | null>(null)
+const mfaState = ref<MfaState | null>(null)
+async function loadFactors(): Promise<void> {
+  try {
+    const st = await api<MfaState>('GET', '/api/v1/me/mfa')
+    mfaState.value = typeof st?.totp === 'boolean' ? st : null
+  } catch {
+    mfaState.value = null
+  }
+}
+onMounted(loadFactors)
+// Older servers have no /me/mfa: the session's flag then means the app.
+const totpOn = computed(() => (mfaState.value ? mfaState.value.totp : !!session.user?.mfa_enabled))
+const keysOn = computed(() => mfaState.value?.webauthn?.enabled === true)
+async function factorsChanged(): Promise<void> {
+  await Promise.all([loadFactors(), session.load(true)])
+}
 const enrol = useZodForm(mfaEnrolSchema, {
   initial: { code: '' },
   onSubmit: async (v) => {
     if (!(await confirm(v.code))) throw new Error('invalid_code')
     enrol.values.code = ''
-    await session.load(true)
+    await factorsChanged()
   },
 })
 const disableForm = useZodForm(totpSchema, {
@@ -53,10 +71,10 @@ const disableForm = useZodForm(totpSchema, {
     mfaNotice.value = null
     try {
       await api('POST', '/api/v1/me/mfa/disable', { code: v.code })
-      await session.load(true)
-      mfaNotice.value = 'Second factor disabled.'
+      await factorsChanged()
+      mfaNotice.value = 'Authenticator app removed.'
     } catch (err) {
-      mfaNotice.value = err instanceof ApiError ? (err.reason === 'mfa_required' ? 'Your organisation requires a second factor; it cannot be disabled.' : reasonMessage(err.reason)) : 'Could not disable.'
+      mfaNotice.value = err instanceof ApiError ? (err.reason === 'mfa_required' ? 'Your organisation requires a second factor; add another one before removing this one.' : reasonMessage(err.reason)) : 'Could not disable.'
       throw err
     } finally {
       disableForm.reset({ code: '' })
@@ -98,15 +116,15 @@ const regenForm = useZodForm(totpSchema, {
           </div>
         </UiForm>
       </UiCard>
-      <UiCard title="Second factor" data-test="mfa-card">
+      <UiCard title="Second factors" data-test="mfa-card">
         <UiAlert v-if="mfaNotice" kind="info" class="mb-4" data-test="mfa-notice">{{ mfaNotice }}</UiAlert>
         <template v-if="recoveryCodes.length > 0">
           <UiAlert kind="success" class="mb-4">Save these recovery codes now — they are shown only once.</UiAlert>
           <RecoveryCodes :codes="recoveryCodes" class="mb-4" />
           <UiButton variant="text" data-test="codes-dismiss" @click="recoveryCodes = []">I have saved them</UiButton>
         </template>
-        <template v-else-if="session.user?.mfa_enabled">
-          <p class="mb-4 flex items-center gap-1"><UiIcon name="mdi-shield-check" class="text-success" />Enabled with an authenticator app.</p>
+        <template v-else-if="totpOn">
+          <p class="mb-4 flex items-center gap-1"><UiIcon name="mdi-shield-check" class="text-success" />Authenticator app enabled.</p>
           <UiForm :form="regenForm" class="mb-4">
             <div class="flex flex-wrap items-end gap-2">
               <UiInput v-bind="regenForm.field('code')" label="Current code to regenerate recovery codes" inputmode="numeric" class="grow" data-test="regen-code" />
@@ -116,7 +134,7 @@ const regenForm = useZodForm(totpSchema, {
           <UiForm :form="disableForm">
             <div class="flex flex-wrap items-end gap-2">
               <UiInput v-bind="disableForm.field('code')" label="Current code to disable" inputmode="numeric" class="grow" data-test="disable-code" />
-              <UiButton type="submit" variant="outline" color="error" :loading="disableForm.submitting.value" data-test="disable">Disable second factor</UiButton>
+              <UiButton type="submit" variant="outline" color="error" :loading="disableForm.submitting.value" data-test="disable">Remove authenticator app</UiButton>
             </div>
           </UiForm>
         </template>
@@ -134,8 +152,13 @@ const regenForm = useZodForm(totpSchema, {
           </UiForm>
         </template>
         <template v-else>
-          <p class="mb-4">Not enrolled. Add an authenticator app to protect your account.</p>
+          <p class="mb-4">No authenticator app. Add one to protect your account.</p>
           <UiButton :loading="mfaBusy" data-test="enrol" @click="start">Set up authenticator</UiButton>
+        </template>
+        <template v-if="keysOn && mfaState && recoveryCodes.length === 0">
+          <h3 class="mb-2 mt-6 font-semibold">Security keys</h3>
+          <p v-if="mfaState.recovery_codes_left > 0" class="mb-2 text-xs text-base-content/70" data-test="codes-left">{{ mfaState.recovery_codes_left }} unused recovery codes.</p>
+          <SecurityKeys :keys="mfaState.keys" :rp-id="mfaState.webauthn?.rp_id ?? ''" :totp="mfaState.totp" @changed="factorsChanged" @codes="(c) => (recoveryCodes = c)" />
         </template>
       </UiCard>
     </div>

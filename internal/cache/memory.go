@@ -43,6 +43,14 @@ func (m *Memory) Get(_ context.Context, key string) (string, bool, error) {
 	return e.v, ok, nil
 }
 
+func (m *Memory) GetDel(_ context.Context, key string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.live(key)
+	delete(m.data, key)
+	return e.v, ok, nil
+}
+
 func (m *Memory) Set(_ context.Context, key, value string, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

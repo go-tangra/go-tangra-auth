@@ -185,16 +185,21 @@ func SetMFA(ctx context.Context, tx pgx.Tx, tenantID, id string, enabled bool, s
 }
 
 // ResetCredentials is the break-glass reset: it clears the password, the MFA
-// seed and its replay counter and returns the user to "invited" so the only
-// way back in is a fresh invitation. Only active or invited users qualify;
-// imported and deactivated users are refused with ErrNotFound.
+// seed and its replay counter, removes the user's security keys and returns
+// the user to "invited" so the only way back in is a fresh invitation. Only
+// active or invited users qualify; imported and deactivated users are refused
+// with ErrNotFound.
 func ResetCredentials(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
 	ct, err := tx.Exec(ctx, `UPDATE users SET password_hash = NULL, password_changed_at = NULL, mfa_enabled = false,
 		mfa_secret_enc = NULL, mfa_last_counter = 0, status = 'invited', updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND status IN ('active','invited')`, tenantID, id)
-	if err == nil && ct.RowsAffected() == 0 {
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	_, err = tx.Exec(ctx, "DELETE FROM webauthn_credentials WHERE tenant_id = $1 AND user_id = $2", tenantID, id)
 	return err
 }
 

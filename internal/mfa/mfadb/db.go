@@ -40,3 +40,7 @@ func (d DBStore) ListRecoveryCodeHashes(ctx context.Context, tid, uid string) (o
 func (d DBStore) UseRecoveryCode(ctx context.Context, tid, uid, hash string) error {
 	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.UseRecoveryCode(ctx, tx, tid, uid, hash) })
 }
+func (d DBStore) ListWebAuthnCredentials(ctx context.Context, tid, uid string) (out []store.WebAuthnCredential, err error) {
+	err = d.tx(ctx, tid, func(tx pgx.Tx) error { out, err = store.ListWebAuthnCredentials(ctx, tx, tid, uid); return err })
+	return
+}

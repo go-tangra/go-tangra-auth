@@ -50,6 +50,8 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/token/tokendb"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/user/userdb"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/webauthn"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/webauthn/webauthndb"
 	"github.com/go-tangra/go-tangra/v4"
 	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
@@ -97,10 +99,12 @@ type App struct {
 	Roles     *authz.Roles
 	Decider   *authz.Decider
 	MFA       *mfa.Service
-	Changer   *password.Changer
-	Recovery  *password.Recovery
-	Tenants   *tenant.Service
-	Grants    *tenant.Grants
+	// WebAuthn is nil when security keys are disabled (feature 018).
+	WebAuthn *webauthn.Service
+	Changer  *password.Changer
+	Recovery *password.Recovery
+	Tenants  *tenant.Service
+	Grants   *tenant.Grants
 	// Directories is nil when directory.enabled is false (feature 016).
 	Directories *directory.Service
 	closers     []func()
@@ -251,6 +255,9 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Changer = password.NewChanger(passworddb.DBChangeStore{St: a.Store}, a.Sessions, a.Audit)
 	a.Recovery = password.NewRecovery(passworddb.DBRecoveryStore{St: a.Store}, a.Outbox, a.Sessions, a.Audit, cfg.Issuer)
 	a.HTTP.RegisterUS4(httpapi.US4Deps{MFA: a.MFA, Changer: a.Changer, Recovery: a.Recovery})
+	if err = a.buildWebAuthn(ctx); err != nil {
+		return nil, err
+	}
 	a.Profiles = user.NewProfiles(userdb.DBAdminStore{St: a.Store}, a.Audit)
 	a.Avatars = user.NewAvatars(userdb.DBAdminStore{St: a.Store}, a.Audit, user.AvatarLimits{MaxBytes: cfg.Profile.AvatarMaxBytes, MaxPixels: cfg.Profile.AvatarMaxPixels, Size: cfg.Profile.AvatarSize, Concurrency: cfg.Profile.AvatarDecodeConcurrency})
 	a.HTTP.RegisterProfiles(httpapi.ProfileDeps{Profiles: a.Profiles, Avatars: a.Avatars, Sessions: a.Sessions, Cache: a.Cache, LookupRatePerMinute: cfg.Profile.LookupRatePerMinute, MaxAvatarBytes: cfg.Profile.AvatarMaxBytes})
@@ -328,6 +335,37 @@ func (a *App) buildDirectory() error {
 	}
 	a.Directories = directory.New(directory.Deps{Store: directorydb.DBStore{St: a.Store}, Directory: ldapdir.NewClient(pol), Envelope: a.Envelope,
 		Policy: pol, Config: cfg, Cache: a.Cache, Audit: a.Audit})
+	return nil
+}
+
+// buildWebAuthn wires security keys (feature 018): the relying party from
+// the webauthn block (defaults from issuer), the second-step methods and the
+// routes. Disabled keys keep the routes mounted (404 webauthn_disabled) and
+// warn when users still have keys registered.
+func (a *App) buildWebAuthn(ctx context.Context) error {
+	rp := a.Cfg.RelyingParty()
+	a.Signin.SetMethods(a.MFA)
+	d := httpapi.WebAuthnDeps{MFA: a.MFA, Signin: a.Signin, Admin: a.Admin, RPID: rp.ID}
+	if rp.Enabled {
+		svc, err := webauthn.New(webauthn.Config{RPID: rp.ID, Origins: rp.Origins, DisplayName: rp.DisplayName, UserVerification: rp.UserVerification, Timeout: rp.Timeout},
+			webauthndb.DBStore{St: a.Store}, a.MFA, a.Cache, a.Audit)
+		if err != nil {
+			return fmt.Errorf("app: webauthn: %w", err)
+		}
+		a.WebAuthn = svc
+		a.Signin.SetKeys(svc)
+		d.Keys = svc
+	} else {
+		var n int
+		if err := a.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
+			var err error
+			n, err = store.CountAllWebAuthnCredentials(ctx, tx)
+			return err
+		}); err == nil && n > 0 {
+			a.Log.Warn("webauthn is disabled but security keys are registered; their users sign in with an authenticator app or a recovery code", "keys", n)
+		}
+	}
+	a.HTTP.RegisterWebAuthn(d)
 	return nil
 }
 

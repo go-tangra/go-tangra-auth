@@ -148,7 +148,7 @@ func (m *Store) AddGroupMembers(_ context.Context, tid, gid, _ string, userIDs [
 	}
 	added := 0
 	for _, uid := range userIDs {
-		if _, u, ok := m.userByID(tid, uid); !ok || u.Status == "imported" {
+		if _, _, ok := m.userByID(tid, uid); !ok {
 			return added, store.ErrNotFound
 		}
 		exists := false

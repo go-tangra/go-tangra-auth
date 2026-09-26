@@ -40,9 +40,11 @@ type Store struct {
 	Grants      map[string]store.OperatorGrant
 	AuditRows   []store.AuditRow
 	Now         func() time.Time
-	g           *groupState     // feature 004 (see groups.go)
-	dir         *directoryState // feature 016 (see directory.go)
-	failNext    map[string]bool // methods armed by FailNext (see directory.go)
+	g           *groupState                           // feature 004 (see groups.go)
+	dir         *directoryState                       // feature 016 (see directory.go)
+	failNext    map[string]bool                       // methods armed by FailNext (see directory.go)
+	keys        map[string][]store.WebAuthnCredential // feature 018: tenant/user → keys (see webauthn.go)
+	handles     map[string][]byte                     // tenant/user → WebAuthn user handle
 }
 
 // New returns an empty store.

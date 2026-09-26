@@ -41,7 +41,8 @@ async function searchUsers(q: string): Promise<void> {
   try {
     const page = await api<{ items: AdminUser[] }>('GET', '/api/v1/admin/users', undefined, { query: { q } })
     const present = new Set(members.value.map((m) => m.user_id))
-    candidates.value = page.items.filter((u) => !present.has(u.id)).map((u) => ({ title: u.email + (u.display_name ? ' · ' + u.display_name : ''), value: u.id }))
+    // Inactive users can be added ahead of their invitation; the status says so.
+    candidates.value = page.items.filter((u) => !present.has(u.id)).map((u) => ({ title: u.email + (u.display_name ? ' · ' + u.display_name : '') + (u.status && u.status !== 'active' ? ' (' + u.status + ')' : ''), value: u.id }))
   } catch (err) {
     if (!(err instanceof ApiError)) throw err
   }

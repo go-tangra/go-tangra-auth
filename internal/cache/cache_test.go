@@ -105,3 +105,29 @@ func TestValkeyConfigErrors(t *testing.T) {
 		t.Fatal("closed port must fail (plaintext)")
 	}
 }
+
+func TestMemoryGetDelIsSingleUse(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	now := time.Now()
+	m.now = func() time.Time { return now }
+	key := WebAuthnKey("reg", "u1")
+	if key != "challenge:webauthn:reg:u1" {
+		t.Fatal(key)
+	}
+	if _, ok, _ := m.GetDel(ctx, key); ok {
+		t.Fatal("empty")
+	}
+	_ = m.Set(ctx, key, "v", time.Minute)
+	if v, ok, err := m.GetDel(ctx, key); !ok || v != "v" || err != nil {
+		t.Fatal(v, ok, err)
+	}
+	if _, ok, _ := m.GetDel(ctx, key); ok {
+		t.Fatal("second read must miss")
+	}
+	_ = m.Set(ctx, key, "v", time.Minute)
+	now = now.Add(2 * time.Minute)
+	if _, ok, _ := m.GetDel(ctx, key); ok {
+		t.Fatal("expired record returned")
+	}
+}
