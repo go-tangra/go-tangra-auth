@@ -196,8 +196,9 @@ func TestGroupRepos(t *testing.T) {
 	}); err == nil {
 		t.Fatal("member from another tenant must be refused")
 	}
-	// Research D10: an imported user is never added to a group (groups are
-	// chosen at activation); the refusal looks like "not a user".
+	// Groups may be prepared before an invitation is accepted: imported and
+	// invited users can be added (they cannot sign in, and every decision for
+	// a non-active user is refused until activation).
 	uImp := NewID()
 	if err := st.Tx(ctx, Scope{System: true}, func(tx pgx.Tx) error {
 		return InsertUser(ctx, tx, User{ID: uImp, TenantID: tA, Email: "imported@x.test", Status: "imported"})
@@ -205,18 +206,21 @@ func TestGroupRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.Tx(ctx, Scope{TenantID: tA}, func(tx pgx.Tx) error {
-		_, err := AddGroupMembers(ctx, tx, tA, gid, "", []string{uImp})
+		n, err := AddGroupMembers(ctx, tx, tA, gid, "", []string{uImp})
+		if err == nil && n != 1 {
+			t.Fatalf("imported member added %d, want 1", n)
+		}
 		return err
-	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("imported member must be refused as ErrNotFound, got %v", err)
+	}); err != nil {
+		t.Fatalf("imported member must be accepted, got %v", err)
 	}
 	if err := st.Tx(ctx, Scope{TenantID: tA}, func(tx pgx.Tx) error {
 		groups, err := UserGroups(ctx, tx, tA, uImp)
 		if err != nil {
 			return err
 		}
-		if len(groups) != 0 {
-			t.Fatalf("imported user became a member: %v", groups)
+		if len(groups) != 1 {
+			t.Fatalf("imported user is not a member: %v", groups)
 		}
 		return nil
 	}); err != nil {

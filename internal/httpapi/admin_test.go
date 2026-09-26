@@ -180,17 +180,22 @@ func TestAdminRefusesImportedTarget(t *testing.T) {
 	if got, _ := u.ms.User(context.Background(), tid, "u5"); got.Status != "imported" {
 		t.Fatalf("status changed to %q", got.Status)
 	}
-	// Group membership: the imported user is never added.
+	// Group membership may be prepared before the invitation: the imported
+	// user is added but stays imported (no sign-in, no decisions) until
+	// activation.
 	w, out := u.call("POST", "/api/v1/admin/groups", `{"name":"Imported"}`, owner)
 	if w.Code != 201 {
 		t.Fatalf("create group → %d %v", w.Code, out)
 	}
 	gid, _ := out["id"].(string)
-	if w, _ := u.call("POST", "/api/v1/admin/groups/"+gid+"/members", `{"user_ids":["u5"]}`, owner); w.Code == 200 {
-		t.Fatal("imported user added to a group")
+	if w, out := u.call("POST", "/api/v1/admin/groups/"+gid+"/members", `{"user_ids":["u5"]}`, owner); w.Code != 200 {
+		t.Fatalf("add imported member → %d %v", w.Code, out)
 	}
-	if n, _ := u.ms.CountGroupMembers(context.Background(), tid, gid); n != 0 {
+	if n, _ := u.ms.CountGroupMembers(context.Background(), tid, gid); n != 1 {
 		t.Fatalf("members = %d", n)
+	}
+	if got, _ := u.ms.User(context.Background(), tid, "u5"); got.Status != "imported" {
+		t.Fatalf("membership changed the status to %q", got.Status)
 	}
 	// An active user is unaffected.
 	if w, out := u.call("PUT", "/api/v1/admin/users/u2/roles", `{"role_ids":["r-auditor"]}`, owner); w.Code != 200 {

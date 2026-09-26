@@ -127,13 +127,15 @@ func ListGroupMembers(ctx context.Context, tx pgx.Tx, tenantID, groupID string, 
 }
 
 // AddGroupMembers inserts memberships; existing ones are no-ops. Returns the
-// number actually added. A user outside the tenant fails the RLS/FK checks;
-// an imported user (feature 016) is never added and reads as not found.
+// number actually added. A user outside the tenant fails the RLS/FK checks.
+// Imported and invited users may be added so groups can be prepared before
+// an invitation is accepted; they cannot sign in, and every decision for a
+// non-active user is refused, so the membership only takes effect then.
 func AddGroupMembers(ctx context.Context, tx pgx.Tx, tenantID, groupID, addedBy string, userIDs []string) (int, error) {
 	added := 0
 	for _, uid := range userIDs {
 		ct, err := tx.Exec(ctx, `INSERT INTO group_members (group_id, user_id, tenant_id, added_by)
-			SELECT $1, u.id, $3, NULLIF($4,'')::uuid FROM users u WHERE u.id = $2 AND u.tenant_id = $3 AND u.status <> 'imported'
+			SELECT $1, u.id, $3, NULLIF($4,'')::uuid FROM users u WHERE u.id = $2 AND u.tenant_id = $3
 			ON CONFLICT DO NOTHING`, groupID, uid, tenantID, addedBy)
 		if err != nil {
 			return added, err
