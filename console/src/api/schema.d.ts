@@ -604,7 +604,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Subject picker (feature 005): slug and display name of the tenant roles, any signed-in member */
+        /** Subject picker (feature 005): slug, display name, origin, module display name and retired flag of the tenant roles, any signed-in member */
         get: operations["listRoleNames"];
         put?: never;
         post?: never;
@@ -621,10 +621,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List roles with permissions */
+        /** List roles with permissions, origin (builtin, module, custom), module and retirement (feature 019) */
         get: operations["listRoles"];
         put?: never;
-        /** Create a custom role */
+        /** Create a custom role; permissions are qualified module:resource:action refs */
         post: operations["createRole"];
         delete?: never;
         options?: never;
@@ -640,7 +640,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update a custom role's permissions (built-ins immutable) */
+        /** Update a custom role's permissions (built-in and module roles are locked); legacy refs are accepted only if the role already holds them */
         put: operations["updateRole"];
         post?: never;
         delete?: never;
@@ -666,6 +666,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/roles/{id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy any role but owner into a new custom role with its current permissions (legacy grants not copied); the caller must hold every permission (feature 019) */
+        post: operations["cloneRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/permissions": {
         parameters: {
             query?: never;
@@ -673,7 +690,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Registered permissions (resource:action + description) */
+        /** Permission catalogue grouped by module (feature 019): qualified ref, module, module display name, grantable for the caller; retired modules omitted; legacy rows flagged */
         get: operations["listPermissions"];
         put?: never;
         post?: never;
@@ -1305,13 +1322,46 @@ export interface components {
             authenticatorAttachment?: string | null;
             clientExtensionResults?: Record<string, never>;
         };
+        /** @description Qualified module:resource:action (feature 019); the legacy resource:action form is kept only for grants made before module-scoped permissions, until prune-legacy */
+        PermissionRef: string;
         Role: {
             /** Format: uuid */
             id?: string;
+            /** @description custom roles: lowercase letters, digits and dashes; owner, admin, member, auditor, operator are reserved; module roles are m.<module>.<slug> */
             slug?: string;
             display_name?: string;
+            description?: string;
             builtin?: boolean;
-            permissions?: string[];
+            /** @enum {string} */
+            origin?: "builtin" | "module" | "custom";
+            /** @description module providing the role (origin module), else empty */
+            module?: string;
+            module_display_name?: string;
+            module_slug?: string;
+            /** @description built-in or module role: not editable, clone it instead */
+            locked?: boolean;
+            /** @description no longer provided by its module: kept for existing assignments, not newly assignable */
+            retired?: boolean;
+            /** Format: date-time */
+            retired_at?: string | null;
+            permissions?: components["schemas"]["PermissionRef"][];
+        };
+        CatalogueEntry: {
+            ref?: components["schemas"]["PermissionRef"];
+            /** @description empty for legacy permissions */
+            module?: string;
+            /** @description "Authentication" for auth, "Before modules" for legacy permissions */
+            module_display_name?: string;
+            resource?: string;
+            action?: string;
+            description?: string;
+            /** @description the caller may grant it (owners: every permission; others: the ones they hold) */
+            grantable?: boolean;
+            legacy?: boolean;
+        };
+        CloneRole: {
+            slug: string;
+            display_name: string;
         };
         Session: {
             /** Format: uuid */
@@ -2487,6 +2537,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description role_retired */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     resendInvitation: {
@@ -2544,7 +2601,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description invalid_state (imported user) */
+            /** @description invalid_state (imported user) | role_retired (a retired module role the user does not hold) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2651,6 +2708,13 @@ export interface operations {
             };
             /** @description forbidden | self_escalation */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description role_retired */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2832,7 +2896,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Role"][];
+                };
             };
         };
     };
@@ -2858,8 +2924,22 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description validation_failed (reserved slug, slug with a dot, unknown permission) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description self_escalation */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict (slug taken) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2887,7 +2967,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description builtin | self_escalation */
+            /** @description validation_failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description builtin | managed_role (module role; body hint "clone") | self_escalation */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2916,6 +3003,69 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description builtin | managed_role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cloneRole: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["csrf"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRole"];
+            };
+        };
+        responses: {
+            /** @description created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            /** @description validation_failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description self_escalation | builtin (owner) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict (slug taken) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     listPermissions: {
@@ -2932,7 +3082,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CatalogueEntry"][];
+                };
             };
         };
     };
@@ -3800,6 +3952,13 @@ export interface operations {
             };
             /** @description self_escalation */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description role_retired (a retired module role the group does not hold) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -4,7 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiCheckbox, UiCombobox, UiDataTable, UiAvatar, useToast, type Column, type SelectOption } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
-import { useRoles } from '@/composables/useRoles'
+import { roleAssignable, roleLabel, useRoles } from '@/composables/useRoles'
 import { useGroups, type Group, type GroupMember } from '@/stores/groups'
 import type { AdminUser } from './Users.vue'
 
@@ -16,6 +16,8 @@ const groups = useGroups()
 const group = ref<Group | null>(null)
 const members = ref<GroupMember[]>([])
 const selectedRoles = ref<string[]>([])
+/** Roles the group grants as saved; a retired role stays selectable only while held. */
+const heldRoles = ref<string[]>([])
 const candidates = ref<SelectOption[]>([])
 const picked = ref('')
 const error = ref<string | null>(null)
@@ -29,6 +31,7 @@ async function load(): Promise<void> {
     members.value = await groups.members(id.value)
     await loadRoles()
     selectedRoles.value = roles.value.filter((r) => r.slug && group.value?.roles?.includes(r.slug)).map((r) => r.id ?? '')
+    heldRoles.value = [...selectedRoles.value]
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load the group.'
   }
@@ -83,6 +86,7 @@ async function saveRoles(): Promise<void> {
   try {
     const slugs = await groups.setRoles(id.value, selectedRoles.value)
     if (group.value) group.value.roles = slugs
+    heldRoles.value = [...selectedRoles.value]
     toast.success('Roles updated for every member.')
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not save roles.'
@@ -109,7 +113,7 @@ const columns: Column<Row>[] = [
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
       <UiCard title="Roles granted to members" class="lg:col-span-4">
         <div data-test="group-roles">
-          <UiCheckbox v-for="r in roles.filter((x) => x.slug !== 'owner')" :id="'group-role-' + (r.id ?? '')" :key="r.id ?? ''" :model-value="selectedRoles.includes(r.id ?? '')" :label="`${r.display_name} (${r.slug})`" data-test="group-role" @update:model-value="toggleRole(r.id ?? '', $event)" />
+          <UiCheckbox v-for="r in roles.filter((x) => x.slug !== 'owner')" :id="'group-role-' + (r.id ?? '')" :key="r.id ?? ''" :model-value="selectedRoles.includes(r.id ?? '')" :label="`${roleLabel(r)} (${r.slug})${r.retired ? ' — retired' : ''}`" :disabled="!roleAssignable(r, heldRoles)" data-test="group-role" @update:model-value="toggleRole(r.id ?? '', $event)" />
         </div>
         <UiButton class="mt-3" :loading="busy" data-test="save-roles" @click="saveRoles">Save roles</UiButton>
       </UiCard>
