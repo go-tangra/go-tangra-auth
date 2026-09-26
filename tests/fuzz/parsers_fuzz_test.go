@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/httpapi"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenant"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 	"github.com/go-tangra/go-tangra/v4/freyatest/testrt"
@@ -51,7 +52,7 @@ func FuzzPermissionRef(f *testing.F) {
 }
 
 func FuzzFGAObjectID(f *testing.F) {
-	for _, s := range []string{"tenant:" + tid, "role:" + tid + "/x", "permission:" + tid + "/a:b", "user:u", "tenant:/", ""} {
+	for _, s := range []string{"tenant:" + tid, "role:" + tid + "/x", "permission:" + tid + "/a:b", "permission:" + tid + "/warden~backup~manage", "permission:" + tid + "/backup~manage", "user:u", "tenant:/", ""} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
@@ -61,6 +62,65 @@ func FuzzFGAObjectID(f *testing.F) {
 		}
 		if err == nil && !strings.Contains(s, got) {
 			t.Fatalf("%q → %q not contained", s, got)
+		}
+		// Feature 019: a module-qualified permission object never parses into
+		// another tenant, and parse∘format is the identity.
+		if ptid, ref, err := permref.ParseObject(s); err == nil {
+			if ptid != got || ref.Object(ptid) != s {
+				t.Fatalf("%q → %q %+v (object tenant %q)", s, ptid, ref, got)
+			}
+		}
+	})
+}
+
+// FuzzQualifiedRef checks the module-qualified reference grammar (feature 019):
+// accepted refs round-trip, never contain an object separator, and their
+// object id stays in the tenant it was built for.
+func FuzzQualifiedRef(f *testing.F) {
+	for _, s := range []string{"warden:backup:manage", "backup:manage", "a:b:c:d", "w~x:a:b", "W:a:b", "::", "m:a/b:c"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		r, err := permref.ParseAny(s)
+		if err != nil {
+			return
+		}
+		if r.String() != s || strings.ContainsAny(s, "~/ \n") {
+			t.Fatalf("accepted %q → %+v", s, r)
+		}
+		obj := r.Object(tid)
+		ot, back, err := permref.ParseObject(obj)
+		if err != nil || ot != tid || back != r {
+			t.Fatalf("object %q → %q %+v %v", obj, ot, back, err)
+		}
+		if got, err := authz.ObjectTenant(obj); err != nil || got != tid {
+			t.Fatalf("object tenant %q: %q %v", obj, got, err)
+		}
+		if q, err := permref.Parse(s); err == nil && q.IsLegacy() {
+			t.Fatalf("qualified parse produced legacy %q", s)
+		}
+	})
+}
+
+// FuzzModuleRoleSlug checks that module role slugs and custom slugs never
+// overlap and that built-in slugs are never accepted as custom ones.
+func FuzzModuleRoleSlug(f *testing.F) {
+	for _, s := range []string{"m.warden.viewer", "viewer", "operator", "m..x", "m.a.b.c", "a.b"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		mod, slug, ok := permref.ParseModuleRoleSlug(s)
+		custom, cerr := permref.ParseCustomSlug(s)
+		if ok && cerr == nil {
+			t.Fatalf("%q is both a module role and a custom slug", s)
+		}
+		if ok {
+			if back, err := permref.ModuleRoleSlug(mod, slug); err != nil || back != s {
+				t.Fatalf("round trip %q → %q %v", s, back, err)
+			}
+		}
+		if cerr == nil && (custom != s || permref.IsReserved(s) || strings.Contains(s, ".")) {
+			t.Fatalf("custom accepted %q", s)
 		}
 	})
 }

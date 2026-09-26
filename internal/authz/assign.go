@@ -19,7 +19,7 @@ var (
 type RoleStore interface {
 	RolesByID(ctx context.Context, tenantID string, ids []string) ([]store.Role, error)
 	UserRoles(ctx context.Context, tenantID, userID string) ([]store.Role, error)
-	RolePermissions(ctx context.Context, tenantID, roleID string) ([][2]string, error)
+	RolePermissions(ctx context.Context, tenantID, roleID string) ([]PermissionRef, error)
 	ReplaceBindings(ctx context.Context, tenantID, userID, grantedBy string, roleIDs []string) error
 	CountWithRole(ctx context.Context, tenantID, slug string) (int, error)
 }
@@ -63,7 +63,7 @@ func (a *Assigner) AssignRoles(ctx context.Context, tenantID, userID string, rol
 		}
 	}
 	if err := a.MayAssign(ctx, actor, tenantID, adding); err != nil {
-		if errors.Is(err, ErrSelfEscalation) {
+		if errors.Is(err, ErrSelfEscalation) || errors.Is(err, ErrRoleRetired) {
 			return nil, a.refuse(actor, tenantID, userID, err)
 		}
 		return nil, err
@@ -117,9 +117,22 @@ func (a *Assigner) AssignRoles(ctx context.Context, tenantID, userID string, rol
 	return slugs, nil
 }
 
+// refuseRetired returns ErrRoleRetired when any role is retired (feature
+// 019): a module no longer provides it, so it may only be kept, not newly
+// assigned — whoever the actor is.
+func refuseRetired(roles []store.Role) error {
+	for _, r := range roles {
+		if r.RetiredAt != nil {
+			return ErrRoleRetired
+		}
+	}
+	return nil
+}
+
 // MayAssign reports whether actor may grant roleIDs in tenantID. It is a
 // pure check shared by AssignRoles and invitations: every role counts as new,
-// nothing is written. Owners may grant anything; everyone else is refused
+// nothing is written. Retired roles are refused (ErrRoleRetired). Owners may
+// grant anything else; everyone else is refused
 // owner/admin and any role carrying a permission they do not hold
 // (ErrSelfEscalation). Unknown role ids fail with store.ErrNotFound.
 func (a *Assigner) MayAssign(ctx context.Context, actor tenantctx.Actor, tenantID string, roleIDs []string) error {
@@ -131,6 +144,9 @@ func (a *Assigner) MayAssign(ctx context.Context, actor tenantctx.Actor, tenantI
 	}
 	roles, err := a.st.RolesByID(ctx, tenantID, dedupe(roleIDs))
 	if err != nil {
+		return err
+	}
+	if err := refuseRetired(roles); err != nil {
 		return err
 	}
 	if hasSlug(actor.Roles, "owner") {
@@ -145,9 +161,7 @@ func (a *Assigner) MayAssign(ctx context.Context, actor tenantctx.Actor, tenantI
 		if err != nil {
 			return err
 		}
-		for _, p := range perms {
-			granting = append(granting, PermissionRef{Resource: p[0], Action: p[1]})
-		}
+		granting = append(granting, perms...)
 	}
 	return NewEscalation(a.authz).MayGrant(ctx, actor, tenantID, granting)
 }

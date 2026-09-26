@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { UiPage, UiCard, UiAlert, UiButton, UiForm, UiInput, UiSelect, UiDataTable, UiStatusChip, type Column, type SelectOption } from '@go-tangra/ui'
 import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
-import { auditEventTypes, reasonMessage } from '@/api/vocab'
+import { auditEventLabel, auditEventTypes, reasonMessage } from '@/api/vocab'
 import { auditFilterSchema } from '@/schemas'
 
 /** One row of GET /api/v1/admin/audit (internal/audit.Item). */
@@ -22,7 +22,7 @@ interface AuditEvent {
 const items = ref<AuditEvent[]>([])
 const next = ref<string | undefined>(undefined)
 const error = ref<string | null>(null)
-const eventOptions: SelectOption[] = auditEventTypes.map((t) => ({ title: t, value: t }))
+const eventOptions: SelectOption[] = auditEventTypes.map((t) => ({ title: auditEventLabel(t), value: t }))
 const filter = useZodForm(auditFilterSchema, { initial: { user_id: '', from: '', to: '' }, onSubmit: (f) => load(f, false) })
 type Filter = ReturnType<typeof auditFilterSchema.parse>
 async function load(f: Filter, more: boolean): Promise<void> {
@@ -44,7 +44,7 @@ onMounted(apply)
 const rows = computed(() => items.value.map((e, i) => ({ ...e, id: e.ts + ':' + i })))
 const columns: Column<(typeof rows.value)[number]>[] = [
   { key: 'ts', label: 'Time', format: (e) => new Date(e.ts).toLocaleString() },
-  { key: 'event_type', label: 'Event' },
+  { key: 'event_type', label: 'Event', format: (e) => auditEventLabel(e.event_type) },
   { key: 'actor', label: 'Actor', format: (e) => [e.actor_kind, e.actor_user_id ?? ''].filter(Boolean).join(' '), hideOnStack: true },
   { key: 'subject', label: 'Subject', format: (e) => [e.subject_kind ?? '', e.subject_id ?? ''].filter(Boolean).join(' ') },
   { key: 'outcome', label: 'Outcome', width: 'sm' },

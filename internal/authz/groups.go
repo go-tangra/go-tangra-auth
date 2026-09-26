@@ -31,7 +31,7 @@ const (
 // GroupStore is the persistence used by Groups (mirror rows next to OpenFGA).
 type GroupStore interface {
 	RolesByID(ctx context.Context, tenantID string, ids []string) ([]store.Role, error)
-	RolePermissions(ctx context.Context, tenantID, roleID string) ([][2]string, error)
+	RolePermissions(ctx context.Context, tenantID, roleID string) ([]PermissionRef, error)
 	CreateGroup(ctx context.Context, g store.Group) error
 	UpdateGroup(ctx context.Context, tenantID, id, name, description string) error
 	DeleteGroup(ctx context.Context, tenantID, id string) error
@@ -330,9 +330,7 @@ func (g *Groups) roleGrants(ctx context.Context, tenantID string, roles []store.
 		if err != nil {
 			return nil, false, err
 		}
-		for _, p := range ps {
-			perms = append(perms, PermissionRef{Resource: p[0], Action: p[1]})
-		}
+		perms = append(perms, ps...)
 	}
 	return perms, privileged, nil
 }
@@ -474,6 +472,9 @@ func (g *Groups) SetRoles(ctx context.Context, tenantID, id string, roleIDs []st
 		if !containsRole(have, r.ID) {
 			adding = append(adding, r)
 		}
+	}
+	if err := refuseRetired(adding); err != nil {
+		return nil, g.refuse(actor, tenantID, audit.GroupRoleGranted, "group", id, err)
 	}
 	perms, privileged, err := g.roleGrants(ctx, tenantID, adding)
 	if err != nil {

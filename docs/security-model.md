@@ -402,6 +402,42 @@ for the password.
   ceremony records are not logged or audited; audit details carry the method,
   the internal key id and the model AAGUID only.
 
+## Module-scoped permissions and module roles (feature 019)
+
+- **Module identity.** A permission is `(tenant, module, resource, action)`;
+  the module is the service name of the registering service's verified mesh
+  identity (`spiffe://<td>/svc/<name>`), never a request field the caller
+  chooses. A registration or check naming another module is refused
+  (`PermissionDenied`, `module_mismatch`, audited) — except from the gateway
+  (`gateway.service`), which registers the modules it proxies but may never
+  send roles, `declares_roles` or built-in grants, and whose registration for
+  `auth` changes nothing. Without a module the gateway only touches legacy
+  rows, so an old gateway cannot create a module named `gateway`.
+- **Checks.** A module-scoped check evaluates only
+  `permission:<tid>/<module>~<res>~<act>`; it falls back to the legacy
+  object only while that module has not registered the permission in the
+  tenant (rollout), which is exactly the pre-019 answer. The decision cache
+  key carries the evaluated reference, so scoped and legacy answers never
+  cross. `backup:manage`, `stats:read` and `groups:manage` no longer bleed
+  across modules once the modules registered.
+- **Module roles** only contain permissions of their own registration
+  (SR-002; `foreign_permission` otherwise), are locked (`managed_role`) and
+  are assigned or cloned under the same escalation check as any role
+  (SR-003). Retired roles keep existing holders and are refused for new
+  assignments — users, groups, invitations, activation and operators alike;
+  an invitation accepted after retirement drops the role (audited).
+- **Built-in roles.** Custom roles may not use `owner`, `admin`, `member`,
+  `auditor`, `operator` or a dotted slug. Built-in grants reach only roles
+  with origin `builtin`: before 019 a holder of `roles:manage` could create an
+  empty custom `operator` role in a customer tenant and receive every module's
+  operator grants within five minutes; `verify` lists such roles (`review`)
+  for an administrator.
+- **Migration.** The first scoped registration of a module in a tenant grants
+  the scoped permission to every role holding the legacy one (system actor,
+  audited); the tenant marker is set only after the OpenFGA writes, which are
+  idempotent (`on_duplicate`/`on_missing: ignore`). `prune-legacy` refuses
+  unless `verify` finds no loss, pending grant or drift (SR-004).
+
 ## What the service never does
 
 - Store or log passwords, session secrets, challenge ids, codes or tokens in
@@ -442,6 +478,14 @@ for the password.
 | **D** oversized / malformed authenticator data | 64 KiB body cap, size-checked parse wrappers, bounded stored fields | `FuzzWebAuthnCreation`, `FuzzWebAuthnAssertion`, `TestWebAuthnRegistrationRoutes` |
 | **E** hijacked session removes the victim's key | removal confirmed by a current factor; wrong confirmations count toward lockout | `TestRenameAndRemove`, `TestWebAuthnManagementRoutes` |
 | **E** admin resets a more privileged user's factors | deactivation privilege rules, `users:manage`, audit `mfa_reset` | `TestAdminResetMFAFailures`, `TestWebAuthnAdminRoutes` |
+| **S** a module registers permissions or roles as another module | module from the verified SPIFFE id; `module ≠ caller` only from the gateway, which cannot send roles or grants | `TestRegisterModuleAttribution`, `TestModuleRoleErrors` |
+| **T** module role with another module's permissions | roles may only name permissions of the same registration | `TestModuleRoleErrors`, `authclient.TestRegistrationValidate` |
+| **T** administrator edits a module role | locked (`managed_role`), clone instead | `TestLockAndClone`, `TestModuleRoleHandlers` |
+| **I** cross-module permission bleed | module-scoped objects and checks; a service may not ask about another module | `TestCrossModuleDenialAndFallback`, `TestCheckModuleRules`, `TestModuleScopeRollout` |
+| **E** custom role named like a built-in receives module grants | slugs reserved; grants only to origin `builtin` | `TestBuiltinGrantsReportedNotLost`, `TestCustomRoleSlugsAndViews` |
+| **E** escalation by cloning or assigning a module role | same `MayGrant`/`MayAssign` as any role | `TestLockAndClone`, `TestModuleRoleAssignment` |
+| **E** retired role keeps granting new holders | new assignments refused everywhere; acceptance drops it | `TestModuleRoleAssignment`, `TestAcceptDropsRetiredRoles` |
+| **D** access lost during the migration | marker-last migration, legacy fallback, `verify` before `prune-legacy` | `TestMigrationPreservesAccess`, `TestMigrationMarkerLast`, `TestVerifyAndPrune`, `TestModuleScopeRollout` |
 
 ## Contracts
 

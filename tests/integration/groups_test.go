@@ -20,17 +20,17 @@ func TestGroups(t *testing.T) {
 	tid, owner := e.Seed("acme", "owner@acme.test", pw, "")
 	roles := e.SeedRoles(tid)
 	e.Bind(tid, owner, roles, "owner")
-	if _, err := e.App.Registry.Register(svcCtx(), tid, "spiffe://example.org/svc/test", []authz.Permission{{Resource: "invoices", Action: "read"}, {Resource: "invoices", Action: "write"}}); err != nil {
+	if _, err := e.App.Registry.Register(svcCtx(), tid, "billing", "spiffe://example.org/svc/test", []authz.Permission{{Resource: "invoices", Action: "read"}, {Resource: "invoices", Action: "write"}}); err != nil {
 		t.Fatal(err)
 	}
 	if e.SignIn("acme", "owner@acme.test", pw) != 200 {
 		t.Fatal("sign-in")
 	}
-	_, reader := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "invoices-reader", "display_name": "Invoices", "permissions": []string{"invoices:read"}})
+	_, reader := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "invoices-reader", "display_name": "Invoices", "permissions": []string{"billing:invoices:read"}})
 	readerID := reader["id"].(string)
 	_, dana := e.Seed("acme", "dana@acme.test", pw, "")
 	e.Bind(tid, dana, roles) // member only
-	read := authz.PermissionRef{Resource: "invoices", Action: "read"}
+	read := authz.PermissionRef{Module: "billing", Resource: "invoices", Action: "read"}
 
 	// Dana signs in before the group exists: her session must pick up the group's role later.
 	db := e.Browser()
@@ -117,9 +117,9 @@ func TestGroups(t *testing.T) {
 		t.Fatalf("reactivated member keeps membership: %+v", d)
 	}
 	// Deleting the role withdraws it from the group; deleting the group withdraws everything.
-	_, writer := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "invoices-writer", "display_name": "W", "permissions": []string{"invoices:write"}})
+	_, writer := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "invoices-writer", "display_name": "W", "permissions": []string{"billing:invoices:write"}})
 	e.JSON(http.MethodPut, "/api/v1/admin/groups/"+gid+"/roles", map[string]any{"role_ids": []string{readerID, writer["id"].(string)}})
-	write := authz.PermissionRef{Resource: "invoices", Action: "write"}
+	write := authz.PermissionRef{Module: "billing", Resource: "invoices", Action: "write"}
 	if d, _ := e.App.Decider.Decide(svcCtx(), tid, dana, write); !d.Allowed {
 		t.Fatalf("second group role: %+v", d)
 	}
@@ -183,9 +183,9 @@ func TestGroupDecisionLatency(t *testing.T) {
 	tid, owner := e.Seed("acme", "owner@acme.test", pw, "")
 	roles := e.SeedRoles(tid)
 	e.Bind(tid, owner, roles, "owner")
-	_, _ = e.App.Registry.Register(svcCtx(), tid, "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
+	_, _ = e.App.Registry.Register(svcCtx(), tid, "billing", "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
 	e.SignIn("acme", "owner@acme.test", pw)
-	_, role := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reader", "display_name": "R", "permissions": []string{"invoices:read"}})
+	_, role := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reader", "display_name": "R", "permissions": []string{"billing:invoices:read"}})
 	_, direct := e.Seed("acme", "direct@acme.test", pw, "")
 	e.JSON(http.MethodPut, "/api/v1/admin/users/"+direct+"/roles", map[string]any{"role_ids": []string{role["id"].(string)}})
 	_, grouped := e.Seed("acme", "grouped@acme.test", pw, "")
@@ -196,7 +196,7 @@ func TestGroupDecisionLatency(t *testing.T) {
 		}
 		e.JSON(http.MethodPost, "/api/v1/admin/groups/"+g["id"].(string)+"/members", map[string]any{"user_ids": []string{grouped}})
 	}
-	read := authz.PermissionRef{Resource: "invoices", Action: "read"}
+	read := authz.PermissionRef{Module: "billing", Resource: "invoices", Action: "read"}
 	measure := func(uid string) time.Duration {
 		var lat []time.Duration
 		for i := 0; i < 200; i++ {

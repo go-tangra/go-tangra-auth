@@ -56,25 +56,25 @@ func newUS3(t *testing.T) *us3 {
 func TestRegistry(t *testing.T) {
 	h := newUS3(t)
 	defs := []Permission{{"invoices", "read", "Read invoices"}, {"invoices", "write", "Write invoices"}}
-	n, err := h.reg.Register(h.sys, tA, "spiffe://example.org/svc/billing", defs)
+	n, err := h.reg.Register(h.sys, tA, "", "spiffe://example.org/svc/billing", defs)
 	if err != nil || n != 2 {
 		t.Fatal(n, err)
 	}
-	if n, err := h.reg.Register(h.sys, tA, "spiffe://example.org/svc/billing", defs); err != nil || n != 2 {
+	if n, err := h.reg.Register(h.sys, tA, "", "spiffe://example.org/svc/billing", defs); err != nil || n != 2 {
 		t.Fatal("idempotent", n, err)
 	}
-	list, _ := h.reg.List(context.Background(), tA)
+	list, _ := h.reg.Catalogue(h.sys, tA, tenantctx.Actor{Kind: tenantctx.KindSystem})
 	if len(list) != 2 || list[0].Description != "Read invoices" {
 		t.Fatalf("%v", list)
 	}
-	if _, err := h.reg.Register(h.sys, tA, "svc", []Permission{{"Bad Res", "read", ""}}); !errors.Is(err, ErrBadPermission) {
+	if _, err := h.reg.Register(h.sys, tA, "", "svc", []Permission{{"Bad Res", "read", ""}}); !errors.Is(err, ErrBadPermission) {
 		t.Fatal("malformed accepted")
 	}
-	if ok, _ := h.fga.Check(context.Background(), PermissionTenantTuple(tA, PermissionRef{"invoices", "read"})); !ok {
+	if ok, _ := h.fga.Check(context.Background(), PermissionTenantTuple(tA, PermissionRef{Resource: "invoices", Action: "read"})); !ok {
 		t.Fatal("permission tenant tuple missing")
 	}
 	// A user of tenant A cannot register for tenant B.
-	if _, err := h.reg.Register(h.user, tB, "x", defs); err == nil {
+	if _, err := h.reg.Register(h.user, tB, "", "x", defs); err == nil {
 		t.Fatal("cross-tenant registration accepted")
 	}
 }
@@ -82,22 +82,22 @@ func TestRegistry(t *testing.T) {
 func TestRolesCRUDAndDecisions(t *testing.T) {
 	h := newUS3(t)
 	ctx := context.Background()
-	_, _ = h.reg.Register(h.sys, tA, "svc", []Permission{{"invoices", "read", ""}, {"invoices", "write", ""}, {"audit", "read", ""}})
+	_, _ = h.reg.Register(h.sys, tA, "billing", "svc", []Permission{{"invoices", "read", ""}, {"invoices", "write", ""}, {"audit", "read", ""}})
 	// Built-ins are immutable; unknown permissions and bad slugs are refused.
-	if _, err := h.rl.Update(h.own, tA, "r-admin", "Admins", []string{"invoices:read"}); !errors.Is(err, ErrBuiltin) {
+	if _, err := h.rl.Update(h.own, tA, "r-admin", "Admins", []string{"billing:invoices:read"}); !errors.Is(err, ErrBuiltin) {
 		t.Fatalf("builtin update: %v", err)
 	}
 	if err := h.rl.Remove(h.own, tA, "r-owner"); !errors.Is(err, ErrBuiltin) {
 		t.Fatalf("builtin remove: %v", err)
 	}
-	if _, err := h.rl.Create(h.own, tA, "auditor", "Auditor", []string{"nope:x"}); !errors.Is(err, ErrRoleRef) {
+	if _, err := h.rl.Create(h.own, tA, "reviewer", "Reviewer", []string{"billing:nope:x"}); !errors.Is(err, ErrRoleRef) {
 		t.Fatal("unknown permission accepted")
 	}
 	if _, err := h.rl.Create(h.own, tA, "Owner", "x", nil); !errors.Is(err, ErrRoleRef) {
 		t.Fatal("bad slug accepted")
 	}
 	// Owner creates the auditor role; bob is assigned; decisions carry the role reason.
-	auditor, err := h.rl.Create(h.own, tA, "auditor", "Auditor", []string{"audit:read", "invoices:read"})
+	auditor, err := h.rl.Create(h.own, tA, "reviewer", "Reviewer", []string{"billing:audit:read", "billing:invoices:read"})
 	if err != nil || len(auditor.Permissions) != 2 {
 		t.Fatal(auditor, err)
 	}
@@ -105,19 +105,19 @@ func TestRolesCRUDAndDecisions(t *testing.T) {
 	if _, err := as.AssignRoles(h.own, tA, "u-bob", []string{auditor.ID}); err != nil {
 		t.Fatal(err)
 	}
-	read, write, aread := PermissionRef{"invoices", "read"}, PermissionRef{"invoices", "write"}, PermissionRef{"audit", "read"}
-	dec, err := h.dec.BatchDecide(h.sys, tA, "u-bob", []PermissionRef{read, write, aread, {"nope", "x"}})
+	read, write, aread := PermissionRef{Module: "billing", Resource: "invoices", Action: "read"}, PermissionRef{Module: "billing", Resource: "invoices", Action: "write"}, PermissionRef{Module: "billing", Resource: "audit", Action: "read"}
+	dec, err := h.dec.BatchDecide(h.sys, tA, "u-bob", []PermissionRef{read, write, aread, {Resource: "nope", Action: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !dec[0].Allowed || dec[0].Reason != "role:auditor" || dec[1].Allowed || dec[1].Reason != ReasonNoPermission || !dec[2].Allowed || dec[3].Reason != ReasonUnknownPermission {
+	if !dec[0].Allowed || dec[0].Reason != "role:reviewer" || dec[1].Allowed || dec[1].Reason != ReasonNoPermission || !dec[2].Allowed || dec[3].Reason != ReasonUnknownPermission {
 		t.Fatalf("%+v", dec)
 	}
 	// Cached within the version; a role update bumps the version and changes the answer.
 	if d, _ := h.dec.Decide(h.sys, tA, "u-bob", read); !d.Allowed {
 		t.Fatal("cache hit")
 	}
-	if _, err := h.rl.Update(h.own, tA, auditor.ID, "", []string{"audit:read"}); err != nil {
+	if _, err := h.rl.Update(h.own, tA, auditor.ID, "", []string{"billing:audit:read"}); err != nil {
 		t.Fatal(err)
 	}
 	if d, _ := h.dec.Decide(h.sys, tA, "u-bob", read); d.Allowed {
@@ -138,18 +138,18 @@ func TestRolesCRUDAndDecisions(t *testing.T) {
 		t.Fatal("cross-tenant decision")
 	}
 	// Self-escalation: the admin (no explicit permissions) cannot create a role granting invoices:write.
-	if _, err := h.rl.Create(h.adm, tA, "billing", "Billing", []string{"invoices:write"}); !errors.Is(err, ErrSelfEscalation) {
+	if _, err := h.rl.Create(h.adm, tA, "billing", "Billing", []string{"billing:invoices:write"}); !errors.Is(err, ErrSelfEscalation) {
 		t.Fatalf("escalation: %v", err)
 	}
 	// Give the admin invoices:write through a role and retry.
-	billing, _ := h.rl.Create(h.own, tA, "billing", "Billing", []string{"invoices:write"})
+	billing, _ := h.rl.Create(h.own, tA, "billing", "Billing", []string{"billing:invoices:write"})
 	if _, err := as.AssignRoles(h.own, tA, "u-admin", []string{"r-admin", billing.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.rl.Create(h.adm, tA, "billing2", "Billing 2", []string{"invoices:write"}); err != nil {
+	if _, err := h.rl.Create(h.adm, tA, "billing2", "Billing 2", []string{"billing:invoices:write"}); err != nil {
 		t.Fatalf("held permission: %v", err)
 	}
-	if _, err := h.rl.Update(h.adm, tA, billing.ID, "", []string{"invoices:write", "audit:read"}); !errors.Is(err, ErrSelfEscalation) {
+	if _, err := h.rl.Update(h.adm, tA, billing.ID, "", []string{"billing:invoices:write", "billing:audit:read"}); !errors.Is(err, ErrSelfEscalation) {
 		t.Fatal("update escalation")
 	}
 	// Remove unassigns everyone and clears grants.

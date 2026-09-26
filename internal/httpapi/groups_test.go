@@ -7,6 +7,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
@@ -18,7 +19,7 @@ func withGroups(t *testing.T, u *us1) (*audit.Writer, *authz.Client) {
 	az := authz.New(authz.NewFake(), c, nil)
 	u.ms.AddUser(store.User{ID: "u3", TenantID: tid, Email: "dana@x.test", DisplayName: "Dana", Status: "active"})
 	u.ms.AddUser(store.User{ID: "u9", TenantID: "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c99", Email: "f@x.test", Status: "active"})
-	u.ms.RolePerms["r-auditor"] = [][2]string{{"audit", "read"}}
+	u.ms.RolePerms["r-auditor"] = []permref.Ref{{Resource: "audit", Action: "read"}}
 	u.srv.RegisterGroups(GroupDeps{Groups: authz.NewGroups(u.ms, az, aw)})
 	return aw, az
 }

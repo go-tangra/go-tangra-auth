@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptInvitationSchema, auditFilterSchema, changePasswordSchema, clientSchema, grantSchema, groupSchema, inviteSchema, mfaChallengeSchema, policySchema, roleSchema, signInSchema, tenantSchema, totpSchema } from '@/schemas'
+import { acceptInvitationSchema, auditFilterSchema, changePasswordSchema, clientSchema, grantSchema, groupSchema, inviteSchema, mfaChallengeSchema, policySchema, roleCloneSchema, roleSchema, signInSchema, suggestSlug, tenantSchema, totpSchema } from '@/schemas'
 
 const bad = (r: { success: boolean; error?: { issues: { path: PropertyKey[]; message: string }[] } }) => (r.success ? [] : r.error!.issues.map((i) => i.path.join('.') + ':' + i.message))
 
@@ -40,6 +40,34 @@ describe('console schemas (T034)', () => {
     expect(roleSchema.safeParse({ slug: 'Billing', display_name: 'X' }).success).toBe(false)
     expect(roleSchema.safeParse({ slug: 'billing', display_name: 'X', permissions: ['invoices'] }).success).toBe(false)
     expect(roleSchema.parse({ slug: 'billing', display_name: 'Billing' })).toEqual({ slug: 'billing', display_name: 'Billing', permissions: [] })
+  })
+  it('role: every built-in slug is reserved and dots are kept for module roles', () => {
+    for (const slug of ['owner', 'admin', 'member', 'auditor', 'operator']) expect(roleSchema.safeParse({ slug, display_name: 'X' }).success).toBe(false)
+    const dotted = roleSchema.safeParse({ slug: 'm.warden.viewer', display_name: 'X' })
+    expect(dotted.success).toBe(false)
+    expect(dotted.error?.issues[0]?.message).toMatch(/module roles/i)
+    expect(roleSchema.safeParse({ slug: 'auditors', display_name: 'X' }).success).toBe(true)
+  })
+  it('role: permissions are qualified module:resource:action refs, legacy resource:action kept', () => {
+    const ok = (permissions: string[]) => roleSchema.safeParse({ slug: 'r', display_name: 'R', permissions }).success
+    expect(ok(['warden:backup:manage', 'lcm:certificates:read', 'a-b:c_d:e-f'])).toBe(true)
+    expect(ok(['backup:manage'])).toBe(true)
+    expect(ok(['Warden:backup:manage'])).toBe(false)
+    expect(ok(['warden:backup:manage:extra'])).toBe(false)
+    expect(ok(['warden_x:backup:manage'])).toBe(false)
+    expect(ok([`${'m'.repeat(33)}:backup:manage`])).toBe(false)
+    expect(ok(['warden::manage'])).toBe(false)
+    expect(ok(['1warden:backup:manage'])).toBe(false)
+  })
+  it('role clone: name required, slug follows the custom-role grammar; slug suggestion', () => {
+    expect(roleCloneSchema.parse({ slug: 'readers', display_name: ' Readers ' })).toEqual({ slug: 'readers', display_name: 'Readers' })
+    expect(roleCloneSchema.safeParse({ slug: 'admin', display_name: 'X' }).success).toBe(false)
+    expect(roleCloneSchema.safeParse({ slug: 'a.b', display_name: 'X' }).success).toBe(false)
+    expect(roleCloneSchema.safeParse({ slug: 'ok', display_name: '' }).success).toBe(false)
+    expect(suggestSlug('  Warden viewer (copy) ')).toBe('warden-viewer-copy')
+    expect(suggestSlug('Ops -- Team!')).toBe('ops-team')
+    expect(suggestSlug('Č')).toBe('')
+    expect(suggestSlug('a'.repeat(62) + ' b')).toBe('a'.repeat(62))
   })
   it('group: 1–64 characters trimmed, description optional → ""', () => {
     expect(groupSchema.parse({ name: ' Ops ' })).toEqual({ name: 'Ops', description: '' })

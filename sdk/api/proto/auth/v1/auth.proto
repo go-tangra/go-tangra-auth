@@ -140,6 +140,10 @@ message CheckRequest {
   string resource = 3;       // e.g. "invoices"
   string action = 4;         // e.g. "read"
   map<string, string> context = 5; // reserved for conditions
+  // Module owning the permission (feature 019). Empty: the caller's module
+  // (services) or the legacy permission (gateway). A service other than the
+  // gateway may only name its own module.
+  string module = 6;
 }
 message CheckResponse {
   bool allowed = 1;
@@ -147,7 +151,11 @@ message CheckResponse {
   string policy_version = 3; // tenant version used for the decision
 }
 message BatchCheckRequest { string tenant_id = 1; string user_id = 2; repeated PermissionRef permissions = 3; }
-message PermissionRef { string resource = 1; string action = 2; }
+message PermissionRef {
+  string resource = 1;
+  string action = 2;
+  string module = 3; // same rules as CheckRequest.module (feature 019)
+}
 message BatchCheckResponse { repeated CheckResponse results = 1; }
 
 message RegisterPermissionsRequest {
@@ -158,10 +166,44 @@ message RegisterPermissionsRequest {
   // (owner, admin, member, auditor, operator) of every tenant; idempotent.
   // Permissions not in this request are refused (feature 005).
   repeated BuiltinGrant builtin_grants = 3;
+  // Module the registration is for (feature 019). Empty: the caller's service
+  // name (gateway without module: legacy rows only). Must equal the caller's
+  // service name unless the caller is the gateway.
+  string module = 4;
+  string module_display_name = 5; // 1-120 chars; kept when empty
+  repeated ModuleRoleDef roles = 6; // at most 20; refused from the gateway
+  // true: roles is the module's complete role set (absent slugs are retired).
+  // false: roles are left unchanged (gateway, old modules).
+  bool declares_roles = 7;
+}
+// ModuleRoleDef is a locked role a module provides in every tenant (feature 019).
+message ModuleRoleDef {
+  string slug = 1;                 // ^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$
+  string display_name = 2;         // e.g. "Warden viewer"
+  string description = 3;          // at most 256 characters
+  repeated string permissions = 4; // "resource:action" of this request, 1-200
 }
 message BuiltinGrant { string role = 1; repeated string permissions = 2; }
 message PermissionDef { string resource = 1; string action = 2; string description = 3; }
-message RegisterPermissionsResponse { uint32 registered = 1; }
+message RegisterPermissionsResponse {
+  uint32 registered = 1;                    // permissions x tenants
+  repeated SkippedGrant skipped_grants = 2; // built-in grants that found no role (feature 019)
+  repeated RoleError role_errors = 3;       // roles rejected individually
+  uint32 roles_upserted = 4;                // definitions created or changed
+  repeated string roles_retired = 5;        // slugs retired by this registration
+}
+// SkippedGrant reports a built-in grant whose role does not exist in some tenants.
+message SkippedGrant {
+  string role = 1;                       // built-in slug, e.g. "operator"
+  uint32 tenants = 2;                    // tenants without that role
+  repeated string sample_tenant_ids = 3; // at most 5
+  string reason = 4;                     // role_missing
+}
+// RoleError names a module role the registration refused.
+message RoleError {
+  string slug = 1;
+  string reason = 2; // invalid_slug | invalid_name | foreign_permission | too_many_permissions | no_permissions | duplicate
+}
 
 // Profiles answers "who is this user id" for services on the Freya channel.
 // The tenant must match the caller's grant like Authorization.Check; the phone

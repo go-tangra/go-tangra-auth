@@ -80,19 +80,52 @@ func (b *SDKBackend) BatchCheck(ctx context.Context, ts []Tuple) ([]bool, error)
 	return out, nil
 }
 
-func (b *SDKBackend) Write(ctx context.Context, adds, removes []Tuple) error {
-	req := client.ClientWriteRequest{}
+// MaxTuplesPerWrite is OpenFGA's default limit of tuples in one Write call.
+const MaxTuplesPerWrite = 100
+
+// writeOptions makes writes idempotent (feature 019, OpenFGA >= 1.10): a
+// duplicate add or a missing delete succeeds, so a registration or a mirror
+// repair that repeats a write after a partial failure converges.
+var writeOptions = client.ClientWriteOptions{Conflict: client.ClientWriteConflictOptions{
+	OnDuplicateWrites: client.CLIENT_WRITE_REQUEST_ON_DUPLICATE_WRITES_IGNORE,
+	OnMissingDeletes:  client.CLIENT_WRITE_REQUEST_ON_MISSING_DELETES_IGNORE,
+}}
+
+// writeChunks splits adds and removes into requests of at most
+// MaxTuplesPerWrite tuples; each request is atomic, the sequence is not.
+func writeChunks(adds, removes []Tuple) []client.ClientWriteRequest {
+	var out []client.ClientWriteRequest
+	cur := client.ClientWriteRequest{}
+	n := 0
+	flush := func() {
+		if n > 0 {
+			out = append(out, cur)
+			cur, n = client.ClientWriteRequest{}, 0
+		}
+	}
 	for _, t := range adds {
-		req.Writes = append(req.Writes, client.ClientTupleKey{User: t.User, Relation: t.Relation, Object: t.Object})
+		if n == MaxTuplesPerWrite {
+			flush()
+		}
+		cur.Writes = append(cur.Writes, client.ClientTupleKey{User: t.User, Relation: t.Relation, Object: t.Object})
+		n++
 	}
 	for _, t := range removes {
-		req.Deletes = append(req.Deletes, client.ClientTupleKeyWithoutCondition{User: t.User, Relation: t.Relation, Object: t.Object})
+		if n == MaxTuplesPerWrite {
+			flush()
+		}
+		cur.Deletes = append(cur.Deletes, client.ClientTupleKeyWithoutCondition{User: t.User, Relation: t.Relation, Object: t.Object})
+		n++
 	}
-	if len(req.Writes) == 0 && len(req.Deletes) == 0 {
-		return nil
-	}
-	if _, err := b.c.Write(ctx).Body(req).Execute(); err != nil {
-		return fmt.Errorf("authz: write: %w", err)
+	flush()
+	return out
+}
+
+func (b *SDKBackend) Write(ctx context.Context, adds, removes []Tuple) error {
+	for _, req := range writeChunks(adds, removes) {
+		if _, err := b.c.Write(ctx).Body(req).Options(writeOptions).Execute(); err != nil {
+			return fmt.Errorf("authz: write: %w", err)
+		}
 	}
 	return nil
 }

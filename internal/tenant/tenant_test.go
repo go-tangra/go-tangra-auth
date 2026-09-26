@@ -82,7 +82,7 @@ func TestCreateSuspendReactivate(t *testing.T) {
 	}
 	tid := created.Tenant.ID
 	roles, _ := f.ms.ListRoles(ctx, tid)
-	if len(roles) != 3 {
+	if len(roles) != 4 { // owner, admin, member, auditor (feature 019)
 		t.Fatalf("builtin roles %v", roles)
 	}
 	if ok, _ := f.fga.Check(ctx, authz.RoleTenantTuple(tid, "owner")); !ok {
@@ -193,5 +193,54 @@ func TestOperatorGrants(t *testing.T) {
 	types := f.auditTypes()
 	if types["operator_grant_created"] != 1 || types["operator_grant_used"] != 1 || types["cross_tenant_refused"] != 2 {
 		t.Fatalf("audit %v", types)
+	}
+}
+
+// T039 (feature 019): a new tenant receives the built-in roles including
+// auditor, and — through OnCreated — every non-retired module permission and
+// module role of the catalogue without any re-registration.
+func TestCreateInstantiatesModuleCatalogue(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	reg := authz.NewRegistry(f.ms, f.az, f.aw)
+	roles := authz.NewRoles(f.ms, f.az, authz.NewEscalation(f.az), f.aw)
+	mods := authz.NewModules(f.ms, reg, roles, f.az, f.aw)
+	sys := tenantctx.WithActor(ctx, tenantctx.Actor{Kind: tenantctx.KindSystem})
+	// warden registered while only the platform tenant existed.
+	if _, err := mods.Register(sys, authz.Registration{Module: "warden", DisplayName: "Warden", Registrant: "spiffe://td/svc/warden", Tenants: []string{tP},
+		Permissions: []authz.Permission{{Resource: "secrets", Action: "read"}},
+		Roles:       []authz.ModuleRole{{Slug: "viewer", DisplayName: "Warden viewer", Permissions: []string{"secrets:read"}}}, DeclaresRoles: true}); err != nil {
+		t.Fatal(err)
+	}
+	f.svc.OnCreated = func(ctx context.Context, tid string) {
+		if err := mods.InstantiateTenant(ctx, tid); err != nil {
+			t.Error(err)
+		}
+	}
+	created, err := f.svc.Create(f.op, "globex", "Globex", "owner@globex.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tid := created.Tenant.ID
+	list, _ := f.ms.ListRoles(ctx, tid)
+	slugs := map[string]store.Role{}
+	for _, r := range list {
+		slugs[r.Slug] = r
+	}
+	for _, s := range []string{"owner", "admin", "member", "auditor"} {
+		if r, ok := slugs[s]; !ok || !r.Builtin {
+			t.Fatalf("built-in %s: %+v", s, list)
+		}
+	}
+	viewer, ok := slugs["m.warden.viewer"]
+	if !ok || viewer.OriginOf() != store.OriginModule {
+		t.Fatalf("module role missing: %+v", list)
+	}
+	got, _ := f.ms.RolePermissions(ctx, tid, viewer.ID)
+	if len(got) != 1 || got[0].String() != "warden:secrets:read" {
+		t.Fatalf("%v", got)
+	}
+	if ok, _ := f.fga.Check(ctx, authz.PermissionTenantTuple(tid, got[0])); !ok {
+		t.Fatal("permission tenant tuple missing")
 	}
 }

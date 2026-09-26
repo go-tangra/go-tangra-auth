@@ -18,11 +18,11 @@ func TestInviteIntoGroups(t *testing.T) {
 	tid, owner := e.Seed("acme", "owner@acme.test", pw, "")
 	roles := e.SeedRoles(tid)
 	e.Bind(tid, owner, roles, "owner")
-	_, _ = e.App.Registry.Register(svcCtx(), tid, "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
+	_, _ = e.App.Registry.Register(svcCtx(), tid, "billing", "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
 	if e.SignIn("acme", "owner@acme.test", pw) != 200 {
 		t.Fatal("sign-in")
 	}
-	_, reader := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reader", "display_name": "R", "permissions": []string{"invoices:read"}})
+	_, reader := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reader", "display_name": "R", "permissions": []string{"billing:invoices:read"}})
 	_, fin := e.JSON(http.MethodPost, "/api/v1/admin/groups", map[string]any{"name": "Finance"})
 	_, tmp := e.JSON(http.MethodPost, "/api/v1/admin/groups", map[string]any{"name": "Temporary"})
 	e.JSON(http.MethodPut, "/api/v1/admin/groups/"+fin["id"].(string)+"/roles", map[string]any{"role_ids": []string{reader["id"].(string)}})
@@ -47,7 +47,7 @@ func TestInviteIntoGroups(t *testing.T) {
 		t.Fatalf("profile from invitation: %v", sess)
 	}
 	uid := sess["user"].(map[string]any)["id"].(string)
-	if d, _ := e.App.Decider.Decide(svcCtx(), tid, uid, authz.PermissionRef{Resource: "invoices", Action: "read"}); !d.Allowed {
+	if d, _ := e.App.Decider.Decide(svcCtx(), tid, uid, authz.PermissionRef{Module: "billing", Resource: "invoices", Action: "read"}); !d.Allowed {
 		t.Fatalf("group role must apply: %+v", d)
 	}
 	_, groups := e.JSON(http.MethodGet, "/api/v1/admin/users/"+uid+"/groups", nil)

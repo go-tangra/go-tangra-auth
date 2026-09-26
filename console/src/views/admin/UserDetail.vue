@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiCheckbox, UiBadge, UiSection, useConfirm, useToast } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
-import { useRoles } from '@/composables/useRoles'
+import { roleAssignable, roleLabel, useRoles } from '@/composables/useRoles'
 import { useGroups, type EffectiveRole, type UserGroupRef } from '@/stores/groups'
 import ProfileForm from '@/components/ProfileForm.vue'
 import type { AdminUser } from './Users.vue'
@@ -13,6 +13,8 @@ const route = useRoute()
 const id = computed(() => String(route.params.id ?? ''))
 const user = ref<AdminUser | null>(null)
 const selected = ref<string[]>([])
+/** Direct roles the user holds as saved; a retired role stays selectable only while held. */
+const held = ref<string[]>([])
 const error = ref<string | null>(null)
 const saved = ref(false)
 const busy = ref(false)
@@ -77,6 +79,7 @@ async function load(): Promise<void> {
   await Promise.all([loadEffective(), loadMfa()])
   const direct = new Set(effective.value.filter((e) => e.sources?.some((s) => s.kind === 'direct')).map((e) => e.slug ?? ''))
   selected.value = roles.value.filter((r) => r.slug && (direct.size ? direct.has(r.slug) : user.value?.roles.includes(r.slug))).map((r) => r.id ?? '')
+  held.value = [...selected.value]
 }
 const toggle = (rid: string, on: unknown) => (selected.value = on ? [...new Set([...selected.value, rid])] : selected.value.filter((x) => x !== rid))
 const sourceLabel = (e: EffectiveRole) => (e.sources ?? []).map((s) => (s.kind === 'direct' ? 'direct' : `via ${s.group_name}`)).join(', ')
@@ -87,6 +90,7 @@ async function save(): Promise<void> {
   try {
     const res = await api<{ roles: string[] }>('PUT', `/api/v1/admin/users/${encodeURIComponent(id.value)}/roles`, { role_ids: selected.value })
     if (user.value) user.value.roles = res.roles
+    held.value = [...selected.value]
     saved.value = true
     await loadEffective()
   } catch (err) {
@@ -126,7 +130,7 @@ onMounted(load)
     </UiCard>
     <UiCard title="Roles">
       <UiSection title="Direct roles">
-        <UiCheckbox v-for="r in roles" :id="'role-' + (r.id ?? '')" :key="r.id ?? ''" :model-value="selected.includes(r.id ?? '')" :label="`${r.display_name} (${(r.permissions ?? []).length} permissions)`" data-test="role" @update:model-value="toggle(r.id ?? '', $event)" />
+        <UiCheckbox v-for="r in roles" :id="'role-' + (r.id ?? '')" :key="r.id ?? ''" :model-value="selected.includes(r.id ?? '')" :label="`${roleLabel(r)} (${(r.permissions ?? []).length} permissions)${r.retired ? ' — retired' : ''}`" :disabled="!roleAssignable(r, held)" data-test="role" @update:model-value="toggle(r.id ?? '', $event)" />
         <p v-if="roles.length === 0" class="text-xs text-base-content/70">No roles are defined yet.</p>
       </UiSection>
       <UiSection title="Effective roles">

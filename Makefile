@@ -29,7 +29,7 @@ cover:
 	./scripts/coverage-gate.sh $(COVER_OUT)
 
 fuzz:
-	for f in FuzzSlug FuzzPermissionRef FuzzFGAObjectID FuzzTokenParse FuzzJWKS FuzzTOTPCode FuzzRecoveryCode FuzzRecoveryToken FuzzOutboxPayload FuzzWebAuthnCreation FuzzWebAuthnAssertion; do \
+	for f in FuzzSlug FuzzPermissionRef FuzzFGAObjectID FuzzTokenParse FuzzJWKS FuzzTOTPCode FuzzRecoveryCode FuzzRecoveryToken FuzzOutboxPayload FuzzWebAuthnCreation FuzzWebAuthnAssertion FuzzQualifiedRef FuzzModuleRoleSlug; do \
 	  $(GO) test -run xxx -fuzz=$$f -fuzztime=20s ./tests/fuzz/ || exit 1; done
 
 generate:

@@ -6,12 +6,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
 var (
 	slugRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
-	nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,63}$`)
 )
 
 // ErrMalformed is returned for identifiers that do not match the grammar.
@@ -25,24 +25,19 @@ func ParseSlug(s string) (string, error) {
 	return s, nil
 }
 
-// PermissionRef is a resource/action pair such as "invoices:read".
-type PermissionRef struct{ Resource, Action string }
+// PermissionRef is a permission: "module:resource:action", or the legacy
+// "resource:action" when Module is empty (feature 019, see permref).
+type PermissionRef = permref.Ref
 
-// ParsePermissionRef parses "resource:action" (each [a-z0-9][a-z0-9_.-]{0,63}).
+// ParsePermissionRef parses a qualified "module:resource:action" or a legacy
+// "resource:action" reference.
 func ParsePermissionRef(s string) (PermissionRef, error) {
-	i := strings.IndexByte(s, ':')
-	if i < 0 || strings.Count(s, ":") != 1 {
+	r, err := permref.ParseAny(s)
+	if err != nil {
 		return PermissionRef{}, ErrMalformed
 	}
-	res, act := s[:i], s[i+1:]
-	if !nameRE.MatchString(res) || !nameRE.MatchString(act) {
-		return PermissionRef{}, ErrMalformed
-	}
-	return PermissionRef{Resource: res, Action: act}, nil
+	return r, nil
 }
-
-// String renders "resource:action".
-func (p PermissionRef) String() string { return p.Resource + ":" + p.Action }
 
 // Object builders. Every object carries its tenant so the model can never be
 // asked a question that spans tenants.
@@ -53,11 +48,10 @@ func RoleAssignees(tid, slug string) string { return RoleObject(tid, slug) + "#a
 func GroupObject(tid, gid string) string    { return "group:" + tid + "/" + gid }
 func GroupMembers(tid, gid string) string   { return GroupObject(tid, gid) + "#member" }
 
-// PermissionObject renders "permission:<tenant>/<resource>~<action>": OpenFGA
-// object identifiers cannot contain ':' and '~' is outside the name grammar.
-func PermissionObject(tid string, p PermissionRef) string {
-	return "permission:" + tid + "/" + p.Resource + "~" + p.Action
-}
+// PermissionObject renders "permission:<tenant>/<module>~<resource>~<action>"
+// (legacy: "permission:<tenant>/<resource>~<action>"): OpenFGA object
+// identifiers cannot contain ':' and '~' is outside the name grammar.
+func PermissionObject(tid string, p PermissionRef) string { return p.Object(tid) }
 
 // ObjectTenant extracts and validates the tenant id carried by a tenant, role
 // or permission object id.

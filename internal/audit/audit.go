@@ -77,6 +77,14 @@ const (
 	// credential id or public key.
 	MFAReset          EventType = "mfa_reset"
 	MFACloneSuspected EventType = "mfa_clone_suspected"
+	// Feature 019: module roles and module-scoped permissions. Platform-wide
+	// events (module_*) are recorded in the platform tenant.
+	ModuleRegistered   EventType = "module_registered"
+	ModuleRoleUpserted EventType = "module_role_upserted"
+	ModuleRoleRetired  EventType = "module_role_retired"
+	RoleCloned         EventType = "role_cloned"
+	PermissionMigrated EventType = "permission_migrated"
+	PermissionPruned   EventType = "permission_pruned"
 )
 
 var known = map[EventType]struct{}{}
@@ -88,7 +96,8 @@ func init() {
 		OperatorGrantCreated, OperatorGrantUsed, ClientRegistered, PolicyUpdated, CrossTenantRefused, AuthzDenied, TokenExchanged,
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
-		DirectoryImported, ImportedUserDeleted, EmailGivenUp, MFAReset, MFACloneSuspected} {
+		DirectoryImported, ImportedUserDeleted, EmailGivenUp, MFAReset, MFACloneSuspected,
+		ModuleRegistered, ModuleRoleUpserted, ModuleRoleRetired, RoleCloned, PermissionMigrated, PermissionPruned} {
 		known[t] = struct{}{}
 	}
 }

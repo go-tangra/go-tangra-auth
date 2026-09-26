@@ -21,14 +21,14 @@ func BenchmarkCheck(b *testing.B) {
 	tid, owner := e.Seed("acme", "owner@acme.test", pw, "")
 	roles := e.SeedRoles(tid)
 	e.Bind(tid, owner, roles, "owner")
-	_, _ = e.App.Registry.Register(svcCtx(), tid, "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
+	_, _ = e.App.Registry.Register(svcCtx(), tid, "billing", "svc", []authz.Permission{{Resource: "invoices", Action: "read"}})
 	if e.SignIn("acme", "owner@acme.test", pw) != 200 {
 		b.Fatal("sign-in")
 	}
-	_, role := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reviewer", "display_name": "Reviewer", "permissions": []string{"invoices:read"}})
+	_, role := e.JSON(http.MethodPost, "/api/v1/admin/roles", map[string]any{"slug": "reviewer", "display_name": "Reviewer", "permissions": []string{"billing:invoices:read"}})
 	_, carol := e.Seed("acme", "carol@acme.test", pw, "")
 	e.JSON(http.MethodPut, "/api/v1/admin/users/"+carol+"/roles", map[string]any{"role_ids": []string{role["id"].(string)}})
-	read := authz.PermissionRef{Resource: "invoices", Action: "read"}
+	read := authz.PermissionRef{Module: "billing", Resource: "invoices", Action: "read"}
 	ctx := svcCtx()
 	const workers = 1000
 	var mu sync.Mutex

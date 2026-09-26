@@ -11,6 +11,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 	"github.com/go-tangra/go-tangra/v4/authn"
@@ -31,7 +32,7 @@ func TestAuthorizationServer(t *testing.T) {
 	ctx := tenantctx.WithActor(context.Background(), tenantctx.Actor{Kind: tenantctx.KindService, ServiceID: "spiffe://example.org/svc/billing"})
 	srv2 := &AuthorizationServer{Decider: srv.Decider, Registry: srv.Registry}
 	// Bypass serviceCtx by calling the registry directly for setup, then exercise Check.
-	if _, err := srv2.Registry.Register(ctx, tid, "svc", []authz.Permission{{Resource: "invoices", Action: "read"}}); err != nil {
+	if _, err := srv2.Registry.Register(ctx, tid, "", "svc", []authz.Permission{{Resource: "invoices", Action: "read"}}); err != nil {
 		t.Fatal(err)
 	}
 	resp, err := srv2.Check(ctx, &authv1.CheckRequest{TenantId: tid, UserId: "u1", Resource: "invoices", Action: "read"})
@@ -57,7 +58,8 @@ func TestRegisterPermissionsBuiltinGrants(t *testing.T) {
 	ms.AddRole(store.Role{ID: "r-member", TenantID: tid, Slug: "member", DisplayName: "Member", Builtin: true})
 	c := authz.New(authz.NewFake(), cache.New(cache.NewMemory()), nil)
 	roles := authz.NewRoles(ms, c, authz.NewEscalation(c), nil)
-	srv := &AuthorizationServer{Decider: authz.NewDecider(ms, c, nil), Registry: authz.NewRegistry(ms, c, nil), Roles: roles}
+	reg := authz.NewRegistry(ms, c, nil)
+	srv := &AuthorizationServer{Decider: authz.NewDecider(ms, c, nil), Registry: reg, Roles: roles, Modules: authz.NewModules(ms, reg, roles, c, nil)}
 	id, _ := identity.NewSPIFFEID("example.org", "warden")
 	ctx := authn.WithPeer(context.Background(), authn.PeerIdentity{ID: id, ServiceName: "warden"})
 	perms := []*authv1.PermissionDef{{Resource: "secrets", Action: "read"}, {Resource: "secrets", Action: "write"}}
@@ -85,7 +87,7 @@ func TestRegisterPermissionsBuiltinGrants(t *testing.T) {
 		}
 	}
 	got, err := ms.RolePermissions(context.Background(), tid, "r-member")
-	if err != nil || len(got) != 1 || got[0] != [2]string{"secrets", "read"} {
+	if err != nil || len(got) != 1 || got[0] != (permref.Ref{Module: "warden", Resource: "secrets", Action: "read"}) {
 		t.Fatalf("member permissions: %v %v", got, err)
 	}
 }

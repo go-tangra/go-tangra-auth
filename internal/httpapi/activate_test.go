@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
@@ -49,7 +50,7 @@ func newActHarness(t *testing.T) *actHarness {
 	ctx := context.Background()
 	h, _ := crypto.HashPassword("correct horse battery", crypto.DefaultParams)
 	u.ms.AddRole(store.Role{ID: "r-importer", TenantID: tid, Slug: "importer"})
-	u.ms.RolePerms["r-importer"] = [][2]string{{"directory", "manage"}}
+	u.ms.RolePerms["r-importer"] = []permref.Ref{{Resource: "directory", Action: "manage"}}
 	u.ms.AddUser(store.User{ID: actAdmin, TenantID: tid, Email: "adm@x.test", DisplayName: "Adm", Status: "active", PasswordHash: &h})
 	_ = u.ms.ReplaceBindings(ctx, tid, actAdmin, "", []string{"r-admin"})
 	u.ms.AddUser(store.User{ID: actImporter, TenantID: tid, Email: "imp-role@x.test", DisplayName: "Importer", Status: "active", PasswordHash: &h})

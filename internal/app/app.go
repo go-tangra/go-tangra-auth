@@ -98,7 +98,11 @@ type App struct {
 	Registry  *authz.Registry
 	Roles     *authz.Roles
 	Decider   *authz.Decider
-	MFA       *mfa.Service
+	// Modules registers module-scoped permissions and module roles (feature 019).
+	Modules *authz.Modules
+	// Verifier checks and prunes legacy permissions (feature 019).
+	Verifier *authz.Verifier
+	MFA      *mfa.Service
 	// WebAuthn is nil when security keys are disabled (feature 018).
 	WebAuthn *webauthn.Service
 	Changer  *password.Changer
@@ -249,6 +253,10 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Registry = authz.NewRegistry(authzdb.DBPermissionStore{St: a.Store}, a.Authz, a.Audit)
 	a.Roles = authz.NewRoles(authzdb.DBRoleCRUDStore{DBRoleStore: roleStore}, a.Authz, authz.NewEscalation(a.Authz), a.Audit)
 	a.Decider = authz.NewDecider(authzdb.DBStatusStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
+	a.Modules = authz.NewModules(authzdb.DBModuleStore{St: a.Store}, a.Registry, a.Roles, a.Authz, a.Audit)
+	a.Modules.PlatformTenant = PlatformTenantID
+	a.Modules.Tenants = a.activeTenantIDs
+	a.Verifier = authz.NewVerifier(authzdb.DBVerifyStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
 	a.HTTP.RegisterUS3(httpapi.US3Deps{Roles: a.Roles, Registry: a.Registry})
 	a.MFA = mfa.New(mfadb.DBStore{St: a.Store}, a.Cache, a.Envelope, a.Audit, cfg.MFA.Issuer)
 	a.Signin.SetMFA(a.MFA)
@@ -264,8 +272,13 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	tstore := tenantdb.DBStore{St: a.Store}
 	a.Tenants = tenant.New(tstore, a.Invites, a.Sessions, a.Authz, a.Cache, a.Audit)
 	a.Tenants.OnCreated = func(ctx context.Context, tid string) {
-		if err := a.seedConsolePermissions(ctx, tid); err != nil {
+		if err := a.seedConsolePermissions(ctx, []string{tid}); err != nil {
 			log.Error("console permissions", "tenant", tid, "err", err)
+		}
+		// Module permissions and roles of the catalogue (feature 019): a new
+		// tenant does not wait for the modules' next registration.
+		if err := a.Modules.InstantiateTenant(ctx, tid); err != nil {
+			log.Error("module catalogue", "tenant", tid, "err", err)
 		}
 	}
 	a.Grants = tenant.NewGrants(tenantdb.DBGrantStore{DBStore: tstore}, a.Audit)
@@ -274,7 +287,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 		return nil, err
 	}
 	// Always mounted (the contract declares the routes); disabled answers 404.
-	dd := httpapi.DirectoryDeps{Enabled: cfg.Directory.Enabled, Authz: a.Authz}
+	dd := httpapi.DirectoryDeps{Enabled: cfg.Directory.Enabled, Authz: a.Decider}
 	if a.Directories != nil {
 		dd.Directories = a.Directories
 	}
@@ -289,7 +302,8 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 		h.Sessions = &grpcapi.SessionsServer{Sessions: a.Sessions, Tokens: a.Tokens, Audit: a.Audit, Poll: cfg.Session.RevocationPoll}
 	}
 	if h.Authorization == nil {
-		h.Authorization = &grpcapi.AuthorizationServer{Decider: a.Decider, Registry: a.Registry, Tenants: a.activeTenantIDs, Roles: a.Roles}
+		h.Authorization = &grpcapi.AuthorizationServer{Decider: a.Decider, Registry: a.Registry, Tenants: a.activeTenantIDs, Roles: a.Roles,
+			Modules: a.Modules, Gateway: cfg.Gateway.Service, Audit: a.Audit, Log: log}
 	}
 	if h.Enrollment == nil {
 		h.Enrollment = &grpcapi.EnrollmentServer{Tokens: a.Tokens, Store: a.Store, Audit: a.Audit}
@@ -421,6 +435,10 @@ func (a *App) Run(ctx context.Context) error {
 	if a.Cfg.Gateway.Enabled {
 		// Gateway mode: seed console permissions and keep the gateway lease.
 		go a.runGatewayMode(wctx)
+	} else {
+		// Standalone: built-in roles and console permissions are reconciled
+		// at every start (feature 019: auditor, module "auth").
+		go a.seedLoop(wctx)
 	}
 	return a.Freya.Run(ctx)
 }
@@ -471,7 +489,8 @@ type BootstrapResult struct {
 	AlreadyProvisioned bool   `json:"already_provisioned,omitempty"`
 }
 
-var builtinRoles = []string{"owner", "admin", "operator"}
+// platformBuiltinRoles are the built-in roles of the platform tenant.
+var platformBuiltinRoles = []string{"owner", "admin", "operator", "auditor"}
 
 // Bootstrap ensures the platform tenant, its builtin roles, an active signing
 // key and queues an operator invitation (the accept link is also returned so
@@ -503,7 +522,7 @@ func (a *App) Bootstrap(ctx context.Context, operatorEmail string) (BootstrapRes
 		for _, r := range existing {
 			roleIDs[r.Slug] = r.ID
 		}
-		for _, slug := range builtinRoles {
+		for _, slug := range platformBuiltinRoles {
 			if _, ok := roleIDs[slug]; ok {
 				continue
 			}

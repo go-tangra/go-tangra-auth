@@ -203,7 +203,8 @@ func ReplaceGroupRoles(ctx context.Context, tx pgx.Tx, tenantID, groupID, grante
 
 // GroupRoles lists the roles of a group.
 func GroupRoles(ctx context.Context, tx pgx.Tx, tenantID, groupID string) ([]Role, error) {
-	rows, err := tx.Query(ctx, `SELECT r.id, r.tenant_id, r.slug, r.display_name, r.builtin, r.created_at, r.updated_at
+	rows, err := tx.Query(ctx, `SELECT r.id, r.tenant_id, r.slug, r.display_name, r.builtin, r.created_at, r.updated_at,
+		r.origin, coalesce(r.module, ''), coalesce(r.module_slug, ''), r.description, r.retired_at
 		FROM group_roles gr JOIN roles r ON r.id = gr.role_id WHERE gr.tenant_id = $1 AND gr.group_id = $2 ORDER BY r.slug`, tenantID, groupID)
 	if err != nil {
 		return nil, err

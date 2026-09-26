@@ -76,14 +76,44 @@ components:
         response: { type: object }
         authenticatorAttachment: { type: string, nullable: true }
         clientExtensionResults: { type: object }
+    PermissionRef:
+      type: string
+      description: 'Qualified module:resource:action (feature 019); the legacy resource:action form is kept only for grants made before module-scoped permissions, until prune-legacy'
+      pattern: '^([a-z][a-z0-9-]{0,31}:)?[a-z][a-z0-9_-]{0,63}:[a-z][a-z0-9_-]{0,31}$'
     Role:
       type: object
       properties:
         id: { type: string, format: uuid }
-        slug: { type: string }
+        slug: { type: string, description: 'custom roles: lowercase letters, digits and dashes; owner, admin, member, auditor, operator are reserved; module roles are m.<module>.<slug>' }
         display_name: { type: string }
+        description: { type: string, maxLength: 256 }
         builtin: { type: boolean }
-        permissions: { type: array, items: { type: string, pattern: '^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$' } }
+        origin: { type: string, enum: [builtin, module, custom] }
+        module: { type: string, description: 'module providing the role (origin module), else empty' }
+        module_display_name: { type: string }
+        module_slug: { type: string }
+        locked: { type: boolean, description: 'built-in or module role: not editable, clone it instead' }
+        retired: { type: boolean, description: 'no longer provided by its module: kept for existing assignments, not newly assignable' }
+        retired_at: { type: string, format: date-time, nullable: true }
+        permissions: { type: array, items: { $ref: '#/components/schemas/PermissionRef' } }
+    CatalogueEntry:
+      type: object
+      properties:
+        ref: { $ref: '#/components/schemas/PermissionRef' }
+        module: { type: string, description: 'empty for legacy permissions' }
+        module_display_name: { type: string, description: '"Authentication" for auth, "Before modules" for legacy permissions' }
+        resource: { type: string }
+        action: { type: string }
+        description: { type: string }
+        grantable: { type: boolean, description: 'the caller may grant it (owners: every permission; others: the ones they hold)' }
+        legacy: { type: boolean }
+    CloneRole:
+      type: object
+      additionalProperties: false
+      required: [slug, display_name]
+      properties:
+        slug: { type: string }
+        display_name: { type: string, maxLength: 120 }
     Session:
       type: object
       properties:
@@ -546,7 +576,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }]
       summary: Invite a user with roles (admin)
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [email], properties: { email: { type: string }, role_ids: { type: array, items: { type: string, format: uuid } }, group_ids: { type: array, maxItems: 50, items: { type: string, format: uuid } }, first_name: { $ref: '#/components/schemas/Name' }, last_name: { $ref: '#/components/schemas/Name' } } } } } }
-      responses: { '202': { description: invitation queued (identical whether or not the email already exists) } }
+      responses: { '202': { description: invitation queued (identical whether or not the email already exists) }, '409': { description: role_retired } }
   /api/v1/admin/invitations/{id}/resend:
     post:
       operationId: resendInvitation
@@ -558,7 +588,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
       summary: Replace a user's roles (admin; cannot grant permissions the actor lacks; last-owner protected)
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, properties: { role_ids: { type: array, items: { type: string } } } } } } }
-      responses: { '200': { description: updated }, '403': { description: denied | self_escalation | last_owner }, '409': { description: 'invalid_state (imported user)' } }
+      responses: { '200': { description: updated }, '403': { description: denied | self_escalation | last_owner }, '409': { description: 'invalid_state (imported user) | role_retired (a retired module role the user does not hold)' } }
   /api/v1/admin/users/{id}/deactivate:
     post:
       operationId: deactivateUser
@@ -579,6 +609,7 @@ paths:
         '200': { description: per-user outcomes, content: { application/json: { schema: { $ref: '#/components/schemas/ActivateResult' } } } }
         '400': { description: validation_failed | malformed_body }
         '403': { description: forbidden | self_escalation }
+        '409': { description: role_retired }
   /api/v1/admin/users/{id}/remove-imported:
     post:
       operationId: removeImportedUser
@@ -608,29 +639,47 @@ paths:
       summary: Remove a user's authenticator app, security keys and recovery codes and end their sessions (admin; not self, not a more privileged user)
       responses: { '204': { description: reset }, '403': { description: forbidden }, '404': { description: not_found }, '409': { description: 'invalid_state (imported user)' } }
   /api/v1/roles:
-    get: { operationId: listRoleNames, summary: 'Subject picker (feature 005): slug and display name of the tenant roles, any signed-in member', responses: { '200': { description: roles } } }
+    get: { operationId: listRoleNames, summary: 'Subject picker (feature 005): slug, display name, origin, module display name and retired flag of the tenant roles, any signed-in member', responses: { '200': { description: roles } } }
   /api/v1/admin/roles:
-    get: { operationId: listRoles, summary: List roles with permissions, responses: { '200': { description: roles } } }
+    get:
+      operationId: listRoles
+      summary: List roles with permissions, origin (builtin, module, custom), module and retirement (feature 019)
+      responses: { '200': { description: roles, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Role' } } } } } }
     post:
       operationId: createRole
       parameters: [{ $ref: '#/components/parameters/csrf' }]
-      summary: Create a custom role
+      summary: Create a custom role; permissions are qualified module:resource:action refs
       requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Role' } } } }
-      responses: { '201': { description: created }, '403': { description: self_escalation } }
+      responses: { '201': { description: created }, '400': { description: 'validation_failed (reserved slug, slug with a dot, unknown permission)' }, '403': { description: self_escalation }, '409': { description: 'conflict (slug taken)' } }
   /api/v1/admin/roles/{id}:
     put:
       operationId: updateRole
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
-      summary: Update a custom role's permissions (built-ins immutable)
-      responses: { '200': { description: updated }, '403': { description: builtin | self_escalation } }
+      summary: Update a custom role's permissions (built-in and module roles are locked); legacy refs are accepted only if the role already holds them
+      responses: { '200': { description: updated }, '400': { description: validation_failed }, '403': { description: 'builtin | managed_role (module role; body hint "clone") | self_escalation' } }
   /api/v1/admin/roles/{id}/remove:
     post:
       operationId: removeRole
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
       summary: Remove a custom role (unassigns everyone)
-      responses: { '204': { description: removed } }
+      responses: { '204': { description: removed }, '403': { description: 'builtin | managed_role' } }
+  /api/v1/admin/roles/{id}/clone:
+    post:
+      operationId: cloneRole
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
+      summary: 'Copy any role but owner into a new custom role with its current permissions (legacy grants not copied); the caller must hold every permission (feature 019)'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CloneRole' } } } }
+      responses:
+        '201': { description: created, content: { application/json: { schema: { $ref: '#/components/schemas/Role' } } } }
+        '400': { description: validation_failed }
+        '403': { description: 'self_escalation | builtin (owner)' }
+        '404': { description: not_found }
+        '409': { description: 'conflict (slug taken)' }
   /api/v1/admin/permissions:
-    get: { operationId: listPermissions, summary: Registered permissions (resource:action + description), responses: { '200': { description: list } } }
+    get:
+      operationId: listPermissions
+      summary: 'Permission catalogue grouped by module (feature 019): qualified ref, module, module display name, grantable for the caller; retired modules omitted; legacy rows flagged'
+      responses: { '200': { description: list, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CatalogueEntry' } } } } } }
   /api/v1/admin/policy:
     get: { operationId: getPolicy, summary: Tenant security policy, responses: { '200': { description: policy, content: { application/json: { schema: { $ref: '#/components/schemas/Policy' } } } } } }
     put:
@@ -809,7 +858,7 @@ paths:
       summary: Replace the group's roles; cannot grant permissions the actor lacks (owners exempt)
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [role_ids], properties: { role_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } } } } } } }
-      responses: { '200': { description: role slugs }, '403': { description: self_escalation } }
+      responses: { '200': { description: role slugs }, '403': { description: self_escalation }, '409': { description: 'role_retired (a retired module role the group does not hold)' } }
   /api/v1/admin/directories:
     get:
       operationId: listDirectories

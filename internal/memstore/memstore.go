@@ -6,10 +6,12 @@ package memstore
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
@@ -29,11 +31,11 @@ type Store struct {
 	Attempts []Attempt
 	Clients  map[string]store.ClientApplication
 	// US2 state
-	Invitations map[string]store.Invitation // by id
-	RoleRows    map[string]store.Role       // by id
-	Bindings    map[string][]string         // tenant/user → role ids
-	RolePerms   map[string][][2]string      // role id → resource/action
-	Permissions map[string][][3]string      // tenant → resource, action, description
+	Invitations map[string]store.Invitation   // by id
+	RoleRows    map[string]store.Role         // by id
+	Bindings    map[string][]string           // tenant/user → role ids
+	RolePerms   map[string][]permref.Ref      // role id → grants (feature 019: module-scoped)
+	Permissions map[string][]store.Permission // tenant → catalogue
 	Outbox      []store.OutboxItem
 	Codes       map[string][]recoveryCode // tenant/user → codes
 	Recoveries  map[string]store.RecoveryRequest
@@ -45,12 +47,13 @@ type Store struct {
 	failNext    map[string]bool                       // methods armed by FailNext (see directory.go)
 	keys        map[string][]store.WebAuthnCredential // feature 018: tenant/user → keys (see webauthn.go)
 	handles     map[string][]byte                     // tenant/user → WebAuthn user handle
+	mods        *moduleState                          // feature 019 (see modules.go)
 }
 
 // New returns an empty store.
 func New() *Store {
 	return &Store{Tenants: map[string]store.Tenant{}, Users: map[string]store.User{}, Sessions: map[string]*store.Session{}, RoleMap: map[string][]string{}, Clients: map[string]store.ClientApplication{},
-		Invitations: map[string]store.Invitation{}, RoleRows: map[string]store.Role{}, Bindings: map[string][]string{}, RolePerms: map[string][][2]string{}, Permissions: map[string][][3]string{}, Codes: map[string][]recoveryCode{}, Recoveries: map[string]store.RecoveryRequest{}, Grants: map[string]store.OperatorGrant{}, Now: time.Now}
+		Invitations: map[string]store.Invitation{}, RoleRows: map[string]store.Role{}, Bindings: map[string][]string{}, RolePerms: map[string][]permref.Ref{}, Permissions: map[string][]store.Permission{}, Codes: map[string][]recoveryCode{}, Recoveries: map[string]store.RecoveryRequest{}, Grants: map[string]store.OperatorGrant{}, Now: time.Now}
 }
 
 func key(tid, email string) string { return tid + "/" + strings.ToLower(email) }
@@ -597,6 +600,9 @@ func (m *Store) UpdateRoleName(_ context.Context, tid, id, name string) error {
 	if !ok || r.TenantID != tid {
 		return store.ErrNotFound
 	}
+	if r.OriginOf() != store.OriginCustom {
+		return nil // like the SQL: only custom roles are renamed
+	}
 	r.DisplayName = name
 	m.RoleRows[id] = r
 	return nil
@@ -605,7 +611,7 @@ func (m *Store) RemoveRole(_ context.Context, tid, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r, ok := m.RoleRows[id]
-	if !ok || r.TenantID != tid {
+	if !ok || r.TenantID != tid || r.OriginOf() != store.OriginCustom {
 		return store.ErrNotFound
 	}
 	keep := map[string]store.Role{}
@@ -615,6 +621,7 @@ func (m *Store) RemoveRole(_ context.Context, tid, id string) error {
 		}
 	}
 	m.RoleRows = keep
+	delete(m.RolePerms, id)
 	for k, ids := range m.Bindings {
 		var out []string
 		for _, x := range ids {
@@ -626,13 +633,25 @@ func (m *Store) RemoveRole(_ context.Context, tid, id string) error {
 	}
 	return nil
 }
-func (m *Store) ReplaceRolePermissions(_ context.Context, tid, rid string, perms [][2]string) error {
+func (m *Store) ReplaceRolePermissions(_ context.Context, tid, rid string, perms []permref.Ref) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.fail("ReplaceRolePermissions"); err != nil {
+		return err
+	}
 	if r, ok := m.RoleRows[rid]; !ok || r.TenantID != tid {
 		return store.ErrNotFound
 	}
-	m.RolePerms[rid] = append([][2]string(nil), perms...)
+	seen := map[permref.Ref]bool{}
+	var out []permref.Ref
+	for _, p := range perms {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	sortRefs(out)
+	m.RolePerms[rid] = out
 	return nil
 }
 func (m *Store) RoleAssignees(_ context.Context, tid, rid string) ([]string, error) {
@@ -651,23 +670,69 @@ func (m *Store) RoleAssignees(_ context.Context, tid, rid string) ([]string, err
 	}
 	return out, nil
 }
-func (m *Store) UpsertPermission(_ context.Context, tid, res, act, desc, _ string) error {
+func (m *Store) UpsertPermission(_ context.Context, tid string, p store.Permission, _ string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for i, p := range m.Permissions[tid] {
-		if p[0] == res && p[1] == act {
-			m.Permissions[tid][i][2] = desc
+	for i, x := range m.Permissions[tid] {
+		if x.Ref() == p.Ref() {
+			m.Permissions[tid][i].Description = p.Description
 			return nil
 		}
 	}
-	m.Permissions[tid] = append(m.Permissions[tid], [3]string{res, act, desc})
+	m.Permissions[tid] = append(m.Permissions[tid], p)
 	return nil
 }
-func (m *Store) ListPermissions(_ context.Context, tid string) ([][3]string, error) {
+func (m *Store) ListPermissions(_ context.Context, tid string) ([]store.Permission, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([][3]string(nil), m.Permissions[tid]...), nil
+	out := append([]store.Permission(nil), m.Permissions[tid]...)
+	sort.Slice(out, func(i, j int) bool { return lessRef(out[i].Ref(), out[j].Ref()) })
+	return out, nil
 }
+
+// DeleteLegacyPermissions drops a tenant's legacy rows and mirror grants.
+func (m *Store) DeleteLegacyPermissions(_ context.Context, tid string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var keep []store.Permission
+	var n int64
+	for _, p := range m.Permissions[tid] {
+		if p.Module == "" {
+			n++
+			continue
+		}
+		keep = append(keep, p)
+	}
+	m.Permissions[tid] = keep
+	for id, r := range m.RoleRows {
+		if r.TenantID != tid {
+			continue
+		}
+		var grants []permref.Ref
+		for _, g := range m.RolePerms[id] {
+			if !g.IsLegacy() {
+				grants = append(grants, g)
+			}
+		}
+		m.RolePerms[id] = grants
+	}
+	return n, nil
+}
+
+func lessRef(a, b permref.Ref) bool {
+	if a.Module != b.Module {
+		return a.Module < b.Module
+	}
+	if a.Resource != b.Resource {
+		return a.Resource < b.Resource
+	}
+	return a.Action < b.Action
+}
+
+func sortRefs(refs []permref.Ref) {
+	sort.Slice(refs, func(i, j int) bool { return lessRef(refs[i], refs[j]) })
+}
+
 func (m *Store) UserStatus(_ context.Context, tid, uid string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -708,6 +773,13 @@ func (m *Store) ListRoles(_ context.Context, tid string) ([]store.Role, error) {
 			out = append(out, r)
 		}
 	}
+	// Like the SQL: built-in first, then by slug.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Builtin != out[j].Builtin {
+			return out[i].Builtin
+		}
+		return out[i].Slug < out[j].Slug
+	})
 	return out, nil
 }
 func (m *Store) UserRoles(_ context.Context, tid, uid string) ([]store.Role, error) {
@@ -721,13 +793,13 @@ func (m *Store) UserRoles(_ context.Context, tid, uid string) ([]store.Role, err
 	}
 	return out, nil
 }
-func (m *Store) RolePermissions(_ context.Context, tid, roleID string) ([][2]string, error) {
+func (m *Store) RolePermissions(_ context.Context, tid, roleID string) ([]permref.Ref, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r, ok := m.RoleRows[roleID]; !ok || r.TenantID != tid {
 		return nil, store.ErrNotFound
 	}
-	return append([][2]string(nil), m.RolePerms[roleID]...), nil
+	return append([]permref.Ref(nil), m.RolePerms[roleID]...), nil
 }
 func (m *Store) ReplaceBindings(_ context.Context, tid, uid, _ string, roleIDs []string) error {
 	m.mu.Lock()
