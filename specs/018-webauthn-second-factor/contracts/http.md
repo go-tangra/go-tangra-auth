@@ -68,3 +68,24 @@ privileged / self) | `404 not_found`.
 | `mfa_clone_suspected` | counter regression | internal key id |
 | `signin_ok` | success | `amr: ["pwd","hwk"]` |
 | `signin_failed` | key failure | `reason: "mfa_failed"` |
+
+## As implemented (differences from the draft above)
+
+The OpenAPI document `api/openapi/console.yaml` is authoritative. Changes
+made during implementation:
+
+- Refusals of **signed-in** ceremonies are never `401` (the console treats
+  `401` as a lost session): `registration_failed` is `400`,
+  `confirmation_failed` is `403` (still counted toward the lockout).
+- `400 invalid_name` for a key name outside 1–64 printable characters
+  (options and rename).
+- `404 webauthn_disabled` on the account key routes when
+  `webauthn.enabled` is false (routes stay mounted; the contract declares
+  them). The sign-in key routes then answer `401 invalid_challenge` /
+  `mfa_failed` and `mfa_methods` omits `webauthn`.
+- `409 no_keys` from `POST /me/mfa/stepup/options` when the user has no
+  usable (non-flagged) key.
+- `GET /me/mfa` also returns `"webauthn": {"enabled": bool, "rp_id": host}`
+  so the console can explain which address keys are bound to.
+- `POST /admin/users/{id}/mfa/reset` answers `409 invalid_state` for an
+  imported (never activated) user, like the other admin actions.

@@ -97,6 +97,80 @@ the account. It is written into the `otpauth://` URI at enrolment only; codes
 depend on the seed alone, so changing it never breaks enrolled authenticators
 (they keep the label they were enrolled with).
 
+## Security keys (feature 018)
+
+Users can register hardware security keys (YubiKey and other FIDO2/WebAuthn
+authenticators) as a second factor next to the authenticator app: up to 10
+named keys per user, managed under Account → Second factors. The first
+second factor of any kind issues ten recovery codes; recovery codes remain
+the shared fallback for both kinds. Migration `0010_webauthn.sql` adds the
+`webauthn_credentials` table (RLS like `recovery_codes`) and
+`users.webauthn_handle` (32 random bytes, never the user id).
+
+### Configuration (`webauthn`)
+
+```yaml
+webauthn:
+  enabled: true                 # default: on unless the issuer host is an IP address
+  rp_id: ""                     # default: host of `issuer`
+  origins: []                   # default: [origin of `issuer`] (port kept unless 443)
+  display_name: ""              # default: mfa.issuer ("Tangra")
+  user_verification: preferred  # preferred | required (key PIN or biometric)
+  timeout_seconds: 300          # 30..600; also the lifetime of a pending ceremony
+```
+
+No change is needed in a deployment: the relying party is derived from
+`issuer` (production `https://portal.infra.verax.net:8443` → relying party
+`portal.infra.verax.net`, origin `https://portal.infra.verax.net:8443`). The
+service refuses to start when `rp_id` is neither an origin's host nor a
+parent domain of it, when an origin is not `https://` (plain
+`http://localhost` is accepted outside production), or when
+`user_verification` / `timeout_seconds` are out of range. With
+`webauthn.enabled: false` the routes answer `404 webauthn_disabled`, the
+second step no longer offers keys, and a warning is logged at start if users
+still have keys registered (they then sign in with the authenticator app or a
+recovery code).
+
+### Keys are bound to the public host name
+
+Browsers bind every key to the relying party. Consequences:
+
+- The console must be opened under the configured host name. Opened by IP
+  address or another name, adding a key and signing in with one are refused
+  (the console names the expected address).
+- **Changing the public host name (new domain) invalidates every registered
+  key.** Users sign in with the authenticator app or a recovery code, remove
+  the old keys and register them again; an administrator can reset users who
+  have neither (below). Plan a host change like a key rotation and tell users
+  beforehand.
+- v3 key registrations are not migrated (different relying party and user
+  handles): users register their keys again in v4.
+
+### Administrators and break-glass
+
+- `GET /api/v1/admin/users/{id}/mfa` (console: Users → user → Second
+  factors) shows whether an authenticator app is set, the key names, when they
+  were added and last used, whether one is flagged as possibly cloned, and the
+  number of unused recovery codes — never credential ids or key material.
+- `POST /api/v1/admin/users/{id}/mfa/reset` (`users:manage`) removes the
+  authenticator app, every key and every recovery code, ends the user's
+  sessions and is audited as `mfa_reset`. The same rules as deactivation
+  apply: not your own account, not a more privileged user. A tenant that
+  requires two-step sign-in (the platform tenant always does) asks the user
+  to set up a second factor at the next sign-in.
+- `authsvc reset-user` (break-glass, see Bootstrap) also deletes the user's
+  keys.
+
+### Audit and signals
+
+`mfa_enrolled` / `mfa_removed` carry `method: "webauthn"` (and the model
+AAGUID on enrolment); `signin_ok` records `amr: ["pwd","hwk"]`; a signature
+counter that did not increase refuses the sign-in, flags the key and writes
+`mfa_clone_suspected` — investigate the user's key, then have them remove
+and re-register it. Key failures count toward the same lockout as wrong
+codes (`signin_failed` reason `mfa_failed`, `lockout` reason
+`mfa_failures`).
+
 ## Groups and profiles (feature 004)
 
 - Migration `0005_groups_profiles.sql` adds `groups`, `group_members`,
