@@ -23,6 +23,7 @@ const form = useZodForm(signInSchema, {
       signin.next = safeNext(route.query.next)
       if (res.mfa_required && res.challenge) {
         signin.challenge = res.challenge
+        signin.methods = res.mfa_methods ?? []
         await router.push({ name: 'signin-mfa' })
         return
       }

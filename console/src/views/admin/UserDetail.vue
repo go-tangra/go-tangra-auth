@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { UiPage, UiCard, UiAlert, UiButton, UiCheckbox, UiBadge, UiSection } from '@go-tangra/ui'
+import { UiPage, UiCard, UiAlert, UiButton, UiCheckbox, UiBadge, UiSection, useConfirm, useToast } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useRoles } from '@/composables/useRoles'
@@ -20,6 +20,43 @@ const { roles, load: loadRoles } = useRoles()
 const groups = useGroups()
 const effective = ref<EffectiveRole[]>([])
 const memberOf = ref<UserGroupRef[]>([])
+const confirm = useConfirm()
+const toast = useToast()
+
+// Second factors (feature 018): methods only, never key material.
+interface UserMfa {
+  totp: boolean
+  keys: { name: string; created_at: string; last_used_at: string | null; flagged: boolean }[]
+  recovery_codes_left: number
+}
+const mfa = ref<UserMfa | null>(null)
+const mfaError = ref<string | null>(null)
+const mfaBusy = ref(false)
+const mfaPath = computed(() => `/api/v1/admin/users/${encodeURIComponent(id.value)}/mfa`)
+const fmt = (at: string) => new Date(at).toLocaleString()
+async function loadMfa(): Promise<void> {
+  try {
+    mfa.value = await api<UserMfa>('GET', mfaPath.value)
+  } catch (err) {
+    mfa.value = null
+    if (err instanceof ApiError && err.status !== 404) mfaError.value = reasonMessage(err.reason)
+  }
+}
+async function resetMfa(): Promise<void> {
+  const who = user.value?.email ?? 'this user'
+  if (!(await confirm.ask({ title: `Reset the second factors of ${who}?`, text: 'Their authenticator app, security keys and recovery codes are removed and they are signed out everywhere. They must set up a second factor again.', danger: true, confirmLabel: 'Reset second factors' }))) return
+  mfaBusy.value = true
+  mfaError.value = null
+  try {
+    await api('POST', `${mfaPath.value}/reset`)
+    toast.success(`The second factors of ${who} were reset.`)
+    await loadMfa()
+  } catch (err) {
+    mfaError.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not reset the second factors.'
+  } finally {
+    mfaBusy.value = false
+  }
+}
 
 async function loadEffective(): Promise<void> {
   try {
@@ -35,7 +72,7 @@ async function load(): Promise<void> {
   if (!user.value) error.value = reasonMessage('not_found')
   await loadRoles()
   // Direct roles only are editable here; group roles show under "Effective roles".
-  await loadEffective()
+  await Promise.all([loadEffective(), loadMfa()])
   const direct = new Set(effective.value.filter((e) => e.sources?.some((s) => s.kind === 'direct')).map((e) => e.slug ?? ''))
   selected.value = roles.value.filter((r) => r.slug && (direct.size ? direct.has(r.slug) : user.value?.roles.includes(r.slug))).map((r) => r.id ?? '')
 }
@@ -64,6 +101,26 @@ onMounted(load)
     <template #actions><UiButton variant="text" icon="mdi-arrow-left" @click="$router.push({ name: 'admin-users' })">Back</UiButton></template>
     <UiCard title="Profile" class="mb-4">
       <ProfileForm :profile-path="`/api/v1/admin/users/${encodeURIComponent(id)}/profile`" :avatar-remove-path="`/api/v1/admin/users/${encodeURIComponent(id)}/avatar`" @changed="(p) => { if (user) user.display_name = p.display_name ?? user.display_name }" />
+    </UiCard>
+    <UiCard title="Second factors" class="mb-4" data-test="user-mfa">
+      <template v-if="mfa">
+        <p v-if="!mfa.totp && mfa.keys.length === 0" class="text-sm text-base-content/70" data-test="mfa-none">No second factor is set up.</p>
+        <template v-else>
+          <p class="text-sm">Authenticator app: <strong>{{ mfa.totp ? 'yes' : 'no' }}</strong></p>
+          <p class="text-sm">Security keys: <strong>{{ mfa.keys.length }}</strong></p>
+          <ul v-if="mfa.keys.length" class="ms-4 list-disc text-sm" data-test="user-keys">
+            <li v-for="k in mfa.keys" :key="k.name">
+              {{ k.name }}
+              <span class="text-xs text-base-content/70">· added <time :datetime="k.created_at">{{ fmt(k.created_at) }}</time> ·
+                <template v-if="k.last_used_at">last used <time :datetime="k.last_used_at">{{ fmt(k.last_used_at) }}</time></template><template v-else>never used</template></span>
+              <UiBadge v-if="k.flagged" color="error" class="ms-1">Possibly cloned</UiBadge>
+            </li>
+          </ul>
+          <p class="text-sm">Unused recovery codes: <strong>{{ mfa.recovery_codes_left }}</strong></p>
+          <UiButton class="mt-4" variant="outline" color="error" icon="mdi-shield-off-outline" :loading="mfaBusy" data-test="mfa-reset" @click="resetMfa">Reset second factors</UiButton>
+        </template>
+      </template>
+      <UiAlert v-if="mfaError" kind="error" class="mt-4" data-test="mfa-error">{{ mfaError }}</UiAlert>
     </UiCard>
     <UiCard title="Roles">
       <UiSection title="Direct roles">

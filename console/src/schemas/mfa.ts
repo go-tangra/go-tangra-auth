@@ -9,3 +9,5 @@ export const mfaChallengeSchema = z.object({ code: mfaCode })
 export const totpSchema = z.object({ code: totpCode })
 export const mfaEnrolSchema = z.object({ code: totpCode })
 export const recoveryCodesSavedSchema = z.object({ saved: z.boolean().refine((v) => v, 'Confirm that you saved the codes.') })
+/** A security key's name: 1–64 characters, unique per user (checked by the server). */
+export const keyNameSchema = z.object({ name: z.string().trim().min(1, 'Enter a name for the key.').max(64, 'At most 64 characters.') })
