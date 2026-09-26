@@ -232,7 +232,73 @@ email, at most 20, sharing the lookup rate limit) and `GET /api/v1/roles`
 (slug and display name) serve subject pickers of other modules. Modules may
 pass `builtin_grants` to `Authorization/RegisterPermissions` to grant their
 own freshly registered permissions to built-in roles; grants naming foreign
-permissions or custom roles are refused.
+permissions or custom roles are refused. Since feature 019 the grants are
+module-scoped and reach only roles with origin `builtin` (see below).
+
+## Module roles and module-scoped permissions (feature 019)
+
+Migration `0011_module_roles.sql` makes every permission belong to one
+module (`module:resource:action`, e.g. `warden:backup:manage`), adds the
+platform catalogue (`modules`, `module_permissions`, `module_role_defs`,
+readable in every scope, written only by the service under `app.system`),
+the per-tenant `tenant_modules` state and the role origin (`builtin`,
+`module`, `custom`). Rows that existed before are *legacy* (`module = ''`).
+
+**Registration.** A module's registration (`Authorization/RegisterPermissions`)
+is attributed to the service name of its mesh identity
+(`spiffe://<td>/svc/<name>`); modules use `authclient.Registration` from the
+auth SDK (`sdk/v4.1.0`), which also declares their roles. The gateway
+(`gateway.service`) may register another module's permissions (never roles
+or grants); an old gateway without a module only refreshes legacy rows.
+auth registers its own permissions as module `auth` ("Authentication") at
+every start and on tenant creation.
+
+**Module roles** (`m.<module>.<slug>`) exist in every tenant — tenant
+creation instantiates the catalogue at once — and are locked: administrators
+assign or clone them. A role a module no longer declares is *retired*: kept
+with its grants for existing holders, refused for new assignments (HTTP 409
+`role_retired`). `auditor` is a built-in role of every tenant (reconciled at
+start: missing roles are created, a custom role named `auditor` is adopted);
+`operator` stays platform-only. Built-in grants only reach built-in roles;
+a grant to a role a tenant lacks comes back in `skipped_grants` and is
+logged by auth and by the SDK helper.
+
+**Rollout** (no access is lost at any step):
+
+1. Upgrade auth (and publish `sdk/v4.1.0`). Optionally record the effective
+   permissions first: `authsvc permissions verify -snapshot /tmp/before.json
+   -config …` (run with the new binary before any module upgrades; the file
+   is written with mode 0600).
+2. Upgrade the gateway: it sends the module with every decision and
+   registers modules under their names. Tenants created in between keep
+   working: built-in grants are mirrored to legacy permissions while they
+   exist.
+3. Upgrade the modules one by one. A module's first scoped registration in a
+   tenant grants `module:res:act` to every role holding the legacy
+   `res:act` (audit `permission_migrated`); until then, checks fall back to
+   the legacy permission.
+4. Cut-over, once the gateway and every module run the new versions:
+
+   ```sh
+   authsvc permissions verify -config deploy/container.yaml            # exit 1 on a loss
+   authsvc permissions verify -compare /tmp/before.json -config …      # no loss since the snapshot
+   authsvc permissions prune-legacy -dry-run -config …
+   authsvc permissions prune-legacy -config …
+   ```
+
+   `verify` prints JSON findings: `loss` (a role or user lacks the scoped
+   permission of a module registering the legacy one), `pending` (a legacy
+   grant no module registered yet), `drift` (a mirror grant OpenFGA does not
+   confirm, sampled for 50 users per tenant), `review` (a custom role named
+   `operator` or `auditor` that received module grants before 019 — check
+   who holds it) and, with `-compare`, `gain`. `prune-legacy` refuses unless
+   there is no loss, pending grant or drift, then removes the legacy tuples,
+   rows and grants (audit `permission_pruned` per tenant).
+
+**Removing a module** from the platform: `authsvc modules retire <name>`
+retires its roles in every tenant (grants and assignments kept) and hides its
+permissions from the role editor. A later registration of the module brings
+it back.
 
 ## LDAP directory import (feature 016)
 

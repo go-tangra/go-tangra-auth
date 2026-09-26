@@ -63,7 +63,7 @@ message SkippedGrant {
 
 message RoleError {
   string slug = 1;
-  string reason = 2; // invalid_slug | invalid_name | foreign_permission | too_many_permissions | duplicate
+  string reason = 2; // invalid_slug | invalid_name | foreign_permission | too_many_permissions | no_permissions | duplicate
 }
 ```
 
@@ -104,7 +104,7 @@ Errors: `Unauthenticated` (no service identity), `PermissionDenied`
 
 | Caller | module | Evaluated object |
 |---|---|---|
-| gateway | set | `M~res~act` |
+| gateway | set | `M~res~act`; legacy `res~act` if the scoped permission is unknown in the tenant and the legacy one is known (rollout, research implementation note 2) |
 | gateway | empty | legacy `res~act` |
 | service `C` | empty or `C` | `C~res~act`; legacy `res~act` if the scoped permission is unknown in the tenant and the legacy one is known |
 | service `C` | `M ≠ C` | `PermissionDenied` |

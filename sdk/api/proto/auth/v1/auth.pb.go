@@ -1836,7 +1836,7 @@ func (x *SkippedGrant) GetReason() string {
 type RoleError struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // invalid_slug | invalid_name | foreign_permission | too_many_permissions | duplicate
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // invalid_slug | invalid_name | foreign_permission | too_many_permissions | no_permissions | duplicate
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -202,7 +202,7 @@ message SkippedGrant {
 // RoleError names a module role the registration refused.
 message RoleError {
   string slug = 1;
-  string reason = 2; // invalid_slug | invalid_name | foreign_permission | too_many_permissions | duplicate
+  string reason = 2; // invalid_slug | invalid_name | foreign_permission | too_many_permissions | no_permissions | duplicate
 }
 
 // Profiles answers "who is this user id" for services on the Freya channel.

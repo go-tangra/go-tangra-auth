@@ -277,7 +277,7 @@ Permission names verified against each manifest — all exist.
 | warden (Warden) | administrator | all 10 |
 | | editor | secrets:read, secrets:write, secrets:share, folders:manage, permissions:manage |
 | | viewer | secrets:read |
-| notification (Notifications) | administrator | all 13 |
+| notification (Notifications) | administrator | all but `events:publish` (12, user decision) |
 | | sender | channels:read, templates:read, notifications:send, notifications:read, messages:read, messages:manage, inbox:read |
 | | viewer | channels:read, templates:read, notifications:read, messages:read, inbox:read |
 | lcm (Certificates) | administrator | all 14 |
@@ -306,10 +306,14 @@ Permission names verified against each manifest — all exist.
 
 Module display names (manifest `DisplayName`): Warden, Notifications,
 Certificates (lcm), Deployer, Paperless, Assets, Inventory, IPAM, Tickets,
-DNS — e.g. "Certificates operator", "Assets viewer". Notes: notification administrator includes
-`events:publish` (a module-to-module permission) because "all" is the
-declared set; the module may exclude it when writing the manifest. Built-in
-grants stay (module-scoped from now on).
+DNS — e.g. "Certificates operator", "Assets viewer". Built-in grants stay
+(module-scoped from now on).
+
+**Decision (user, 2026-09-26)**: "Notifications administrator" does **not**
+include `events:publish` — it is a module-to-module permission, not an
+administrator capability; the notification administrator role is therefore
+the 12 other permissions. The role definitions live in the module manifests,
+so this only affects the notification module task (T055).
 
 ### D10 — Contract and SDK helper
 **Decision**: additive proto fields in the auth SDK (contracts/grpc.md):
@@ -369,3 +373,48 @@ backend is exercised only by integration tests).
 | Elevation of privilege | Assigning or cloning a module role with permissions the actor lacks | Same `MayAssign`/`MayGrant` as any role (SR-003) |
 | Elevation of privilege | Retired role keeps granting | Retired roles keep existing assignments only (spec); visible; new assignments refused |
 | Elevation of privilege | Compromised module declares a broad role | Only its own permissions; administrators still decide assignments; audit |
+
+## Implementation notes (auth, 2026-09-26)
+
+Where the implementation refines or deviates from the design above, the
+safer option was taken:
+
+1. **D3 transaction.** PostgreSQL and OpenFGA cannot share a transaction, and
+   the service's stores open one transaction per call. Every grant change is
+   therefore written to OpenFGA first (idempotent writes, D3 options, chunks
+   of ≤ 100 tuples), then to the mirror; the migration marker is written
+   last. A failure between the steps leaves the mirror behind OpenFGA and
+   the next registration converges (`TestMigrationMarkerLast`).
+2. **Gateway checks with a module fall back to legacy** while the module has
+   not registered the permission in the tenant (the contract table listed
+   the scoped object only). Without it, a gateway upgraded before a module
+   (rollout step 2 before 3) would deny `unknown_permission` for every
+   permission of not-yet-upgraded modules. The fallback returns exactly the
+   pre-019 answer and ends as soon as the module registers.
+3. **Checks refuse smuggled modules**: `resource`/`action` of a check must be
+   short names (a resource like `warden:backup` is `InvalidArgument`).
+4. **Role error vocabulary** adds `no_permissions` (a declared role without
+   permissions). A rejected role keeps its previous definition: it is not
+   retired by a `declares_roles` registration that fails to re-declare it
+   validly.
+5. **Built-in grants are not stored in the catalogue**: a new tenant gets the
+   module permissions and roles at creation, the module built-in grants at
+   the module's next registration (≤ 5 min), as before 019. auth's own
+   built-in grants are applied at creation.
+6. **Platform-wide audit events** (`module_registered`,
+   `module_role_upserted`, `module_role_retired`, `module_mismatch`
+   refusals) are recorded in the platform tenant; `permission_migrated`,
+   `permission_pruned` and `role_cloned` in the tenant concerned.
+7. **`verify`** exits 1 on a loss; `pending` (legacy grants no module
+   registered yet) and `drift` (mirror grants OpenFGA does not confirm,
+   sampled for 50 users per tenant) do not change the exit status but block
+   `prune-legacy`, which removes nothing unless every tenant is clean.
+8. **Retired roles are refused for operators and the system actor too**
+   (invitation escalation check), not only for tenant administrators.
+9. **Start-up reconciliation** (built-in roles incl. `auditor`, auth's own
+   registration) now also runs in standalone (non-gateway) mode, where auth
+   permissions used to be seeded only by `authsvc bootstrap`.
+10. **Custom role slugs** follow the database grammar (1–63 characters, no
+    dots) and refuse the five built-in slugs; the migration test lives in
+    `internal/store/modules_test.go` (which owns the migration helpers)
+    rather than `tests/integration/upgrade_test.go`.
