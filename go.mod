@@ -29,7 +29,10 @@ require (
 	golang.org/x/image v0.46.0
 )
 
-require github.com/Azure/go-ntlmssp v0.1.1 // indirect
+require (
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
+	github.com/go-webauthn/webauthn v0.18.2 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

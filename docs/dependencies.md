@@ -16,12 +16,21 @@
 | `github.com/go-tangra/go-tangra-notification/sdk/v4` | v4.2.0 | notification client (`pkg/notifyclient`, `notification.v1` protos): the outbox sends by template key (feature 017) | own copy of the protos (drifts from notification); SMTP in auth (a second relay, credentials in every service) | go-tangra (grpc + protobuf only) |
 | `github.com/go-asn1-ber/asn1-ber` | v1.5.8 (indirect) | BER encoding/decoding under go-ldap; the packet size cap is set from `internal/ldapdir` | — (comes with go-ldap) | Active (same maintainers as go-ldap, MIT) |
 | `github.com/Azure/go-ntlmssp` | v0.1.1 (indirect) | Pulled in by go-ldap's NTLM bind; linked but never called (only `SimpleBind` is used) | — (comes with go-ldap) | Maintained by Microsoft/Azure (MIT) |
+| `github.com/go-webauthn/webauthn` | v0.18.2 | Security keys as a second factor (feature 018, research D1): creation/request options, verification of registration and assertion responses (RP ID hash, origin, challenge, user presence/verification flags, COSE public keys, ECDSA/EdDSA/RSA signatures, signature counter / clone warning). Only attestation `none` is requested; parsing goes through size-bounded wrappers in `internal/webauthn` | hand-written CBOR/COSE/signature verification (custom cryptography, Constitution VI); browser-only checks (verification must be server-side) | Active (BSD-3-Clause; formerly duo-labs/webauthn, used by v3, Gitea, Authelia, Teleport) |
+| `github.com/fxamacker/cbor/v2`, `github.com/x448/float16`, `github.com/go-webauthn/x`, `github.com/google/go-tpm`, `github.com/go-viper/mapstructure/v2`, `github.com/tinylib/msgp`, `github.com/philhofer/fwd` | pinned by `go.sum` (indirect) | Transitive modules of go-webauthn: CBOR decoding (with the library's nesting/size limits), TPM attestation types (never requested: attestation is `none`), metadata decoding, session serialisation code the service does not use (sessions are stored as JSON) | — (come with go-webauthn) | Active (MIT/Apache-2.0/BSD) |
 
 Test-only: stdlib `testing` + fuzzing; `testcontainers-go` (TimescaleDB, Valkey, OpenFGA) under the `integration` tag; notification is an in-process fake (`internal/email/notifytest`).
 
 Console (pinned by `package-lock.json`, `npm audit --audit-level=high` in CI): vue 3.5, vuetify 4.2, vue-router 5, pinia 4, vite 8, typescript 5.9 (7 conflicts with vue-tsc/openapi-typescript peers), vitest 5, @playwright/test 1.63 + @axe-core/playwright, openapi-typescript, qrcode (TOTP enrolment QR), @mdi/font 7 (Material Design Icons webfont for the `mdi-*` icon names Vuetify uses; bundled by Vite so it is served from the same origin under the `font-src 'self'` CSP).
 
 ## Advisories
+
+- `github.com/go-webauthn/webauthn@v0.18.2` (+ transitive modules above): baseline
+  `govulncheck` on 2026-09-26 found no vulnerabilities in these modules. The
+  test suite drives the library end to end with a software ES256 authenticator
+  (`internal/webauthn/softkey`) and fuzzes both parse entry points
+  (`tests/fuzz/webauthn_fuzz_test.go`). Re-run `make vuln` and review the upstream
+  changelog on every bump.
 
 - `github.com/go-ldap/ldap/v3@v3.4.14` (+ `asn1-ber@v1.5.8`, `go-ntlmssp@v0.1.1`):
   baseline `govulncheck` on 2026-09-24 found no vulnerabilities in these modules.

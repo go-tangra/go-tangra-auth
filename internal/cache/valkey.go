@@ -56,6 +56,17 @@ func (v *valkeyKV) Get(ctx context.Context, key string) (string, bool, error) {
 	return s, true, nil
 }
 
+func (v *valkeyKV) GetDel(ctx context.Context, key string) (string, bool, error) {
+	s, err := v.c.Do(ctx, v.c.B().Getdel().Key(key).Build()).ToString()
+	if err != nil {
+		if valkey.IsValkeyNil(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return s, true, nil
+}
+
 func (v *valkeyKV) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	if ttl > 0 {
 		return v.c.Do(ctx, v.c.B().Set().Key(key).Value(value).Px(ttl).Build()).Error()

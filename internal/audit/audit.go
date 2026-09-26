@@ -72,6 +72,11 @@ const (
 	// Feature 017: an outbox message retired without delivery (permanent
 	// failure or attempts exhausted). Reported once; details name the row.
 	EmailGivenUp EventType = "email_given_up"
+	// Feature 018: security keys. mfa_enrolled / mfa_removed carry details
+	// method ("totp" | "webauthn"); key events name the key row id, never the
+	// credential id or public key.
+	MFAReset          EventType = "mfa_reset"
+	MFACloneSuspected EventType = "mfa_clone_suspected"
 )
 
 var known = map[EventType]struct{}{}
@@ -83,7 +88,7 @@ func init() {
 		OperatorGrantCreated, OperatorGrantUsed, ClientRegistered, PolicyUpdated, CrossTenantRefused, AuthzDenied, TokenExchanged,
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
-		DirectoryImported, ImportedUserDeleted, EmailGivenUp} {
+		DirectoryImported, ImportedUserDeleted, EmailGivenUp, MFAReset, MFACloneSuspected} {
 		known[t] = struct{}{}
 	}
 }

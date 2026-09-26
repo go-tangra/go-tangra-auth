@@ -37,6 +37,9 @@ email:
   transport: log
 mfa:
   issuer: Tangra # label shown in authenticator apps
+webauthn: # security keys (feature 018); relying party derived from issuer
+  user_verification: preferred # preferred | required (key PIN/biometric)
+  timeout_seconds: 300
 profile:
   avatar_max_bytes: 2097152
   avatar_size: 512

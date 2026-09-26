@@ -35,6 +35,8 @@ type Config struct {
 	MFA     MFA     `yaml:"mfa"`
 	// Directory bounds the LDAP directory import (feature 016).
 	Directory Directory `yaml:"directory"`
+	// WebAuthn configures security keys as a second factor (feature 018).
+	WebAuthn WebAuthn `yaml:"webauthn"`
 }
 
 // Directory configures outbound LDAP connections used for directory import
@@ -182,16 +184,17 @@ type Session struct {
 // Default returns secure defaults on top of the Freya defaults.
 func Default() Config {
 	return Config{
-		Config:  fconfig.Default(),
-		Edge:    Edge{Addr: ":8443", RateLimit: edge.RateLimit{PerSecond: 20, Burst: 40, Routes: map[string]edge.RateLimit{"/api/v1/signin": {PerSecond: 2, Burst: 5}, "/api/v1/recovery": {PerSecond: 1, Burst: 3}}}},
-		DB:      DB{MaxConns: 16},
-		KEK:     KEK{Source: "file"},
-		Email:   Email{Transport: "notification"},
-		Token:   Token{AccessLifetime: 15 * time.Minute, RotationInterval: 24 * time.Hour, RetiringPeriod: 30 * time.Minute, ClockSkew: 60 * time.Second},
-		Session: Session{RevocationPoll: 5 * time.Second},
-		Gateway: Gateway{Service: "gateway"},
-		MFA:     MFA{Issuer: "Tangra"},
-		Profile: Profile{AvatarMaxBytes: 2 << 20, AvatarMaxPixels: 4096 * 4096, AvatarSize: 512, AvatarDecodeConcurrency: 4, LookupRatePerMinute: 120},
+		Config:   fconfig.Default(),
+		Edge:     Edge{Addr: ":8443", RateLimit: edge.RateLimit{PerSecond: 20, Burst: 40, Routes: map[string]edge.RateLimit{"/api/v1/signin": {PerSecond: 2, Burst: 5}, "/api/v1/recovery": {PerSecond: 1, Burst: 3}}}},
+		DB:       DB{MaxConns: 16},
+		KEK:      KEK{Source: "file"},
+		Email:    Email{Transport: "notification"},
+		Token:    Token{AccessLifetime: 15 * time.Minute, RotationInterval: 24 * time.Hour, RetiringPeriod: 30 * time.Minute, ClockSkew: 60 * time.Second},
+		Session:  Session{RevocationPoll: 5 * time.Second},
+		Gateway:  Gateway{Service: "gateway"},
+		MFA:      MFA{Issuer: "Tangra"},
+		WebAuthn: WebAuthn{UserVerification: "preferred", TimeoutSeconds: 300},
+		Profile:  Profile{AvatarMaxBytes: 2 << 20, AvatarMaxPixels: 4096 * 4096, AvatarSize: 512, AvatarDecodeConcurrency: 4, LookupRatePerMinute: 120},
 		Directory: Directory{
 			Enabled:                 true,
 			Targets:                 DirectoryTargets{AllowedPorts: []int{389, 636, 3268, 3269}},
@@ -258,6 +261,9 @@ func (c Config) Validate() error {
 	}
 	if c.MFA.Issuer == "" || len(c.MFA.Issuer) > 64 || strings.ContainsAny(c.MFA.Issuer, ":\r\n") {
 		return errors.New("config: mfa.issuer must be 1..64 characters without a colon or line break")
+	}
+	if err := c.validateWebAuthn(prod); err != nil {
+		return err
 	}
 	if c.DB.DSN == "" {
 		return errors.New("config: db.dsn is required")
@@ -377,7 +383,7 @@ func (c Config) Warnings() []string {
 	if len(c.Directory.Targets.AllowCIDRs) > 0 {
 		w = append(w, "directory.targets.allow_cidrs overrides deny_cidrs for: "+strings.Join(c.Directory.Targets.AllowCIDRs, ", "))
 	}
-	return w
+	return append(w, c.webAuthnWarnings()...)
 }
 
 // Load returns the 32-byte key-encryption key.

@@ -12,6 +12,8 @@ import (
 // and by an in-memory fake for tests.
 type KV interface {
 	Get(ctx context.Context, key string) (string, bool, error)
+	// GetDel reads and deletes key atomically (single-use records).
+	GetDel(ctx context.Context, key string) (string, bool, error)
 	Set(ctx context.Context, key, value string, ttl time.Duration) error
 	Del(ctx context.Context, keys ...string) error
 	Incr(ctx context.Context, key string, ttl time.Duration) (int64, error)
@@ -31,6 +33,13 @@ func DecisionKey(tid, uid, perm string) string { return "dec:" + tid + ":" + uid
 func TenantVersionKey(tid string) string       { return "tenantver:" + tid }
 func CodeKey(hash string) string               { return "code:" + hash }
 func ChallengeKey(id string) string            { return "mfa:" + id }
+
+// WebAuthnKey names a single-use security-key ceremony record (feature 018):
+// purpose is reg, signin or stepup; subject is the user id or, for sign-in,
+// the hash of the pending MFA challenge.
+func WebAuthnKey(purpose, subject string) string {
+	return "challenge:webauthn:" + purpose + ":" + subject
+}
 
 // RevokedChannel fans revocations out to every instance.
 const RevokedChannel = "auth:revoked"
