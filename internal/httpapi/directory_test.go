@@ -247,7 +247,7 @@ type dirHarness struct {
 func newDirHarness(t *testing.T, enabled bool) *dirHarness {
 	t.Helper()
 	fga := authz.NewFake()
-	manage := authz.PermissionRef{Resource: "directory", Action: "manage"}
+	manage := authz.PermissionRef{Module: "auth", Resource: "directory", Action: "manage"}
 	// "importer" is a custom role granted directory:manage; "auditor" is not.
 	if err := fga.Write(t.Context(), []authz.Tuple{
 		authz.RoleTenantTuple(tid, "importer"), authz.RoleAssignmentTuple(tid, "importer", "u-imp"),

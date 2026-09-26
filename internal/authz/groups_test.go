@@ -9,6 +9,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
@@ -40,8 +41,8 @@ func newGroupFixture(t *testing.T) *groupFixture {
 	ms.AddRole(store.Role{ID: "r-auditor", TenantID: tA, Slug: "auditor"})
 	ms.AddRole(store.Role{ID: "r-billing", TenantID: tA, Slug: "billing"})
 	ms.AddRole(store.Role{ID: "r-foreign", TenantID: tB, Slug: "auditor"})
-	ms.RolePerms["r-auditor"] = [][2]string{{"audit", "read"}}
-	ms.RolePerms["r-billing"] = [][2]string{{"invoices", "write"}}
+	ms.RolePerms["r-auditor"] = []permref.Ref{{Resource: "audit", Action: "read"}}
+	ms.RolePerms["r-billing"] = []permref.Ref{{Resource: "invoices", Action: "write"}}
 	fga := NewFake()
 	c := New(fga, cache.New(cache.NewMemory()), nil)
 	read, _ := ParsePermissionRef("audit:read")

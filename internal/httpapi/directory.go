@@ -13,7 +13,7 @@ import (
 )
 
 // PermDirectoryManage gates the directory connection routes (feature 016).
-const PermDirectoryManage = "directory:manage"
+const PermDirectoryManage = "auth:directory:manage" // module-scoped (feature 019)
 
 // DirectoryService is the directory connection service the handlers call
 // (implemented by *directory.Service). Every method is scoped to tenantID,

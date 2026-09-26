@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/jackc/pgx/v5"
 )
@@ -47,7 +48,7 @@ func (d DBRoleStore) UserRoles(ctx context.Context, tid, uid string) (out []stor
 	})
 	return
 }
-func (d DBRoleStore) RolePermissions(ctx context.Context, tid, rid string) (out [][2]string, err error) {
+func (d DBRoleStore) RolePermissions(ctx context.Context, tid, rid string) (out []permref.Ref, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListRolePermissions(ctx, tx, tid, rid); return err })
 	return
 }
@@ -62,12 +63,15 @@ func (d DBRoleStore) CountWithRole(ctx context.Context, tid, slug string) (n int
 // DBPermissionStore is the database PermissionStore.
 type DBPermissionStore struct{ St *store.Store }
 
-func (d DBPermissionStore) UpsertPermission(ctx context.Context, tid, res, act, desc, by string) error {
-	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.UpsertPermission(ctx, tx, tid, res, act, desc, by) })
+func (d DBPermissionStore) UpsertPermission(ctx context.Context, tid string, p store.Permission, by string) error {
+	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.UpsertPermission(ctx, tx, tid, p, by) })
 }
-func (d DBPermissionStore) ListPermissions(ctx context.Context, tid string) (out [][3]string, err error) {
+func (d DBPermissionStore) ListPermissions(ctx context.Context, tid string) (out []store.Permission, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListPermissions(ctx, tx, tid); return err })
 	return
+}
+func (d DBPermissionStore) Modules(ctx context.Context) ([]store.Module, error) {
+	return DBModuleStore(d).Modules(ctx)
 }
 
 // DBRoleCRUDStore is the database RoleCRUDStore.
@@ -93,7 +97,7 @@ func (d DBRoleCRUDStore) UpdateRoleName(ctx context.Context, tid, id, name strin
 func (d DBRoleCRUDStore) RemoveRole(ctx context.Context, tid, id string) error {
 	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.RemoveRole(ctx, tx, tid, id) })
 }
-func (d DBRoleCRUDStore) ReplaceRolePermissions(ctx context.Context, tid, rid string, perms [][2]string) error {
+func (d DBRoleCRUDStore) ReplaceRolePermissions(ctx context.Context, tid, rid string, perms []permref.Ref) error {
 	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.ReplaceRolePermissions(ctx, tx, tid, rid, perms) })
 }
 func (d DBRoleCRUDStore) RoleAssignees(ctx context.Context, tid, rid string) (out []string, err error) {
@@ -114,9 +118,18 @@ func (d DBRoleCRUDStore) RoleAssignees(ctx context.Context, tid, rid string) (ou
 	})
 	return
 }
-func (d DBRoleCRUDStore) ListPermissions(ctx context.Context, tid string) (out [][3]string, err error) {
+func (d DBRoleCRUDStore) ListPermissions(ctx context.Context, tid string) (out []store.Permission, err error) {
 	err = d.tx(ctx, tid, func(tx pgx.Tx) error { out, err = store.ListPermissions(ctx, tx, tid); return err })
 	return
+}
+func (d DBRoleCRUDStore) Modules(ctx context.Context) ([]store.Module, error) {
+	return DBModuleStore{St: d.St}.Modules(ctx)
+}
+func (d DBRoleCRUDStore) AdoptBuiltinRole(ctx context.Context, tid, id string) error {
+	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.AdoptBuiltinRole(ctx, tx, tid, id) })
+}
+func (d DBRoleCRUDStore) UpdateModuleRole(ctx context.Context, tid, id, name, description string, retiredAt *time.Time) error {
+	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.UpdateModuleRole(ctx, tx, tid, id, name, description, retiredAt) })
 }
 
 // DBStatusStore is the database StatusStore.
@@ -144,7 +157,7 @@ func (d DBStatusStore) TenantStatus(ctx context.Context, tid string) (status str
 	})
 	return
 }
-func (d DBStatusStore) ListPermissions(ctx context.Context, tid string) (out [][3]string, err error) {
+func (d DBStatusStore) ListPermissions(ctx context.Context, tid string) (out []store.Permission, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListPermissions(ctx, tx, tid); return err })
 	return
 }
@@ -229,5 +242,76 @@ func (d DBGroupStore) GroupRoleSlugs(ctx context.Context, tid string) (out map[s
 // EffectiveRoles is shared by the group store and the decision status store.
 func (d DBRoleStore) EffectiveRoles(ctx context.Context, tid, uid string) (out []store.EffectiveRoleRow, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.EffectiveRoles(ctx, tx, tid, uid); return err })
+	return
+}
+
+// ---------------------------------------------------------------- module catalogue (feature 019)
+
+// DBModuleStore is the database authz.ModuleStore: catalogue writes run under
+// the system scope, per-tenant state under the tenant's scope.
+type DBModuleStore struct{ St *store.Store }
+
+func (d DBModuleStore) sys(ctx context.Context, fn func(pgx.Tx) error) error {
+	return d.St.Tx(ctx, store.Scope{System: true}, fn)
+}
+func (d DBModuleStore) UpsertModule(ctx context.Context, name, displayName string) error {
+	return d.sys(ctx, func(tx pgx.Tx) error { return store.UpsertModule(ctx, tx, name, displayName) })
+}
+func (d DBModuleStore) Modules(ctx context.Context) (out []store.Module, err error) {
+	err = d.sys(ctx, func(tx pgx.Tx) error { out, err = store.ListModules(ctx, tx); return err })
+	return
+}
+func (d DBModuleStore) RetireModule(ctx context.Context, name string) error {
+	return d.sys(ctx, func(tx pgx.Tx) error { return store.RetireModule(ctx, tx, name) })
+}
+func (d DBModuleStore) UpsertModulePermission(ctx context.Context, p store.ModulePermission) error {
+	return d.sys(ctx, func(tx pgx.Tx) error { return store.UpsertModulePermission(ctx, tx, p) })
+}
+func (d DBModuleStore) ModulePermissions(ctx context.Context, module string) (out []store.ModulePermission, err error) {
+	err = d.sys(ctx, func(tx pgx.Tx) error { out, err = store.ListModulePermissions(ctx, tx, module); return err })
+	return
+}
+func (d DBModuleStore) UpsertModuleRoleDef(ctx context.Context, def store.ModuleRoleDef) (changed bool, err error) {
+	err = d.sys(ctx, func(tx pgx.Tx) error { changed, err = store.UpsertModuleRoleDef(ctx, tx, def); return err })
+	return
+}
+func (d DBModuleStore) ModuleRoleDefs(ctx context.Context, module string) (out []store.ModuleRoleDef, err error) {
+	err = d.sys(ctx, func(tx pgx.Tx) error { out, err = store.ListModuleRoleDefs(ctx, tx, module); return err })
+	return
+}
+func (d DBModuleStore) RetireModuleRoleDef(ctx context.Context, module, slug string) error {
+	return d.sys(ctx, func(tx pgx.Tx) error { return store.RetireModuleRoleDef(ctx, tx, module, slug) })
+}
+func (d DBModuleStore) TenantModule(ctx context.Context, tid, module string) (out store.TenantModule, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.GetTenantModule(ctx, tx, tid, module); return err })
+	return
+}
+func (d DBModuleStore) EnsureTenantModule(ctx context.Context, tid, module string) error {
+	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.EnsureTenantModule(ctx, tx, tid, module) })
+}
+func (d DBModuleStore) MarkLegacyMigrated(ctx context.Context, tid, module string) error {
+	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.MarkLegacyMigrated(ctx, tx, tid, module, store.Now()) })
+}
+
+// DBVerifyStore is the database authz.VerifyStore (feature 019).
+type DBVerifyStore struct{ DBRoleStore }
+
+func (d DBVerifyStore) ListPermissions(ctx context.Context, tid string) (out []store.Permission, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListPermissions(ctx, tx, tid); return err })
+	return
+}
+func (d DBVerifyStore) ListRoles(ctx context.Context, tid string) (out []store.Role, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListRoles(ctx, tx, tid); return err })
+	return
+}
+func (d DBVerifyStore) ListActiveMemberIDs(ctx context.Context, tid, after string, limit int, ids []string) (out []string, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error {
+		out, err = store.ListActiveMemberIDs(ctx, tx, tid, after, limit, ids)
+		return err
+	})
+	return
+}
+func (d DBVerifyStore) DeleteLegacyPermissions(ctx context.Context, tid string) (n int64, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { n, err = store.DeleteLegacyPermissions(ctx, tx, tid); return err })
 	return
 }

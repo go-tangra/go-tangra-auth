@@ -42,8 +42,8 @@ type Store interface {
 	InsertRole(ctx context.Context, r store.Role) error
 }
 
-// BuiltinRoles every tenant starts with.
-var BuiltinRoles = []string{"owner", "admin", "member"}
+// BuiltinRoles every customer tenant starts with (auditor: feature 019).
+var BuiltinRoles = []string{"owner", "admin", "member", "auditor"}
 
 // Service manages tenant lifecycle and policy.
 type Service struct {

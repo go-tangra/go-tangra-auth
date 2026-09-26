@@ -16,10 +16,18 @@ type InviteEscalation struct {
 
 // MayAssign checks roles first, then groups; it writes nothing. Operators
 // (tenant creation invites the first owner under an operator grant) and
-// system actors pass once the tenant guard admits them.
+// system actors pass once the tenant guard admits them, except for retired
+// module roles, which nobody may newly assign (feature 019).
 func (e InviteEscalation) MayAssign(ctx context.Context, actor tenantctx.Actor, tenantID string, roleIDs, groupIDs []string) error {
 	if actor.Kind == tenantctx.KindOperator || actor.Kind == tenantctx.KindSystem {
-		return e.Assigner.authz.guard.Require(ctx, tenantID)
+		if err := e.Assigner.authz.guard.Require(ctx, tenantID); err != nil {
+			return err
+		}
+		roles, err := e.Assigner.st.RolesByID(ctx, tenantID, dedupe(roleIDs))
+		if err != nil {
+			return err
+		}
+		return refuseRetired(roles)
 	}
 	if err := e.Assigner.MayAssign(ctx, actor, tenantID, roleIDs); err != nil {
 		return err

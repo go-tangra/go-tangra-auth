@@ -747,3 +747,41 @@ func TestInviteNamesTenant(t *testing.T) {
 		t.Fatalf("%+v %v", p, err)
 	}
 }
+
+// T041/T047 (feature 019): a role retired by its module between invitation
+// and acceptance is dropped at acceptance (audited), the others are kept.
+func TestAcceptDropsRetiredRoles(t *testing.T) {
+	svc, ms, fga, ob := setup(t)
+	ctx := context.Background()
+	ms.AddRole(store.Role{ID: "r-viewer", TenantID: tid, Slug: "m.warden.viewer", DisplayName: "Warden viewer", Origin: store.OriginModule, Module: "warden", ModuleSlug: "viewer"})
+	aw := audit.NewWriter(ms, nil)
+	svc.audit = aw
+	admin := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-admin", TenantID: tid}
+	if _, err := svc.Create(ctx, admin, tid, "new@x.test", []string{"r-auditor", "r-viewer"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	r := ms.RoleRows["r-viewer"]
+	r.RetiredAt = &now
+	ms.RoleRows["r-viewer"] = r
+	acc, err := svc.Accept(ctx, tokenFrom(t, ob, ms.Outbox[0]), "", "long-enough-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(acc.Roles) != 1 || acc.Roles[0] != "auditor" {
+		t.Fatalf("roles %v", acc.Roles)
+	}
+	if ok, _ := fga.Check(ctx, authz.RoleAssignmentTuple(tid, "m.warden.viewer", acc.User.ID)); ok {
+		t.Fatal("retired role assigned at acceptance")
+	}
+	aw.Close()
+	found := false
+	for _, row := range ms.AuditRows {
+		if row.EventType == string(audit.InviteAccepted) && strings.Contains(string(row.Details), `"dropped_roles":["m.warden.viewer"]`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("dropped roles not audited")
+	}
+}

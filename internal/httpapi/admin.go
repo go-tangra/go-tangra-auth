@@ -28,6 +28,7 @@ type US2Deps struct {
 var (
 	errLastOwner      = &Error{http.StatusForbidden, "last_owner"}
 	errSelfEscalation = &Error{http.StatusForbidden, "self_escalation"}
+	errRoleRetired    = &Error{http.StatusConflict, "role_retired"}
 	errInvalidToken   = &Error{http.StatusBadRequest, "invalid_token"}
 	errPasswordPolicy = &Error{http.StatusBadRequest, "password_policy"}
 	errInvalidState   = &Error{http.StatusConflict, "invalid_state"}
@@ -43,6 +44,8 @@ func adminError(err error) error {
 		return errInvalidState
 	case errors.Is(err, authz.ErrSelfEscalation):
 		return errSelfEscalation
+	case errors.Is(err, authz.ErrRoleRetired):
+		return errRoleRetired
 	case errors.Is(err, invite.ErrInvalidToken):
 		return errInvalidToken
 	case errors.Is(err, invite.ErrPolicy):

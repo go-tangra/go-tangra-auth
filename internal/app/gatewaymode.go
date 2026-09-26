@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
@@ -11,53 +12,74 @@ import (
 	"github.com/go-tangra/go-tangra-portal/sdk/v4/pkg/gatewayclient"
 )
 
-// seedConsolePermissions registers the console permissions in a tenant and
-// grants them to the builtin roles (idempotent).
-func (a *App) seedConsolePermissions(ctx context.Context, tenantID string) error {
-	sys := tenantctx.WithActor(ctx, tenantctx.Actor{Kind: tenantctx.KindSystem})
-	defs := make([]authz.Permission, 0, len(authmanifest.Permissions))
+// authRegistration is auth's own registration as module "auth"
+// ("Authentication"): the console permissions and their built-in grants.
+func authRegistration(tenants []string) authz.Registration {
+	reg := authz.Registration{Module: authz.AuthModule, DisplayName: authz.AuthDisplayName, Registrant: authz.AuthModule, Tenants: tenants}
 	for _, p := range authmanifest.Permissions {
-		defs = append(defs, authz.Permission{Resource: p.Resource, Action: p.Action, Description: p.Description})
+		reg.Permissions = append(reg.Permissions, authz.Permission{Resource: p.Resource, Action: p.Action, Description: p.Description})
 	}
-	if _, err := a.Registry.Register(sys, tenantID, "auth", defs); err != nil {
+	slugs := make([]string, 0, len(authmanifest.Grants))
+	for slug := range authmanifest.Grants {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	for _, slug := range slugs {
+		reg.Grants = append(reg.Grants, authz.BuiltinGrant{Role: slug, Permissions: authmanifest.Grants[slug]})
+	}
+	return reg
+}
+
+// seedConsolePermissions registers the console permissions in tenants and
+// grants them to the built-in roles (idempotent). Built-in roles a tenant
+// lacks (operator outside the platform tenant) are expected and not logged.
+func (a *App) seedConsolePermissions(ctx context.Context, tenants []string) error {
+	sys := tenantctx.WithActor(ctx, tenantctx.Actor{Kind: tenantctx.KindSystem})
+	if _, err := a.Modules.Register(sys, authRegistration(tenants)); err != nil {
 		return fmt.Errorf("register console permissions: %w", err)
-	}
-	for slug, refs := range authmanifest.Grants {
-		if err := a.Roles.GrantBuiltin(sys, tenantID, slug, refs); err != nil {
-			return fmt.Errorf("grant %s: %w", slug, err)
-		}
 	}
 	return nil
 }
 
-// SeedAllConsolePermissions seeds every active tenant (start-up, bootstrap).
+// SeedAllConsolePermissions ensures the built-in roles of every active
+// tenant (auditor, feature 019) and seeds the console permissions (start-up,
+// bootstrap).
 func (a *App) SeedAllConsolePermissions(ctx context.Context) error {
+	if err := a.EnsureBuiltinRoles(ctx); err != nil {
+		return err
+	}
 	ids, err := a.activeTenantIDs(ctx)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		if err := a.seedConsolePermissions(ctx, id); err != nil {
-			return err
+	if len(ids) == 0 {
+		return nil
+	}
+	return a.seedConsolePermissions(ctx, ids)
+}
+
+// seedLoop seeds until it succeeds or ctx ends (start-up in both modes).
+func (a *App) seedLoop(ctx context.Context) bool {
+	for ctx.Err() == nil {
+		err := a.SeedAllConsolePermissions(ctx)
+		if err == nil {
+			return true
+		}
+		a.Log.Warn("console permission seeding failed; retrying", "err", err)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(5 * time.Second):
 		}
 	}
-	return nil
+	return false
 }
 
 // runGatewayMode seeds permissions, then registers with the gateway and
 // renews the lease until ctx ends.
 func (a *App) runGatewayMode(ctx context.Context) {
-	for ctx.Err() == nil {
-		if err := a.SeedAllConsolePermissions(ctx); err == nil {
-			break
-		} else {
-			a.Log.Warn("console permission seeding failed; retrying", "err", err)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(5 * time.Second):
-		}
+	if !a.seedLoop(ctx) {
+		return
 	}
 	man, err := authmanifest.Manifest()
 	if err != nil {

@@ -90,6 +90,39 @@ func TestDirectoryEvents(t *testing.T) {
 	}
 }
 
+// Feature 019: module events have their exact wire names and their detail
+// keys (module, slug, qualified permissions, counts) survive redaction.
+func TestModuleEvents(t *testing.T) {
+	want := map[EventType]string{
+		ModuleRegistered:   "module_registered",
+		ModuleRoleUpserted: "module_role_upserted",
+		ModuleRoleRetired:  "module_role_retired",
+		RoleCloned:         "role_cloned",
+		PermissionMigrated: "permission_migrated",
+		PermissionPruned:   "permission_pruned",
+	}
+	for typ, name := range want {
+		if string(typ) != name {
+			t.Fatalf("%s: wire name %q", name, typ)
+		}
+		for _, kind := range []string{"service", "system", "operator", "user"} {
+			if err := Validate(Event{Type: typ, TenantID: "t1", ActorKind: kind, Outcome: "ok"}); err != nil {
+				t.Fatalf("%s/%s: %v", typ, kind, err)
+			}
+		}
+	}
+	r, err := Row(Event{Type: ModuleRoleUpserted, TenantID: "t1", ActorKind: "service", ActorService: "spiffe://td/svc/warden", Outcome: "ok",
+		Details: map[string]any{"module": "warden", "slug": "viewer", "permissions": []string{"warden:secrets:read"}, "tenants": 2}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, keep := range []string{`"module":"warden"`, `"slug":"viewer"`, `"permissions":["warden:secrets:read"]`, `"tenants":2`} {
+		if !strings.Contains(string(r.Details), keep) {
+			t.Fatalf("missing %s in %s", keep, r.Details)
+		}
+	}
+}
+
 func TestValidateAndRow(t *testing.T) {
 	good := Event{Type: SigninFailed, TenantID: "t1", ActorKind: "user", ActorUserID: "u1", Outcome: "refused", Reason: "invalid_credentials",
 		CorrelationID: "c1", Details: map[string]any{"attempt": 3, "password": "hunter2", "reset_token": "abc", "api_key": "k", "ip": "hashed"}}

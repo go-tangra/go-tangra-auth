@@ -31,7 +31,7 @@ func TestIdentifiers(t *testing.T) {
 	if err != nil || p.Resource != "invoices" || p.Action != "read" || p.String() != "invoices:read" {
 		t.Fatal(p, err)
 	}
-	for _, bad := range []string{"", "read", "a:b:c", ":read", "inv:", "Inv:read", "a/b:c", "a:b c"} {
+	for _, bad := range []string{"", "read", "a:b:c:d", ":read", "inv:", "Inv:read", "a/b:c", "a:b c", ":b:c"} {
 		if _, err := ParsePermissionRef(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
@@ -212,5 +212,48 @@ func TestFakeResolvesGroupMembership(t *testing.T) {
 	ok, _ = f.Check(context.Background(), Tuple{User: UserObject("u1"), Relation: "granted", Object: PermissionObject(tid, p)})
 	if ok {
 		t.Fatal("removed member must lose the grant")
+	}
+}
+
+// T011: SDK writes are chunked to at most MaxTuplesPerWrite tuples, adds
+// before removes, nothing for an empty write.
+func TestWriteChunks(t *testing.T) {
+	mk := func(n int) []Tuple {
+		out := make([]Tuple, n)
+		for i := range out {
+			out[i] = Tuple{User: "user:u", Relation: "member", Object: "tenant:" + tA + "/" + string(rune('a'+i%26))}
+		}
+		return out
+	}
+	if got := writeChunks(nil, nil); len(got) != 0 {
+		t.Fatalf("%d chunks for nothing", len(got))
+	}
+	got := writeChunks(mk(150), mk(60))
+	if len(got) != 3 || len(got[0].Writes) != 100 || len(got[1].Writes) != 50 || len(got[1].Deletes) != 50 || len(got[2].Deletes) != 10 {
+		t.Fatalf("%d chunks", len(got))
+	}
+	if got := writeChunks(mk(100), nil); len(got) != 1 {
+		t.Fatalf("exactly 100: %d chunks", len(got))
+	}
+	if writeOptions.Conflict.OnDuplicateWrites != "ignore" || writeOptions.Conflict.OnMissingDeletes != "ignore" {
+		t.Fatalf("%+v", writeOptions.Conflict)
+	}
+}
+
+// T007: the fake treats module-qualified objects like any other: grants are
+// per object, so the same res:act in two modules never cross.
+func TestFakeModuleObjects(t *testing.T) {
+	f := NewFake()
+	ctx := context.Background()
+	w := PermissionRef{Module: "warden", Resource: "backup", Action: "manage"}
+	i := w.WithModule("ipam")
+	_ = f.Write(ctx, []Tuple{RoleAssignmentTuple(tA, "r", "u"), GrantTuple(tA, "r", w)}, nil)
+	for p, want := range map[PermissionRef]bool{w: true, i: false, {Resource: "backup", Action: "manage"}: false} {
+		if ok, _ := f.Check(ctx, Tuple{User: UserObject("u"), Relation: "granted", Object: PermissionObject(tA, p)}); ok != want {
+			t.Errorf("%s: %v", p, ok)
+		}
+	}
+	if ot, err := ObjectTenant(PermissionObject(tA, w)); err != nil || ot != tA {
+		t.Fatalf("%s %v", ot, err)
 	}
 }

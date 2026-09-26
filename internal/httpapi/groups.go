@@ -38,6 +38,8 @@ func groupError(err error) error {
 		return errOwnerViaGroup
 	case errors.Is(err, authz.ErrSelfEscalation):
 		return errSelfEscalation
+	case errors.Is(err, authz.ErrRoleRetired):
+		return errRoleRetired
 	case errors.Is(err, tenantctx.ErrCrossTenant):
 		return ErrNotFound
 	}

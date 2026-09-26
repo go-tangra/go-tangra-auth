@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 )
@@ -13,16 +14,34 @@ type US3Deps struct {
 	Registry *authz.Registry
 }
 
-var errBuiltin = &Error{http.StatusForbidden, "builtin"}
+var (
+	errBuiltin     = &Error{http.StatusForbidden, "builtin"}
+	errManagedRole = &Error{http.StatusForbidden, "managed_role"}
+	errRoleTaken   = &Error{http.StatusConflict, "conflict"}
+)
 
 func roleError(err error) error {
 	switch {
 	case errors.Is(err, authz.ErrBuiltin):
 		return errBuiltin
+	case errors.Is(err, authz.ErrManagedRole):
+		return errManagedRole
 	case errors.Is(err, authz.ErrRoleRef):
 		return ErrValidation
+	case errors.Is(err, authz.ErrRoleConflict):
+		return errRoleTaken
 	}
 	return adminError(err)
+}
+
+// failRole writes a role refusal; a module role's refusal carries the hint
+// that it can be cloned (feature 019).
+func (s *Server) failRole(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, authz.ErrManagedRole) {
+		WriteJSON(w, errManagedRole.Status, map[string]string{"reason": errManagedRole.Reason, "hint": "clone"})
+		return
+	}
+	Fail(w, r, s.rt.Logger(), roleError(err))
 }
 
 // RegisterUS3 mounts role and permission routes.
@@ -32,6 +51,7 @@ func (s *Server) RegisterUS3(d US3Deps) {
 	s.MustHandle("POST", "/api/v1/admin/roles", s.createRole(d))
 	s.MustHandle("PUT", "/api/v1/admin/roles/{id}", s.updateRole(d))
 	s.MustHandle("POST", "/api/v1/admin/roles/{id}/remove", s.removeRole(d))
+	s.MustHandle("POST", "/api/v1/admin/roles/{id}/clone", s.cloneRole(d))
 	s.MustHandle("GET", "/api/v1/admin/permissions", s.listPermissions(d))
 }
 
@@ -40,8 +60,16 @@ type roleBody struct {
 	DisplayName string   `json:"display_name"`
 	Permissions []string `json:"permissions"`
 	// Fields of the Role schema a client may echo back; ignored on write.
-	ID      string `json:"id,omitempty"`
-	Builtin bool   `json:"builtin,omitempty"`
+	ID                string     `json:"id,omitempty"`
+	Builtin           bool       `json:"builtin,omitempty"`
+	Description       string     `json:"description,omitempty"`
+	Origin            string     `json:"origin,omitempty"`
+	Module            string     `json:"module,omitempty"`
+	ModuleDisplayName string     `json:"module_display_name,omitempty"`
+	ModuleSlug        string     `json:"module_slug,omitempty"`
+	Locked            bool       `json:"locked,omitempty"`
+	Retired           bool       `json:"retired,omitempty"`
+	RetiredAt         *time.Time `json:"retired_at,omitempty"`
 }
 
 func (s *Server) listRoles(d US3Deps) http.HandlerFunc {
@@ -95,7 +123,7 @@ func (s *Server) updateRole(d US3Deps) http.HandlerFunc {
 		}
 		role, err := d.Roles.Update(r.Context(), a.TenantID, r.PathValue("id"), in.DisplayName, in.Permissions)
 		if err != nil {
-			Fail(w, r, s.rt.Logger(), roleError(err))
+			s.failRole(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, role)
@@ -110,10 +138,36 @@ func (s *Server) removeRole(d US3Deps) http.HandlerFunc {
 			return
 		}
 		if err := d.Roles.Remove(r.Context(), a.TenantID, r.PathValue("id")); err != nil {
-			Fail(w, r, s.rt.Logger(), roleError(err))
+			s.failRole(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// cloneRole copies any role but owner into a new custom role (feature 019).
+func (s *Server) cloneRole(d US3Deps) http.HandlerFunc {
+	type body struct {
+		Slug        string `json:"slug"`
+		DisplayName string `json:"display_name"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, err := RequireAdmin(r)
+		if err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		var in body
+		if err := DecodeJSON(r, &in); err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		role, err := d.Roles.Clone(r.Context(), a.TenantID, r.PathValue("id"), in.Slug, in.DisplayName)
+		if err != nil {
+			Fail(w, r, s.rt.Logger(), roleError(err))
+			return
+		}
+		WriteJSON(w, http.StatusCreated, role)
 	}
 }
 
@@ -124,7 +178,7 @@ func (s *Server) listPermissions(d US3Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
-		perms, err := d.Registry.List(r.Context(), a.TenantID)
+		perms, err := d.Registry.Catalogue(r.Context(), a.TenantID, a)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), roleError(err))
 			return

@@ -450,11 +450,24 @@ func (s *Service) Accept(ctx context.Context, token, displayName, pw string) (Ac
 		default:
 			return ErrInvalidToken
 		}
-		roles, err := tx.RolesByID(ctx, inv.TenantID, inv.RoleIDs)
+		all, err := tx.RolesByID(ctx, inv.TenantID, inv.RoleIDs)
 		if err != nil {
 			return err
 		}
-		if err := tx.ReplaceBindings(ctx, inv.TenantID, u.ID, u.ID, inv.RoleIDs); err != nil {
+		// A module role retired since the invitation is dropped (feature 019):
+		// retired roles are kept for existing holders, never newly assigned.
+		roles := make([]store.Role, 0, len(all))
+		roleIDs := make([]string, 0, len(all))
+		var dropped []string
+		for _, r := range all {
+			if r.RetiredAt != nil {
+				dropped = append(dropped, r.Slug)
+				continue
+			}
+			roles = append(roles, r)
+			roleIDs = append(roleIDs, r.ID)
+		}
+		if err := tx.ReplaceBindings(ctx, inv.TenantID, u.ID, u.ID, roleIDs); err != nil {
 			return err
 		}
 		if err := tx.MarkInvitationAccepted(ctx, inv.ID); err != nil {
@@ -476,6 +489,9 @@ func (s *Service) Accept(ctx context.Context, token, displayName, pw string) (Ac
 		details := map[string]any{}
 		if len(skipped) > 0 {
 			details["skipped_groups"] = skipped
+		}
+		if len(dropped) > 0 {
+			details["dropped_roles"] = dropped
 		}
 		for _, r := range roles {
 			tuples = append(tuples, authz.RoleAssignmentTuple(inv.TenantID, r.Slug, u.ID))

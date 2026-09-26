@@ -27,6 +27,12 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "mint-enrollment-token" {
 		os.Exit(mintEnrollmentToken(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "permissions" {
+		os.Exit(permissions(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "modules" {
+		os.Exit(modules(os.Args[2:]))
+	}
 	os.Exit(run(os.Args[1:]))
 }
 

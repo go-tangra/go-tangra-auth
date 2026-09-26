@@ -21,9 +21,9 @@ const (
 type StatusStore interface {
 	UserStatus(ctx context.Context, tenantID, userID string) (string, error)
 	TenantStatus(ctx context.Context, tenantID string) (string, error)
-	ListPermissions(ctx context.Context, tenantID string) ([][3]string, error)
+	ListPermissions(ctx context.Context, tenantID string) ([]store.Permission, error)
 	UserRoles(ctx context.Context, tenantID, userID string) ([]store.Role, error)
-	RolePermissions(ctx context.Context, tenantID, roleID string) ([][2]string, error)
+	RolePermissions(ctx context.Context, tenantID, roleID string) ([]PermissionRef, error)
 	// EffectiveRoles includes roles inherited through groups (feature 004).
 	EffectiveRoles(ctx context.Context, tenantID, userID string) ([]store.EffectiveRoleRow, error)
 }
@@ -57,7 +57,11 @@ func (d *Decider) Decide(ctx context.Context, tenantID, userID string, p Permiss
 	return res[0], nil
 }
 
-// BatchDecide evaluates several permissions for the same user.
+// BatchDecide evaluates several permissions for the same user. A scoped
+// permission ("module:res:act") is evaluated on its module's object; while the
+// module has not registered it in the tenant but the legacy "res:act" exists
+// (rollout, feature 019 D2), the legacy object is evaluated instead. A legacy
+// reference is evaluated on the legacy object only.
 func (d *Decider) BatchDecide(ctx context.Context, tenantID, userID string, perms []PermissionRef) ([]Decision, error) {
 	if err := d.authz.guard.Require(ctx, tenantID); err != nil {
 		return nil, err
@@ -83,25 +87,22 @@ func (d *Decider) BatchDecide(ctx context.Context, tenantID, userID string, perm
 	if err != nil || us != "active" {
 		return deny(ReasonUserInactive), nil
 	}
-	catalogue, err := d.st.ListPermissions(ctx, tenantID)
+	known, err := d.known(ctx, tenantID)
 	if err != nil {
 		return nil, err
-	}
-	known := map[string]bool{}
-	for _, p := range catalogue {
-		known[p[0]+":"+p[1]] = true
 	}
 	out := make([]Decision, len(perms))
 	var ask []int
 	var askRefs []PermissionRef
 	for i, p := range perms {
 		out[i] = Decision{Reason: ReasonNoPermission, PolicyVersion: version}
-		if !known[p.String()] {
+		eval, ok := Resolve(known, p)
+		if !ok {
 			out[i].Reason = ReasonUnknownPermission
 			continue
 		}
 		if d.authz.cache != nil {
-			key := cache.DecisionKey(tenantID, userID, p.String()+"@"+version)
+			key := cache.DecisionKey(tenantID, userID, eval.String()+"@"+version)
 			if v, ok, _ := d.authz.cache.KV().Get(ctx, key); ok {
 				out[i].Allowed = v != "0"
 				if out[i].Allowed {
@@ -111,7 +112,7 @@ func (d *Decider) BatchDecide(ctx context.Context, tenantID, userID string, perm
 			}
 		}
 		ask = append(ask, i)
-		askRefs = append(askRefs, p)
+		askRefs = append(askRefs, eval)
 	}
 	if len(ask) > 0 {
 		allowed, err := d.authz.AllowedMany(ctx, tenantID, userID, askRefs)
@@ -171,12 +172,54 @@ func (d *Decider) grantingRole(ctx context.Context, tenantID string, roles []sto
 			continue
 		}
 		for _, x := range perms {
-			if x[0] == p.Resource && x[1] == p.Action {
+			if x == p {
 				return "role:" + r.Slug
 			}
 		}
 	}
 	return "role:unknown"
+}
+
+func (d *Decider) known(ctx context.Context, tenantID string) (map[PermissionRef]bool, error) {
+	catalogue, err := d.st.ListPermissions(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[PermissionRef]bool, len(catalogue))
+	for _, p := range catalogue {
+		known[p.Ref()] = true
+	}
+	return known, nil
+}
+
+// Resolve returns the permission object a check evaluates (see BatchDecide)
+// and false when neither the permission nor its legacy fallback is known.
+func Resolve(known map[PermissionRef]bool, p PermissionRef) (PermissionRef, bool) {
+	if known[p] {
+		return p, true
+	}
+	if !p.IsLegacy() {
+		legacy := PermissionRef{Resource: p.Resource, Action: p.Action}
+		if known[legacy] {
+			return legacy, true
+		}
+	}
+	return PermissionRef{}, false
+}
+
+// Allowed answers an in-process check of auth's own routes (the directory
+// permission, feature 016): the same scoped/legacy resolution as BatchDecide,
+// then the cached OpenFGA check; no status checks (the caller is signed in).
+func (d *Decider) Allowed(ctx context.Context, tenantID, userID string, p PermissionRef) (bool, error) {
+	known, err := d.known(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	eval, ok := Resolve(known, p)
+	if !ok {
+		return false, nil
+	}
+	return d.authz.Allowed(ctx, tenantID, userID, eval)
 }
 
 func (d *Decider) emit(e audit.Event) {

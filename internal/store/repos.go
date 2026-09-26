@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 )
 
 // The repositories below are thin, tenant-scoped SQL wrappers. Callers run them
@@ -259,18 +261,21 @@ func UseRecoveryCode(ctx context.Context, tx pgx.Tx, tenantID, userID, hash stri
 
 // ---------------------------------------------------------------- roles
 
-const roleCols = "id, tenant_id, slug, display_name, builtin, created_at, updated_at"
+// roleCols must stay in scanRole's order (GroupRoles repeats it with an alias).
+const roleCols = "id, tenant_id, slug, display_name, builtin, created_at, updated_at, origin, coalesce(module, ''), coalesce(module_slug, ''), description, retired_at"
 
 func scanRole(r pgx.Row) (Role, error) {
 	var x Role
-	err := r.Scan(&x.ID, &x.TenantID, &x.Slug, &x.DisplayName, &x.Builtin, &x.CreatedAt, &x.UpdatedAt)
+	err := r.Scan(&x.ID, &x.TenantID, &x.Slug, &x.DisplayName, &x.Builtin, &x.CreatedAt, &x.UpdatedAt, &x.Origin, &x.Module, &x.ModuleSlug, &x.Description, &x.RetiredAt)
 	return x, notFound(err)
 }
 
-// InsertRole creates a role.
+// InsertRole creates a role. A unique violation (slug taken) is ErrConflict.
 func InsertRole(ctx context.Context, tx pgx.Tx, r Role) error {
-	_, err := tx.Exec(ctx, "INSERT INTO roles (id, tenant_id, slug, display_name, builtin) VALUES ($1,$2,$3,$4,$5)", r.ID, r.TenantID, r.Slug, r.DisplayName, r.Builtin)
-	return err
+	_, err := tx.Exec(ctx, `INSERT INTO roles (id, tenant_id, slug, display_name, builtin, origin, module, module_slug, description, retired_at)
+		VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''),$9,$10)`,
+		r.ID, r.TenantID, r.Slug, r.DisplayName, r.Builtin, r.OriginOf(), r.Module, r.ModuleSlug, r.Description, r.RetiredAt)
+	return conflict(err)
 }
 
 // GetRole by tenant + id.
@@ -278,7 +283,7 @@ func GetRole(ctx context.Context, tx pgx.Tx, tenantID, id string) (Role, error) 
 	return scanRole(tx.QueryRow(ctx, "SELECT "+roleCols+" FROM roles WHERE tenant_id = $1 AND id = $2", tenantID, id))
 }
 
-// ListRoles for a tenant.
+// ListRoles for a tenant: built-in first, then by slug.
 func ListRoles(ctx context.Context, tx pgx.Tx, tenantID string) ([]Role, error) {
 	rows, err := tx.Query(ctx, "SELECT "+roleCols+" FROM roles WHERE tenant_id = $1 ORDER BY builtin DESC, slug", tenantID)
 	if err != nil {
@@ -298,13 +303,34 @@ func ListRoles(ctx context.Context, tx pgx.Tx, tenantID string) ([]Role, error) 
 
 // UpdateRoleName renames a custom role.
 func UpdateRoleName(ctx context.Context, tx pgx.Tx, tenantID, id, name string) error {
-	_, err := tx.Exec(ctx, "UPDATE roles SET display_name = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2 AND NOT builtin", tenantID, id, name)
+	_, err := tx.Exec(ctx, "UPDATE roles SET display_name = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2 AND origin = 'custom'", tenantID, id, name)
+	return err
+}
+
+// UpdateModuleRole sets the locked fields of a module role copy (display
+// name, description, retirement) from its definition.
+func UpdateModuleRole(ctx context.Context, tx pgx.Tx, tenantID, id, name, description string, retiredAt *time.Time) error {
+	ct, err := tx.Exec(ctx, `UPDATE roles SET display_name = $3, description = $4, retired_at = $5, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND origin = 'module'`, tenantID, id, name, description, retiredAt)
+	if err == nil && ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// AdoptBuiltinRole turns an existing custom role into the built-in role of
+// the same slug (feature 019: a custom "auditor" becomes the built-in one).
+func AdoptBuiltinRole(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
+	ct, err := tx.Exec(ctx, "UPDATE roles SET builtin = true, origin = 'builtin', updated_at = now() WHERE tenant_id = $1 AND id = $2 AND origin = 'custom'", tenantID, id)
+	if err == nil && ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
 	return err
 }
 
 // RemoveRole removes a custom role (bindings/permissions cascade).
 func RemoveRole(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
-	ct, err := tx.Exec(ctx, "DELETE FROM roles WHERE tenant_id = $1 AND id = $2 AND NOT builtin", tenantID, id)
+	ct, err := tx.Exec(ctx, "DELETE FROM roles WHERE tenant_id = $1 AND id = $2 AND origin = 'custom'", tenantID, id)
 	if err == nil && ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -312,29 +338,30 @@ func RemoveRole(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
 }
 
 // ReplaceRolePermissions mirrors the FGA grants.
-func ReplaceRolePermissions(ctx context.Context, tx pgx.Tx, tenantID, roleID string, perms [][2]string) error {
+func ReplaceRolePermissions(ctx context.Context, tx pgx.Tx, tenantID, roleID string, perms []permref.Ref) error {
 	if _, err := tx.Exec(ctx, "DELETE FROM role_permissions WHERE tenant_id = $1 AND role_id = $2", tenantID, roleID); err != nil {
 		return err
 	}
 	for _, p := range perms {
-		if _, err := tx.Exec(ctx, "INSERT INTO role_permissions (role_id, tenant_id, resource, action) VALUES ($1,$2,$3,$4)", roleID, tenantID, p[0], p[1]); err != nil {
+		if _, err := tx.Exec(ctx, "INSERT INTO role_permissions (role_id, tenant_id, module, resource, action) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+			roleID, tenantID, p.Module, p.Resource, p.Action); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// ListRolePermissions returns resource/action pairs.
-func ListRolePermissions(ctx context.Context, tx pgx.Tx, tenantID, roleID string) ([][2]string, error) {
-	rows, err := tx.Query(ctx, "SELECT resource, action FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 ORDER BY resource, action", tenantID, roleID)
+// ListRolePermissions returns the role's grants (legacy ones have no module).
+func ListRolePermissions(ctx context.Context, tx pgx.Tx, tenantID, roleID string) ([]permref.Ref, error) {
+	rows, err := tx.Query(ctx, "SELECT module, resource, action FROM role_permissions WHERE tenant_id = $1 AND role_id = $2 ORDER BY module, resource, action", tenantID, roleID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out [][2]string
+	var out []permref.Ref
 	for rows.Next() {
-		var p [2]string
-		if err := rows.Scan(&p[0], &p[1]); err != nil {
+		var p permref.Ref
+		if err := rows.Scan(&p.Module, &p.Resource, &p.Action); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -384,30 +411,43 @@ func CountUsersWithRole(ctx context.Context, tx pgx.Tx, tenantID, slug string) (
 
 // ---------------------------------------------------------------- permissions registry
 
-// UpsertPermission registers a permission for a tenant.
-func UpsertPermission(ctx context.Context, tx pgx.Tx, tenantID, resource, action, description, registeredBy string) error {
-	_, err := tx.Exec(ctx, `INSERT INTO permissions (tenant_id, resource, action, description, registered_by) VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (tenant_id, resource, action) DO UPDATE SET description = EXCLUDED.description, registered_by = EXCLUDED.registered_by`,
-		tenantID, resource, action, description, registeredBy)
+// UpsertPermission registers a permission for a tenant (module ” = legacy).
+func UpsertPermission(ctx context.Context, tx pgx.Tx, tenantID string, p Permission, registeredBy string) error {
+	_, err := tx.Exec(ctx, `INSERT INTO permissions (tenant_id, module, resource, action, description, registered_by) VALUES ($1,$2,$3,$4,$5,$6)
+		ON CONFLICT (tenant_id, module, resource, action) DO UPDATE SET description = EXCLUDED.description, registered_by = EXCLUDED.registered_by`,
+		tenantID, p.Module, p.Resource, p.Action, p.Description, registeredBy)
 	return err
 }
 
-// ListPermissions for a tenant: resource, action, description.
-func ListPermissions(ctx context.Context, tx pgx.Tx, tenantID string) ([][3]string, error) {
-	rows, err := tx.Query(ctx, "SELECT resource, action, description FROM permissions WHERE tenant_id = $1 ORDER BY resource, action", tenantID)
+// ListPermissions returns a tenant's catalogue ordered by module, resource, action.
+func ListPermissions(ctx context.Context, tx pgx.Tx, tenantID string) ([]Permission, error) {
+	rows, err := tx.Query(ctx, "SELECT module, resource, action, description FROM permissions WHERE tenant_id = $1 ORDER BY module, resource, action", tenantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out [][3]string
+	var out []Permission
 	for rows.Next() {
-		var p [3]string
-		if err := rows.Scan(&p[0], &p[1], &p[2]); err != nil {
+		var p Permission
+		if err := rows.Scan(&p.Module, &p.Resource, &p.Action, &p.Description); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// DeleteLegacyPermissions removes a tenant's legacy (module ”) permission
+// rows and their mirror grants; it returns how many permission rows went.
+func DeleteLegacyPermissions(ctx context.Context, tx pgx.Tx, tenantID string) (int64, error) {
+	if _, err := tx.Exec(ctx, "DELETE FROM role_permissions WHERE tenant_id = $1 AND module = ''", tenantID); err != nil {
+		return 0, err
+	}
+	ct, err := tx.Exec(ctx, "DELETE FROM permissions WHERE tenant_id = $1 AND module = ''", tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 // ---------------------------------------------------------------- sessions
