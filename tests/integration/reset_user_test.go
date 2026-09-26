@@ -17,8 +17,8 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
 
-// TestResetUser covers `authsvc reset-user`: credentials, MFA, recovery codes
-// and sessions are cleared, the old password stops working, and the printed
+// TestResetUser covers `authsvc reset-user`: credentials, MFA, recovery codes,
+// security keys (feature 018) and sessions are cleared, the old password stops working, and the printed
 // invitation restores the account with its roles.
 func TestResetUser(t *testing.T) {
 	e := Start(t)
@@ -34,6 +34,10 @@ func TestResetUser(t *testing.T) {
 			return err
 		}
 		if err := store.SetMFA(ctx, tx, tid, uid, true, []byte("sealed-seed")); err != nil {
+			return err
+		}
+		if err := store.InsertWebAuthnCredential(ctx, tx, store.WebAuthnCredential{ID: store.NewID(), TenantID: tid, UserID: uid,
+			CredentialID: []byte("reset-user-credential-id"), PublicKey: []byte{1}, Name: "Desk"}); err != nil {
 			return err
 		}
 		return store.ReplaceRecoveryCodes(ctx, tx, tid, uid, []string{"h1", "h2"})
@@ -57,17 +61,20 @@ func TestResetUser(t *testing.T) {
 	var status string
 	var mfa bool
 	var pwNull bool
-	var codes int
+	var codes, keys int
 	if err := e.App.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, "SELECT status, mfa_enabled, password_hash IS NULL FROM users WHERE id=$1", uid).Scan(&status, &mfa, &pwNull); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, "SELECT count(*) FROM webauthn_credentials WHERE user_id=$1", uid).Scan(&keys); err != nil {
 			return err
 		}
 		return tx.QueryRow(ctx, "SELECT count(*) FROM recovery_codes WHERE user_id=$1", uid).Scan(&codes)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if status != "invited" || mfa || !pwNull || codes != 0 {
-		t.Fatalf("credentials not cleared: status=%s mfa=%v pwNull=%v codes=%d", status, mfa, pwNull, codes)
+	if status != "invited" || mfa || !pwNull || codes != 0 || keys != 0 {
+		t.Fatalf("credentials not cleared: status=%s mfa=%v pwNull=%v codes=%d keys=%d", status, mfa, pwNull, codes, keys)
 	}
 	if code := e.Browser().SignIn("acme", em, oldPW); code == 200 {
 		t.Fatal("the old password must stop working after a reset")

@@ -48,6 +48,34 @@ components:
             directory_uid: { type: string }
             last_imported_at: { type: string, format: date-time }
         invitation_id: { type: string, format: uuid, nullable: true, description: pending invitation of an invited user (enables resend) }
+    SecurityKey:
+      type: object
+      description: A registered security key (feature 018). Never the credential id or public key.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 64 }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        flagged: { type: boolean, description: possibly cloned (signature counter did not increase); refused until removed }
+    MfaState:
+      type: object
+      properties:
+        totp: { type: boolean }
+        keys: { type: array, items: { $ref: '#/components/schemas/SecurityKey' } }
+        recovery_codes_left: { type: integer }
+        required: { type: boolean, description: tenant policy requires a second factor }
+        webauthn: { type: object, properties: { enabled: { type: boolean }, rp_id: { type: string, description: 'host name keys are bound to' } } }
+    WebAuthnCredential:
+      type: object
+      description: 'PublicKeyCredential.toJSON() (W3C JSON serialisation, base64url fields); parsed server-side within 64 KiB'
+      required: [id, type, response]
+      properties:
+        id: { type: string, maxLength: 1400 }
+        rawId: { type: string, maxLength: 1400 }
+        type: { type: string, enum: [public-key] }
+        response: { type: object }
+        authenticatorAttachment: { type: string, nullable: true }
+        clientExtensionResults: { type: object }
     Role:
       type: object
       properties:
@@ -366,6 +394,20 @@ paths:
       requestBody:
         content: { application/json: { schema: { type: object, additionalProperties: false, required: [challenge, code], properties: { challenge: { type: string }, code: { type: string, maxLength: 16 } } } } }
       responses: { '200': { description: signed in }, '401': { description: invalid_credentials } }
+  /api/v1/signin/mfa/webauthn/options:
+    post:
+      operationId: signInWebAuthnOptions
+      security: []
+      summary: Security-key request options for a pending sign-in (feature 018; the user's usable keys)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [challenge], properties: { challenge: { type: string, maxLength: 128 } } } } } }
+      responses: { '200': { description: '{"publicKey": PublicKeyCredentialRequestOptions}' }, '401': { description: invalid_challenge }, '423': { description: locked }, '429': { description: rate_limited } }
+  /api/v1/signin/mfa/webauthn:
+    post:
+      operationId: signInWebAuthn
+      security: []
+      summary: Complete sign-in with a security-key assertion (step 2; failures count toward the lockout like a wrong code)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [challenge, credential], properties: { challenge: { type: string, maxLength: 128 }, credential: { $ref: '#/components/schemas/WebAuthnCredential' } } } } } }
+      responses: { '200': { description: signed in (as /signin/mfa) }, '401': { description: mfa_failed | key_flagged }, '423': { description: locked } }
   /api/v1/signout:
     post:
       operationId: signOut
@@ -429,6 +471,45 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }]
       summary: Regenerate recovery codes
       responses: { '200': { description: codes } }
+
+  /api/v1/me/mfa:
+    get:
+      operationId: getMyMfa
+      summary: My second factors (authenticator app, security keys, recovery codes left, tenant requirement)
+      responses: { '200': { description: state, content: { application/json: { schema: { $ref: '#/components/schemas/MfaState' } } } } }
+  /api/v1/me/mfa/webauthn/register/options:
+    post:
+      operationId: webAuthnRegisterOptions
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Start registering a named security key (attestation none; my keys excluded)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [name], properties: { name: { type: string, maxLength: 256 } } } } } }
+      responses: { '200': { description: '{"publicKey": PublicKeyCredentialCreationOptions}' }, '400': { description: invalid_name }, '404': { description: webauthn_disabled }, '409': { description: name_taken | key_limit } }
+  /api/v1/me/mfa/webauthn/register:
+    post:
+      operationId: webAuthnRegister
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Finish registering a security key; the first factor returns recovery codes once
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [credential], properties: { credential: { $ref: '#/components/schemas/WebAuthnCredential' } } } } } }
+      responses: { '201': { description: '{"key": SecurityKey, "recovery_codes"?: [..]}' }, '400': { description: registration_failed }, '409': { description: already_registered | name_taken | key_limit } }
+  /api/v1/me/mfa/webauthn/{id}:
+    patch:
+      operationId: renameSecurityKey
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      summary: Rename one of my security keys
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [name], properties: { name: { type: string, maxLength: 256 } } } } } }
+      responses: { '200': { description: '{"key": SecurityKey}' }, '400': { description: invalid_name }, '404': { description: not_found }, '409': { description: name_taken } }
+    delete:
+      operationId: removeSecurityKey
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      summary: Remove one of my security keys after confirming a current factor (code, recovery code or key assertion)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, properties: { code: { type: string, maxLength: 16 }, credential: { $ref: '#/components/schemas/WebAuthnCredential' } } } } } }
+      responses: { '204': { description: removed }, '403': { description: confirmation_failed (counts toward the lockout) }, '404': { description: not_found }, '409': { description: last_factor_required }, '423': { description: locked } }
+  /api/v1/me/mfa/stepup/options:
+    post:
+      operationId: stepUpOptions
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: Security-key request options that confirm a removal
+      responses: { '200': { description: '{"publicKey": PublicKeyCredentialRequestOptions}' }, '404': { description: webauthn_disabled }, '409': { description: no_keys } }
 
   /api/v1/recovery:
     post:
@@ -514,6 +595,18 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
       summary: Force sign-out everywhere
       responses: { '204': { description: revoked } }
+  /api/v1/admin/users/{id}/mfa:
+    get:
+      operationId: getUserMfa
+      summary: A user's second-factor methods (admin; key names and use, never key material or credential ids)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: '{"totp", "keys": [{name, created_at, last_used_at, flagged}], "recovery_codes_left"}' }, '403': { description: forbidden }, '404': { description: not_found } }
+  /api/v1/admin/users/{id}/mfa/reset:
+    post:
+      operationId: resetUserMfa
+      parameters: [{ $ref: '#/components/parameters/csrf' }, { name: id, in: path, required: true, schema: { type: string } }]
+      summary: Remove a user's authenticator app, security keys and recovery codes and end their sessions (admin; not self, not a more privileged user)
+      responses: { '204': { description: reset }, '403': { description: forbidden }, '404': { description: not_found }, '409': { description: 'invalid_state (imported user)' } }
   /api/v1/roles:
     get: { operationId: listRoleNames, summary: 'Subject picker (feature 005): slug and display name of the tenant roles, any signed-in member', responses: { '200': { description: roles } } }
   /api/v1/admin/roles:

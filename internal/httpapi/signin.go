@@ -137,7 +137,11 @@ func (s *Server) signInMFA(d US1Deps) http.HandlerFunc {
 // challenge; bodies never carry anything that distinguishes failure causes.
 func (s *Server) finishSignin(w http.ResponseWriter, res user.Result) {
 	if res.MFARequired {
-		WriteJSON(w, http.StatusOK, map[string]any{"mfa_required": true, "challenge": res.Challenge})
+		methods := res.MFAMethods
+		if methods == nil {
+			methods = []string{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"mfa_required": true, "challenge": res.Challenge, "mfa_methods": methods})
 		return
 	}
 	maxAge := int(res.Session.ExpiresAt.Sub(res.Session.CreatedAt).Seconds())

@@ -31,6 +31,10 @@ type AdminStore interface {
 	// DeleteImportedUser hard-deletes a user only while imported; any other
 	// status (or a missing user) is store.ErrNotFound.
 	DeleteImportedUser(ctx context.Context, tenantID, userID string) error
+	// Feature 018: second factors.
+	ResetMFA(ctx context.Context, tenantID, userID string) error
+	ListWebAuthnCredentials(ctx context.Context, tenantID, userID string) ([]store.WebAuthnCredential, error)
+	ListRecoveryCodeHashes(ctx context.Context, tenantID, userID string) ([]string, error)
 }
 
 // Admin performs tenant administration of users. Every method takes the
@@ -219,6 +223,76 @@ func (a *Admin) RemoveImported(ctx context.Context, actor tenantctx.Actor, uid s
 		return err
 	}
 	a.emit(audit.Event{Type: audit.ImportedUserDeleted, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid})
+	return nil
+}
+
+// rank orders the builtin roles for the "more privileged" check.
+func rank(roles []string) int {
+	best := 0
+	for _, r := range roles {
+		switch {
+		case r == "operator" && best < 3:
+			best = 3
+		case r == "owner" && best < 2:
+			best = 2
+		case r == "admin" && best < 1:
+			best = 1
+		}
+	}
+	return best
+}
+
+// ResetMFA removes every second factor of a user (authenticator app,
+// security keys, recovery codes) and ends their sessions; the user sets a
+// factor up again at next sign-in when the tenant requires one. An
+// administrator cannot reset their own factors (the account page does that
+// with re-confirmation) nor those of a more privileged user (ErrForbidden).
+func (a *Admin) ResetMFA(ctx context.Context, actor tenantctx.Actor, uid string) error {
+	u, err := a.lookup(ctx, actor, uid)
+	if err != nil {
+		return err
+	}
+	if u.Status == "imported" {
+		return ErrInvalidState
+	}
+	roles, err := a.st.Roles(ctx, actor.TenantID, uid)
+	if err != nil {
+		return err
+	}
+	if uid == actor.UserID || rank(roles) > rank(actor.Roles) {
+		reason := "more_privileged"
+		if uid == actor.UserID {
+			reason = "self"
+		}
+		a.emit(audit.Event{Type: audit.MFAReset, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "refused", Reason: reason, SubjectKind: "user", SubjectID: uid})
+		return ErrForbidden
+	}
+	keys, err := a.st.ListWebAuthnCredentials(ctx, actor.TenantID, uid)
+	if err != nil {
+		return err
+	}
+	codes, err := a.st.ListRecoveryCodeHashes(ctx, actor.TenantID, uid)
+	if err != nil {
+		return err
+	}
+	methods := []string{}
+	if len(u.MFASecretEnc) > 0 {
+		methods = append(methods, "totp")
+	}
+	if len(keys) > 0 {
+		methods = append(methods, "webauthn")
+	}
+	if len(codes) > 0 {
+		methods = append(methods, "recovery")
+	}
+	if err := a.st.ResetMFA(ctx, actor.TenantID, uid); err != nil {
+		return err
+	}
+	if err := a.sessions.RevokeUser(ctx, actor.TenantID, uid, session.ReasonAdmin, ""); err != nil {
+		return err
+	}
+	a.emit(audit.Event{Type: audit.MFAReset, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID, Outcome: "ok", SubjectKind: "user", SubjectID: uid,
+		Details: map[string]any{"methods": methods, "keys": len(keys)}})
 	return nil
 }
 

@@ -108,3 +108,16 @@ func (d DBAdminStore) GetAvatar(ctx context.Context, tid, uid, id string) (a sto
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { a, err = store.GetAvatar(ctx, tx, tid, uid, id); return err })
 	return
 }
+
+// Feature 018: second factors.
+func (d DBAdminStore) ResetMFA(ctx context.Context, tid, uid string) error {
+	return d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { return store.ResetMFA(ctx, tx, tid, uid) })
+}
+func (d DBAdminStore) ListWebAuthnCredentials(ctx context.Context, tid, uid string) (out []store.WebAuthnCredential, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListWebAuthnCredentials(ctx, tx, tid, uid); return err })
+	return
+}
+func (d DBAdminStore) ListRecoveryCodeHashes(ctx context.Context, tid, uid string) (out []string, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListRecoveryCodeHashes(ctx, tx, tid, uid); return err })
+	return
+}
