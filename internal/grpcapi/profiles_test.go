@@ -104,3 +104,35 @@ func TestProfilesListMembers(t *testing.T) {
 		t.Fatalf("anonymous → %v", err)
 	}
 }
+
+func TestProfilesContacts(t *testing.T) {
+	const tid, other = "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c55", "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c66"
+	ms := memstore.New()
+	ms.AddUser(store.User{ID: "u1", TenantID: tid, Email: "dana@x.test", DisplayName: "Dana K", Phone: "+385911234567", Status: "active"})
+	ms.AddUser(store.User{ID: "u2", TenantID: tid, Email: "bob@x.test", DisplayName: "Bob", Status: "deactivated"})
+	ms.AddUser(store.User{ID: "u3", TenantID: tid, Email: "", DisplayName: "No mail", Status: "active"})
+	ms.AddUser(store.User{ID: "u9", TenantID: other, Email: "f@x.test", DisplayName: "Foreign", Status: "active"})
+	srv := &ProfilesServer{Profiles: user.NewProfiles(ms, nil)}
+	ctx := tenantctx.WithActor(context.Background(), tenantctx.Actor{Kind: tenantctx.KindService, ServiceID: "spiffe://example.org/svc/signing"})
+
+	res, err := srv.Contacts(ctx, &authv1.LookupContactsRequest{TenantId: tid, UserIds: []string{"u1", "u2", "u3", "u9", "nope", "u1"}})
+	if err != nil || len(res.GetContacts()) != 1 {
+		t.Fatalf("%v %v", res, err)
+	}
+	c := res.GetContacts()[0]
+	if c.GetUserId() != "u1" || c.GetEmail() != "dana@x.test" || c.GetDisplayName() != "Dana K" || strings.Contains(c.String(), "+385") {
+		t.Fatalf("contact = %+v", c)
+	}
+	for _, req := range []*authv1.LookupContactsRequest{
+		{TenantId: "not-a-uuid", UserIds: []string{"u1"}},
+		{TenantId: tid},
+		{TenantId: tid, UserIds: make([]string, 101)},
+	} {
+		if _, err := srv.Contacts(ctx, req); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("%v → %v", req, err)
+		}
+	}
+	if _, err := srv.Contacts(context.Background(), &authv1.LookupContactsRequest{TenantId: tid, UserIds: []string{"u1"}}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("anonymous → %v", err)
+	}
+}

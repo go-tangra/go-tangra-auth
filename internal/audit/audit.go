@@ -85,6 +85,9 @@ const (
 	RoleCloned         EventType = "role_cloned"
 	PermissionMigrated EventType = "permission_migrated"
 	PermissionPruned   EventType = "permission_pruned"
+	// Feature 027: a service read members' e-mail addresses (details: count
+	// and the calling service, never the addresses).
+	ContactsLookedUp EventType = "contacts_looked_up"
 )
 
 var known = map[EventType]struct{}{}
@@ -97,7 +100,7 @@ func init() {
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
 		DirectoryImported, ImportedUserDeleted, EmailGivenUp, MFAReset, MFACloneSuspected,
-		ModuleRegistered, ModuleRoleUpserted, ModuleRoleRetired, RoleCloned, PermissionMigrated, PermissionPruned} {
+		ModuleRegistered, ModuleRoleUpserted, ModuleRoleRetired, RoleCloned, PermissionMigrated, PermissionPruned, ContactsLookedUp} {
 		known[t] = struct{}{}
 	}
 }

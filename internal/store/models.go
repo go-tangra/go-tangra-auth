@@ -71,7 +71,7 @@ type Avatar struct {
 type PublicProfile struct {
 	ID, DisplayName string
 	AvatarID        *string
-	Email           string // filled by SearchProfiles only
+	Email           string // filled by SearchProfiles and LookupContacts only
 }
 
 // Role origins (feature 019).

@@ -372,6 +372,21 @@ func (m *Store) LookupProfiles(_ context.Context, tid string, ids []string) ([]s
 	return out, nil
 }
 
+func (m *Store) LookupContacts(_ context.Context, tid string, ids []string) ([]store.PublicProfile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.PublicProfile
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if _, u, ok := m.userByID(tid, id); ok && u.Status == "active" && u.Email != "" && !seen[u.ID] {
+			seen[u.ID] = true
+			out = append(out, store.PublicProfile{ID: u.ID, DisplayName: u.DisplayName, Email: u.Email})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
 func (m *Store) ListActiveMemberIDs(_ context.Context, tid, after string, limit int, ids []string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

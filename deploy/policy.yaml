@@ -28,6 +28,11 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
     effect: allow
+  - id: signing-directory
+    from: ["spiffe://example.org/svc/signing"]
+    to: ["auth"]
+    operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Contacts"]
+    effect: allow
   - id: gateway-exchange
     from: ["spiffe://example.org/svc/gateway"]
     to: ["auth"]

@@ -284,6 +284,10 @@ func TestGroupRepos(t *testing.T) {
 		if err != nil || len(pubs) != 2 {
 			t.Fatalf("lookup must omit foreign ids: %v %v", pubs, err)
 		}
+		contacts, err := LookupContacts(ctx, tx, tA, []string{uA, uB, uA2})
+		if err != nil || len(contacts) != 2 || contacts[0].Email == "" || contacts[1].Email == "" {
+			t.Fatalf("contacts must omit foreign ids and carry the e-mail: %v %v", contacts, err)
+		}
 		if err := DeleteAvatar(ctx, tx, tA, uA); err != nil {
 			return err
 		}
