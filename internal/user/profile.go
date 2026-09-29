@@ -32,6 +32,7 @@ type ProfileStore interface {
 	UserAnyTenant(ctx context.Context, id string) (store.User, error)
 	UpdateProfile(ctx context.Context, tenantID, id string, p store.ProfilePatch) error
 	LookupProfiles(ctx context.Context, tenantID string, ids []string) ([]store.PublicProfile, error)
+	LookupContacts(ctx context.Context, tenantID string, ids []string) ([]store.PublicProfile, error)
 	SearchProfiles(ctx context.Context, tenantID, q string, limit int) ([]store.PublicProfile, error)
 	ListActiveMemberIDs(ctx context.Context, tenantID, after string, limit int, ids []string) ([]string, error)
 }
@@ -269,6 +270,31 @@ func (p *Profiles) Lookup(ctx context.Context, actor tenantctx.Actor, ids []stri
 	for _, r := range rows {
 		out = append(out, PublicView{ID: r.ID, DisplayName: r.DisplayName, AvatarURL: tenantctx.AvatarURL(r.ID, r.AvatarID)})
 	}
+	return out, nil
+}
+
+// ContactView is a member's e-mail contact (feature 027).
+type ContactView struct {
+	ID, DisplayName, Email string
+}
+
+// Contacts returns the e-mail address of active members of the actor's tenant
+// for a platform service (the signing module); the lookup is audited with the
+// count and the calling service, never the addresses.
+func (p *Profiles) Contacts(ctx context.Context, actor tenantctx.Actor, ids []string, caller string) ([]ContactView, error) {
+	if len(ids) > LookupMax {
+		ids = ids[:LookupMax]
+	}
+	rows, err := p.st.LookupContacts(ctx, actor.TenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ContactView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ContactView{ID: r.ID, DisplayName: r.DisplayName, Email: r.Email})
+	}
+	p.emit(audit.Event{Type: audit.ContactsLookedUp, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID,
+		Outcome: "ok", SubjectKind: "user", Details: map[string]any{"count": len(out), "requested": len(ids), "service": caller}})
 	return out, nil
 }
 

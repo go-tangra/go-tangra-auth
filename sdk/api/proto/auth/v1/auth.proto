@@ -214,6 +214,23 @@ service Profiles {
   // "everyone" messages); with user_ids it returns the active ones among
   // them. Policy: services allowed by policy.yaml (the notification module).
   rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
+  // Contacts returns the e-mail address of active members of a tenant (feature
+  // 027: signing invitations and certificate subjects). Policy: services allowed
+  // by policy.yaml only (the signing module). Inactive, foreign and unknown ids
+  // and users without an e-mail are omitted; the phone number is never returned.
+  rpc Contacts(LookupContactsRequest) returns (LookupContactsResponse);
+}
+message LookupContactsRequest {
+  string tenant_id = 1;
+  repeated string user_ids = 2; // 1..100
+}
+message Contact {
+  string user_id = 1;
+  string display_name = 2;
+  string email = 3;
+}
+message LookupContactsResponse {
+  repeated Contact contacts = 1; // ordered by user id
 }
 message ListMembersRequest {
   string tenant_id = 1;

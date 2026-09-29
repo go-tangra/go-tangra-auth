@@ -737,6 +737,7 @@ var Authorization_ServiceDesc = grpc.ServiceDesc{
 const (
 	Profiles_Lookup_FullMethodName      = "/auth.v1.Profiles/Lookup"
 	Profiles_ListMembers_FullMethodName = "/auth.v1.Profiles/ListMembers"
+	Profiles_Contacts_FullMethodName    = "/auth.v1.Profiles/Contacts"
 )
 
 // ProfilesClient is the client API for Profiles service.
@@ -752,6 +753,11 @@ type ProfilesClient interface {
 	// "everyone" messages); with user_ids it returns the active ones among
 	// them. Policy: services allowed by policy.yaml (the notification module).
 	ListMembers(ctx context.Context, in *ListMembersRequest, opts ...grpc.CallOption) (*ListMembersResponse, error)
+	// Contacts returns the e-mail address of active members of a tenant (feature
+	// 027: signing invitations and certificate subjects). Policy: services allowed
+	// by policy.yaml only (the signing module). Inactive, foreign and unknown ids
+	// and users without an e-mail are omitted; the phone number is never returned.
+	Contacts(ctx context.Context, in *LookupContactsRequest, opts ...grpc.CallOption) (*LookupContactsResponse, error)
 }
 
 type profilesClient struct {
@@ -782,6 +788,16 @@ func (c *profilesClient) ListMembers(ctx context.Context, in *ListMembersRequest
 	return out, nil
 }
 
+func (c *profilesClient) Contacts(ctx context.Context, in *LookupContactsRequest, opts ...grpc.CallOption) (*LookupContactsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LookupContactsResponse)
+	err := c.cc.Invoke(ctx, Profiles_Contacts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProfilesServer is the server API for Profiles service.
 // All implementations must embed UnimplementedProfilesServer
 // for forward compatibility.
@@ -795,6 +811,11 @@ type ProfilesServer interface {
 	// "everyone" messages); with user_ids it returns the active ones among
 	// them. Policy: services allowed by policy.yaml (the notification module).
 	ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error)
+	// Contacts returns the e-mail address of active members of a tenant (feature
+	// 027: signing invitations and certificate subjects). Policy: services allowed
+	// by policy.yaml only (the signing module). Inactive, foreign and unknown ids
+	// and users without an e-mail are omitted; the phone number is never returned.
+	Contacts(context.Context, *LookupContactsRequest) (*LookupContactsResponse, error)
 	mustEmbedUnimplementedProfilesServer()
 }
 
@@ -810,6 +831,9 @@ func (UnimplementedProfilesServer) Lookup(context.Context, *LookupProfilesReques
 }
 func (UnimplementedProfilesServer) ListMembers(context.Context, *ListMembersRequest) (*ListMembersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMembers not implemented")
+}
+func (UnimplementedProfilesServer) Contacts(context.Context, *LookupContactsRequest) (*LookupContactsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Contacts not implemented")
 }
 func (UnimplementedProfilesServer) mustEmbedUnimplementedProfilesServer() {}
 func (UnimplementedProfilesServer) testEmbeddedByValue()                  {}
@@ -868,6 +892,24 @@ func _Profiles_ListMembers_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Profiles_Contacts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupContactsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProfilesServer).Contacts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Profiles_Contacts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProfilesServer).Contacts(ctx, req.(*LookupContactsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Profiles_ServiceDesc is the grpc.ServiceDesc for Profiles service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -882,6 +924,10 @@ var Profiles_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMembers",
 			Handler:    _Profiles_ListMembers_Handler,
+		},
+		{
+			MethodName: "Contacts",
+			Handler:    _Profiles_Contacts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

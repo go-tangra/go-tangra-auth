@@ -87,6 +87,10 @@ func (d DBAdminStore) LookupProfiles(ctx context.Context, tid string, ids []stri
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.LookupProfiles(ctx, tx, tid, ids); return err })
 	return
 }
+func (d DBAdminStore) LookupContacts(ctx context.Context, tid string, ids []string) (out []store.PublicProfile, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.LookupContacts(ctx, tx, tid, ids); return err })
+	return
+}
 func (d DBAdminStore) ListActiveMemberIDs(ctx context.Context, tid, after string, limit int, ids []string) (out []string, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error {
 		out, err = store.ListActiveMemberIDs(ctx, tx, tid, after, limit, ids)

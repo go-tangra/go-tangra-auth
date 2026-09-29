@@ -394,6 +394,27 @@ func ListActiveMemberIDs(ctx context.Context, tx pgx.Tx, tenantID, after string,
 	return out, rows.Err()
 }
 
+// LookupContacts returns id, display name and e-mail of the given active
+// users of the tenant that have an e-mail address (feature 027); inactive,
+// foreign and unknown ids are omitted.
+func LookupContacts(ctx context.Context, tx pgx.Tx, tenantID string, ids []string) ([]PublicProfile, error) {
+	rows, err := tx.Query(ctx, `SELECT id, display_name, email::text FROM users
+		WHERE tenant_id = $1 AND status = 'active' AND email::text <> '' AND id = ANY($2::uuid[]) ORDER BY id`, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PublicProfile
+	for rows.Next() {
+		var p PublicProfile
+		if err := rows.Scan(&p.ID, &p.DisplayName, &p.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // LookupProfiles returns the public profile of the given users of the tenant;
 // unknown or foreign ids are omitted.
 func LookupProfiles(ctx context.Context, tx pgx.Tx, tenantID string, ids []string) ([]PublicProfile, error) {

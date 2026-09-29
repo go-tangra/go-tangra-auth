@@ -58,3 +58,26 @@ func (s *ProfilesServer) ListMembers(ctx context.Context, req *authv1.ListMember
 	}
 	return &authv1.ListMembersResponse{UserIds: ids, NextCursor: next}, nil
 }
+
+// Contacts returns the e-mail address of at most 100 active members of one
+// tenant (feature 027; admitted by policy for the signing module only).
+func (s *ProfilesServer) Contacts(ctx context.Context, req *authv1.LookupContactsRequest) (*authv1.LookupContactsResponse, error) {
+	ctx, svc := serviceCtx(ctx)
+	actor, ok := tenantctx.FromContext(ctx)
+	if !ok || svc == "" && actor.Kind != tenantctx.KindService {
+		return nil, status.Error(codes.Unauthenticated, "service identity required")
+	}
+	if !tenantctx.ValidTenantID(req.GetTenantId()) || len(req.GetUserIds()) == 0 || len(req.GetUserIds()) > user.LookupMax {
+		return nil, status.Error(codes.InvalidArgument, "malformed request")
+	}
+	actor.TenantID = req.GetTenantId()
+	rows, err := s.Profiles.Contacts(ctx, actor, req.GetUserIds(), svc)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "profiles unavailable")
+	}
+	out := &authv1.LookupContactsResponse{}
+	for _, r := range rows {
+		out.Contacts = append(out.Contacts, &authv1.Contact{UserId: r.ID, DisplayName: r.DisplayName, Email: r.Email})
+	}
+	return out, nil
+}

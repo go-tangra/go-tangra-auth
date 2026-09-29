@@ -44,6 +44,12 @@ func (f *failUserStore) LookupProfiles(ctx context.Context, tid string, ids []st
 	}
 	return f.Store.LookupProfiles(ctx, tid, ids)
 }
+func (f *failUserStore) LookupContacts(ctx context.Context, tid string, ids []string) ([]store.PublicProfile, error) {
+	if f.fail["contacts"] {
+		return nil, errDown
+	}
+	return f.Store.LookupContacts(ctx, tid, ids)
+}
 func (f *failUserStore) SearchProfiles(ctx context.Context, tid, q string, limit int) ([]store.PublicProfile, error) {
 	if f.fail["search"] {
 		return nil, errDown
@@ -132,6 +138,15 @@ func TestProfileAndAvatarFailureBranches(t *testing.T) {
 	}
 	if out, err := p.Lookup(ctx, self, many); err != nil || len(out) != LookupMax {
 		t.Fatalf("cap: %d %v", len(out), err)
+	}
+	// Contacts: store failure; the id cap applies too (duplicates collapse).
+	fs.fail["contacts"] = true
+	if _, err := p.Contacts(ctx, self, []string{"u1"}, "spiffe://example.org/svc/signing"); !errors.Is(err, errDown) {
+		t.Fatalf("contacts failure: %v", err)
+	}
+	fs.fail["contacts"] = false
+	if _, err := p.Contacts(ctx, self, many, "spiffe://example.org/svc/signing"); err != nil {
+		t.Fatalf("contacts cap: %v", err)
 	}
 	// DeriveDisplayName fallbacks.
 	if DeriveDisplayName("", "", "Prev", "e@x") != "Prev" || DeriveDisplayName("", "", "", "e@x") != "e" || DeriveDisplayName("A", "", "", "e@x") != "A" {
