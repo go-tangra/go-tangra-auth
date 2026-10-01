@@ -6,6 +6,7 @@ import { zodToFields } from '@go-tangra/ui/forms'
 import { ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { useGroups, type Group } from '@/stores/groups'
+import { usePagedList, GROUP_LIST } from '@/composables/usePagedList'
 import { groupSchema } from '@/schemas'
 
 const groups = useGroups()
@@ -16,7 +17,10 @@ const dialog = ref(false)
 const editing = ref<Group | null>(null)
 const confirmDelete = ref<Group | null>(null)
 type Row = Group & Record<string, unknown> & { id: string }
-const rows = computed<Row[]>(() => groups.items.map((g) => ({ ...g, id: g.id ?? '' })))
+// --- server paging and sorting (page / size / sort in the URL: ?groups.page=…) ---
+const list = usePagedList<Group>('groups', '/api/v1/admin/groups', GROUP_LIST, () => ({ q: q.value.trim() }),
+  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load groups.' })
+const rows = computed<Row[]>(() => list.items.value.map((g) => ({ ...g, id: g.id ?? '' })))
 const fields = zodToFields(groupSchema, { description: { cols: 12 } })
 
 function openNew(): void {
@@ -29,7 +33,11 @@ function openEdit(g: Group): void {
   error.value = null
   dialog.value = true
 }
-const submit = (v: Record<string, unknown>) => (editing.value?.id ? groups.update(editing.value.id, String(v.name), String(v.description ?? '')) : groups.create(String(v.name), String(v.description ?? '')))
+async function submit(v: Record<string, unknown>): Promise<Group> {
+  const g = await (editing.value?.id ? groups.update(editing.value.id, String(v.name), String(v.description ?? '')) : groups.create(String(v.name), String(v.description ?? '')))
+  await list.load()
+  return g
+}
 async function remove(): Promise<void> {
   const g = confirmDelete.value
   if (!g?.id) return
@@ -38,9 +46,10 @@ async function remove(): Promise<void> {
   try {
     await groups.remove(g.id, g.member_count ?? 0)
     confirmDelete.value = null
+    await list.load()
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not delete the group.'
-    if (err instanceof ApiError && err.reason === 'member_count_mismatch') await groups.load(q.value)
+    if (err instanceof ApiError && err.reason === 'member_count_mismatch') await list.load()
   } finally {
     busy.value = false
   }
@@ -48,12 +57,12 @@ async function remove(): Promise<void> {
 let timer: number | undefined
 watch(q, () => {
   window.clearTimeout(timer)
-  timer = window.setTimeout(() => void groups.load(q.value), 250)
+  timer = window.setTimeout(() => void list.refilter(), 250)
 })
-onMounted(() => groups.load())
+onMounted(() => void list.load())
 const columns: Column<Row>[] = [
   { key: 'name', label: 'Group', sortable: true },
-  { key: 'member_count', label: 'Members', align: 'end', format: (g) => String(g.member_count ?? 0) },
+  { key: 'member_count', label: 'Members', align: 'end', format: (g) => String(g.member_count ?? 0), sortable: true },
   { key: 'roles', label: 'Roles', format: (g) => (g.roles ?? []).join(', '), hideOnStack: true },
 ]
 </script>
@@ -64,7 +73,7 @@ const columns: Column<Row>[] = [
     <template #filters><UiInput id="group-search" v-model="q" label="Search" sr-only-label placeholder="Search groups" type="search" class="w-full md:max-w-sm" data-test="search" /></template>
     <UiAlert v-if="error && !dialog && !confirmDelete" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
     <UiCard :padded="false">
-      <UiDataTable :items="rows" :columns="columns" caption="Groups" empty-title="No groups yet" :row-attrs="() => ({ 'data-test': 'group-row' })">
+      <UiDataTable :items="rows" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Groups" empty-title="No groups yet" :row-attrs="() => ({ 'data-test': 'group-row' })" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
         <template #cell-name="{ row }">
           <RouterLink :to="{ name: 'admin-group', params: { id: row.id } }" class="link link-primary" data-test="group-name">{{ row.name }}</RouterLink>
           <div v-if="row.description" class="text-xs text-base-content/70">{{ row.description }}</div>

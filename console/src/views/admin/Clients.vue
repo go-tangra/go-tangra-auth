@@ -5,6 +5,7 @@ import { zodToFields } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import { clientSchema } from '@/schemas'
+import { usePagedList, CLIENT_LIST } from '@/composables/usePagedList'
 
 interface Client extends Record<string, unknown> {
   client_id: string
@@ -12,19 +13,17 @@ interface Client extends Record<string, unknown> {
   redirect_uris: string[]
   public: boolean
 }
-const clients = ref<Client[]>([])
 const error = ref<string | null>(null)
 const dialog = ref(false)
 const created = ref<(Client & { client_secret?: string }) | null>(null)
-const rows = computed(() => clients.value.map((c) => ({ ...c, id: c.client_id })))
+// --- server paging and sorting (page / size / sort in the URL: ?clients.page=…) ---
+const list = usePagedList<Client>('clients', '/api/v1/admin/clients', CLIENT_LIST, () => ({}),
+  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load applications.' })
+const rows = computed(() => list.items.value.map((c) => ({ ...c, id: c.client_id })))
 const fields = zodToFields(clientSchema, { redirect_uris: { label: 'Redirect URIs (one per line, https)', type: 'textarea', cols: 12 }, public: { label: 'Public client (browser / mobile, PKCE only)', type: 'checkbox', cols: 12 } })
 
 async function load(): Promise<void> {
-  try {
-    clients.value = await api<Client[]>('GET', '/api/v1/admin/clients')
-  } catch (err) {
-    error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load applications.'
-  }
+  await list.load()
 }
 const submit = (v: Record<string, unknown>) => api<Client & { client_secret?: string }>('POST', '/api/v1/admin/clients', v)
 async function saved(c: unknown): Promise<void> {
@@ -35,7 +34,7 @@ async function saved(c: unknown): Promise<void> {
 onMounted(load)
 const columns: Column<(typeof rows.value)[number]>[] = [
   { key: 'display_name', label: 'Name', sortable: true },
-  { key: 'client_id', label: 'Client id' },
+  { key: 'client_id', label: 'Client id', sortable: true },
   { key: 'public', label: 'Type', format: (c) => (c.public ? 'public (PKCE)' : 'confidential'), width: 'sm' },
   { key: 'redirect_uris', label: 'Redirect URIs', format: (c) => c.redirect_uris.join(', '), hideOnStack: true },
 ]
@@ -54,7 +53,7 @@ const columns: Column<(typeof rows.value)[number]>[] = [
       <UiButton size="sm" variant="text" class="mt-2" data-test="created-dismiss" @click="created = null">Dismiss</UiButton>
     </UiAlert>
     <UiCard :padded="false">
-      <UiDataTable :items="rows" :columns="columns" caption="Applications" empty-title="No applications registered" :row-attrs="() => ({ 'data-test': 'client-row' })" data-test="clients">
+      <UiDataTable :items="rows" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Applications" empty-title="No applications registered" :row-attrs="() => ({ 'data-test': 'client-row' })" data-test="clients" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
         <template #cell-client_id="{ row }"><code class="text-xs">{{ row.client_id }}</code></template>
       </UiDataTable>
     </UiCard>

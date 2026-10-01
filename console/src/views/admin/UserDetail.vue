@@ -71,9 +71,12 @@ async function loadEffective(): Promise<void> {
   }
 }
 async function load(): Promise<void> {
-  const page = await api<{ items: AdminUser[] }>('GET', '/api/v1/admin/users')
-  user.value = page.items.find((u) => u.id === id.value) ?? null
-  if (!user.value) error.value = reasonMessage('not_found')
+  try {
+    user.value = await api<AdminUser>('GET', `/api/v1/admin/users/${encodeURIComponent(id.value)}`)
+  } catch (err) {
+    user.value = null
+    error.value = err instanceof ApiError ? reasonMessage(err.reason) : reasonMessage('not_found')
+  }
   await loadRoles()
   // Direct roles only are editable here; group roles show under "Effective roles".
   await Promise.all([loadEffective(), loadMfa()])

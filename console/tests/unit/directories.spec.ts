@@ -122,7 +122,7 @@ describe('directories console', () => {
   })
 
   it('lists connections with URL, TLS mode and a last-test chip per row', async () => {
-    stubFetch((url) => (url === '/api/v1/admin/directories' ? { status: 200, body: { items: [ad, openldap, untested] } } : { status: 404, body: { reason: 'not_found' } }))
+    stubFetch((url) => (url.startsWith('/api/v1/admin/directories?') ? { status: 200, body: { items: [ad, openldap, untested] } } : { status: 404, body: { reason: 'not_found' } }))
     const w = mountView(Directories)
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('admin-directories')
@@ -142,11 +142,14 @@ describe('directories console', () => {
   })
 
   it('validates the drawer with zod, fills the mapping presets per kind and creates a connection', async () => {
-    const fetch = stubFetch((url, init) =>
-      url === '/api/v1/admin/directories' && init?.method === 'POST'
-        ? { status: 201, body: { ...openldap, id: 'd9', name: 'New dir' } }
-        : { status: 200, body: { items: [] } },
-    )
+    const items: unknown[] = []
+    const fetch = stubFetch((url, init) => {
+      if (url === '/api/v1/admin/directories' && init?.method === 'POST') {
+        items.push({ ...openldap, id: 'd9', name: 'New dir' })
+        return { status: 201, body: items[0] }
+      }
+      return { status: 200, body: { items } }
+    })
     const w = mountView(Directories)
     await flushPromises()
     await w.find('[data-test="new-directory"]').trigger('click')
@@ -196,10 +199,14 @@ describe('directories console', () => {
   })
 
   it('keeps the stored password when the write-only field is left blank on edit', async () => {
+    let current: typeof ad = ad
     const fetch = stubFetch((url, init) => {
       if (url === '/api/v1/admin/directories/d1' && (init?.method ?? 'GET') === 'GET') return { status: 200, body: { ...ad, ca_pem: '' } }
-      if (String(url).startsWith('/api/v1/admin/directories/d1') && init?.method === 'PUT') return { status: 200, body: { ...ad, name: 'Corp AD 2' } }
-      return { status: 200, body: { items: [ad, openldap] } }
+      if (String(url).startsWith('/api/v1/admin/directories/d1') && init?.method === 'PUT') {
+        current = { ...ad, name: 'Corp AD 2' }
+        return { status: 200, body: current }
+      }
+      return { status: 200, body: { items: [current, openldap] } }
     })
     const w = mountView(Directories)
     await flushPromises()
@@ -290,11 +297,14 @@ describe('directories console', () => {
   })
 
   it('confirms deletion with the note that imported users stay, then removes the row', async () => {
-    const fetch = stubFetch((url, init) =>
-      url === '/api/v1/admin/directories/d1/remove' && init?.method === 'POST'
-        ? { status: 204, body: null }
-        : { status: 200, body: { items: [ad, openldap] } },
-    )
+    let items = [ad, openldap]
+    const fetch = stubFetch((url, init) => {
+      if (url === '/api/v1/admin/directories/d1/remove' && init?.method === 'POST') {
+        items = [openldap]
+        return { status: 204, body: null }
+      }
+      return { status: 200, body: { items } }
+    })
     const w = mountView(Directories)
     await flushPromises()
     await w.find('[data-test="directory-row"] [data-test="delete-directory"]').trigger('click')

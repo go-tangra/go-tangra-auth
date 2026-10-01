@@ -23,10 +23,18 @@ describe('groups console', () => {
   it('lists groups, validates the create dialog and confirms deletion with the member count', async () => {
     await router.push('/admin/groups')
     await router.isReady()
+    let items: unknown[] = [finance]
     const fetch = stubFetch((url, init) => {
-      if (url.startsWith('/api/v1/admin/groups') && init?.method === 'POST' && url.endsWith('/remove')) return { status: 204, body: null }
-      if (url === '/api/v1/admin/groups' && init?.method === 'POST') return { status: 201, body: { ...finance, id: 'g2', name: 'Ops', member_count: 0, roles: [] } }
-      return { status: 200, body: { items: [finance] } }
+      if (url.startsWith('/api/v1/admin/groups') && init?.method === 'POST' && url.endsWith('/remove')) {
+        items = items.slice(1)
+        return { status: 204, body: null }
+      }
+      if (url === '/api/v1/admin/groups' && init?.method === 'POST') {
+        const ops = { ...finance, id: 'g2', name: 'Ops', member_count: 0, roles: [] }
+        items = [...items, ops]
+        return { status: 201, body: ops }
+      }
+      return { status: 200, body: { items } }
     })
     const w = mountView(Groups)
     await flushPromises()
@@ -58,11 +66,15 @@ describe('groups console', () => {
   it('shows members and roles of a group, adds and removes a member, saves roles', async () => {
     await router.push('/admin/groups/g1')
     await router.isReady()
+    let members = [{ user_id: 'u2', email: 'bob@x.test', display_name: 'Bob', status: 'active', avatar_url: '', added_at: '2026-09-16T00:00:00Z' }]
     const fetch = stubFetch((url, init) => {
       if (url === '/api/v1/admin/groups/g1') return { status: 200, body: finance }
       if (url === '/api/v1/admin/groups/g1/members' && init?.method === 'POST') return { status: 200, body: { added: 1 } }
-      if (url === '/api/v1/admin/groups/g1/members') return { status: 200, body: { items: [{ user_id: 'u2', email: 'bob@x.test', display_name: 'Bob', status: 'active', avatar_url: '', added_at: '2026-09-16T00:00:00Z' }] } }
-      if (url.endsWith('/remove')) return { status: 204, body: null }
+      if (url.startsWith('/api/v1/admin/groups/g1/members?')) return { status: 200, body: { items: members } }
+      if (url.endsWith('/remove')) {
+        members = []
+        return { status: 204, body: null }
+      }
       if (url === '/api/v1/admin/groups/g1/roles') return { status: 200, body: { roles: ['auditor'] } }
       if (url.startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [{ id: 'u3', email: 'dana@x.test', display_name: 'Dana', status: 'active', roles: [], groups: [] }] } }
       return { status: 200, body: roles }
@@ -89,7 +101,7 @@ describe('groups console', () => {
     stubFetch((url) => {
       if (url.endsWith('/effective-roles')) return { status: 200, body: { items: [{ role_id: 'r-auditor', slug: 'auditor', sources: [{ kind: 'direct' }, { kind: 'group', group_id: 'g1', group_name: 'Finance' }] }] } }
       if (url.endsWith('/groups')) return { status: 200, body: { items: [{ id: 'g1', name: 'Finance' }] } }
-      if (url.startsWith('/api/v1/admin/users')) return { status: 200, body: { items: [{ id: 'u3', email: 'dana@x.test', display_name: 'Dana', status: 'active', mfa_enabled: false, roles: ['auditor'], last_signin_at: null, groups: [{ id: 'g1', name: 'Finance' }] }] } }
+      if (url === '/api/v1/admin/users/u3') return { status: 200, body: { id: 'u3', email: 'dana@x.test', display_name: 'Dana', status: 'active', mfa_enabled: false, roles: ['auditor'], last_signin_at: null, groups: [{ id: 'g1', name: 'Finance' }] } }
       return { status: 200, body: roles }
     })
     const w = mountView(UserDetail)

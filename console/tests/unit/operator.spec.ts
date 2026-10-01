@@ -55,6 +55,7 @@ describe('operator console', () => {
     const fetch = stubFetch((url, init) => {
       if (url.endsWith('/suspend')) return { status: 204, body: null }
       if (url.endsWith('/operator/grants')) return { status: 201, body: { id: 'g1', expires_at: '2026-09-16T13:00:00Z' } }
+      if (url === '/api/v1/operator/tenants/t-acme' && init?.method === 'GET') return { status: 200, body: tenants.find((t) => t.id === 't-acme') }
       if (init?.method === 'GET') return { status: 200, body: { items: tenants } }
       return { status: 404, body: {} }
     })

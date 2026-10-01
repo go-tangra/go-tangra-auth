@@ -7,6 +7,7 @@ import { reasonMessage } from '@/api/vocab'
 import { roleAssignable, roleLabel, useRoles } from '@/composables/useRoles'
 import { useGroups, type Group, type GroupMember } from '@/stores/groups'
 import type { AdminUser } from './Users.vue'
+import { usePagedList, MEMBER_LIST } from '@/composables/usePagedList'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,7 +15,6 @@ const toast = useToast()
 const id = computed(() => String(route.params.id ?? ''))
 const groups = useGroups()
 const group = ref<Group | null>(null)
-const members = ref<GroupMember[]>([])
 const selectedRoles = ref<string[]>([])
 /** Roles the group grants as saved; a retired role stays selectable only while held. */
 const heldRoles = ref<string[]>([])
@@ -23,12 +23,16 @@ const picked = ref('')
 const error = ref<string | null>(null)
 const busy = ref(false)
 const { roles, load: loadRoles } = useRoles()
+// --- server paging and sorting of the members (?members.page=…) ---
+const list = usePagedList<GroupMember>('members', () => `/api/v1/admin/groups/${encodeURIComponent(id.value)}/members`, MEMBER_LIST, () => ({}),
+  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load the members.' })
+const members = list.items
 
 async function load(): Promise<void> {
   error.value = null
   try {
     group.value = await groups.get(id.value)
-    members.value = await groups.members(id.value)
+    await list.load()
     await loadRoles()
     selectedRoles.value = roles.value.filter((r) => r.slug && group.value?.roles?.includes(r.slug)).map((r) => r.id ?? '')
     heldRoles.value = [...selectedRoles.value]
@@ -42,7 +46,7 @@ async function searchUsers(q: string): Promise<void> {
     return
   }
   try {
-    const page = await api<{ items: AdminUser[] }>('GET', '/api/v1/admin/users', undefined, { query: { q } })
+    const page = await api<{ items: AdminUser[] }>('GET', '/api/v1/admin/users', undefined, { query: { q, page: 1, page_size: 20 } })
     const present = new Set(members.value.map((m) => m.user_id))
     // Inactive users can be added ahead of their invitation; the status says so.
     candidates.value = page.items.filter((u) => !present.has(u.id)).map((u) => ({ title: u.email + (u.display_name ? ' · ' + u.display_name : '') + (u.status && u.status !== 'active' ? ' (' + u.status + ')' : ''), value: u.id }))
@@ -59,7 +63,7 @@ async function addMember(): Promise<void> {
     toast.success(n === 1 ? 'Member added.' : 'Already a member.')
     picked.value = ''
     candidates.value = []
-    members.value = await groups.members(id.value)
+    await list.load()
     group.value = await groups.get(id.value)
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not add the member.'
@@ -72,8 +76,8 @@ async function removeMember(userId: string): Promise<void> {
   error.value = null
   try {
     await groups.removeMember(id.value, userId)
-    members.value = members.value.filter((m) => m.user_id !== userId)
-    if (group.value) group.value.member_count = members.value.length
+    await list.load()
+    if (group.value) group.value.member_count = list.total.value
   } catch (err) {
     error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not remove the member.'
   } finally {
@@ -99,9 +103,9 @@ onMounted(load)
 type Row = GroupMember & Record<string, unknown> & { id: string }
 const rows = computed<Row[]>(() => members.value.map((m) => ({ ...m, id: m.user_id ?? '' })))
 const columns: Column<Row>[] = [
-  { key: 'display_name', label: 'Person', format: (m) => m.display_name || m.email || '' },
-  { key: 'status', label: 'Status', width: 'sm' },
-  { key: 'added_at', label: 'Added', format: (m) => (m.added_at ? new Date(m.added_at).toLocaleDateString() : ''), hideOnStack: true },
+  { key: 'display_name', label: 'Person', format: (m) => m.display_name || m.email || '', sortable: true },
+  { key: 'status', label: 'Status', width: 'sm', sortable: true },
+  { key: 'added_at', label: 'Added', format: (m) => (m.added_at ? new Date(m.added_at).toLocaleDateString() : ''), hideOnStack: true, sortable: true },
 ]
 </script>
 
@@ -122,7 +126,7 @@ const columns: Column<Row>[] = [
           <UiCombobox id="add-member" v-model="picked" label="Add a person by email or name" :options="candidates" placeholder="Type to search" class="grow" data-test="add-member" @search="searchUsers" />
           <UiButton :disabled="!picked || busy" data-test="add-member-confirm" @click="addMember">Add</UiButton>
         </div>
-        <UiDataTable :items="rows" :columns="columns" caption="Members" empty-title="No members yet" :row-attrs="() => ({ 'data-test': 'member-row' })">
+        <UiDataTable :items="rows" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Members" empty-title="No members yet" :row-attrs="() => ({ 'data-test': 'member-row' })" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
           <template #cell-display_name="{ row }">
             <span class="inline-flex items-center gap-2">
               <UiAvatar :name="row.display_name || row.email || '?'" :src="row.avatar_url || undefined" size="sm" />

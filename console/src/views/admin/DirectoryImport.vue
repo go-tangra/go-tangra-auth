@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, type Column } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
+import { OPTIONS_SIZE } from '@/composables/usePagedList'
 import { directorySearchSchema, directoryImportSchema, type DirectoryConnection, type DirectorySearchInput, type DirectorySearchResult, type DirectoryImportResult } from '@/schemas/directory'
 
 const connections = ref<DirectoryConnection[]>([])
@@ -48,7 +49,7 @@ watch(connection, () => {
 async function load(): Promise<void> {
   busy.value = true
   error.value = ''
-  try { connections.value = (await api<{ items: DirectoryConnection[] }>('GET', '/api/v1/admin/directories')).items }
+  try { connections.value = (await api<{ items: DirectoryConnection[] }>('GET', '/api/v1/admin/directories', undefined, { query: { page: 1, page_size: OPTIONS_SIZE, sort: 'name', order: 'asc' } })).items }
   catch (err) { failed(err) }
   finally { busy.value = false }
 }
