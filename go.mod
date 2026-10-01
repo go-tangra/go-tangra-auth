@@ -25,7 +25,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-tangra/go-tangra-auth/sdk/v4 v4.0.0
-	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.0.0
+	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.1.0
 	github.com/go-webauthn/webauthn v0.18.2
 	golang.org/x/image v0.46.0
 )
