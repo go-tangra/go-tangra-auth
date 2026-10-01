@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
@@ -13,7 +15,8 @@ import (
 func TestQueryFiltersAndPaging(t *testing.T) {
 	ctx := context.Background()
 	ms := memstore.New()
-	base := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
+	// Within the default window (the legacy path lists the last 7 days too).
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Minute)
 	alice, bob := "u-alice", "u-bob"
 	for i := 0; i < 7; i++ {
 		e := Event{Type: SigninOK, TenantID: "t1", ActorKind: "user", ActorUserID: alice, Outcome: "ok"}
@@ -51,9 +54,62 @@ func TestQueryFiltersAndPaging(t *testing.T) {
 	if p, _ := Query(ctx, ms, "t2", Filter{}); len(p.Items) != 1 {
 		t.Fatalf("scope %+v", p)
 	}
-	for _, bad := range []Filter{{EventType: "made_up"}, {Cursor: "x"}, {From: base.Add(time.Hour), To: base}} {
+	for _, bad := range []Filter{{EventType: "made_up"}, {Cursor: "x"}, {Cursor: "1.x"}, {Cursor: "1.0"}, {From: base.Add(time.Hour), To: base}} {
 		if _, err := Query(ctx, ms, "t1", bad); !errors.Is(err, ErrFilter) {
 			t.Errorf("%+v accepted", bad)
 		}
+	}
+}
+
+// Events sharing a timestamp page exactly once (id tie-breaker) on both paths;
+// List applies the default window and counts within it.
+func TestListWindowAndTies(t *testing.T) {
+	ctx := context.Background()
+	ms := memstore.New()
+	now := time.Now().UTC().Truncate(time.Second)
+	for i := 0; i < 5; i++ {
+		r, _ := Row(Event{Type: SigninOK, TenantID: "t1", ActorKind: "user", Outcome: "ok"}, now.Add(-time.Hour))
+		_ = ms.InsertAuditRows(ctx, []store.AuditRow{r})
+	}
+	old, _ := Row(Event{Type: SigninOK, TenantID: "t1", ActorKind: "user", Outcome: "ok"}, now.Add(-8*24*time.Hour))
+	_ = ms.InsertAuditRows(ctx, []store.AuditRow{old})
+	seen := map[string]bool{}
+	for p := 1; p <= 3; p++ {
+		pg, err := List(ctx, ms, "t1", Filter{}, listquery.Request{Page: p, PageSize: 2, Sort: "ts", Order: listquery.Desc}, now)
+		if err != nil || pg.Total != 5 {
+			t.Fatalf("page %d: %+v %v", p, pg, err)
+		}
+		for _, it := range pg.Items {
+			if seen[it.ID] {
+				t.Fatalf("%s repeated", it.ID)
+			}
+			seen[it.ID] = true
+		}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("reached %d of 5", len(seen))
+	}
+	if pg, _ := List(ctx, ms, "t1", Filter{From: now.Add(-10 * 24 * time.Hour)}, listquery.Request{Page: 1, PageSize: 50, Sort: "ts", Order: listquery.Desc}, now); pg.Total != 6 {
+		t.Fatalf("explicit window %d", pg.Total)
+	}
+	if _, err := List(ctx, ms, "t1", Filter{EventType: "made_up"}, listquery.Request{Page: 1, PageSize: 5, Sort: "ts", Order: listquery.Desc}, now); !errors.Is(err, ErrFilter) {
+		t.Fatal("unknown event type accepted")
+	}
+	// Legacy: two per page, the cursor carries the id.
+	legacy, cur := map[string]bool{}, ""
+	for i := 0; i < 5; i++ {
+		pg, err := Query(ctx, ms, "t1", Filter{Limit: 2, Cursor: cur})
+		if err != nil || pg.Total != 5 {
+			t.Fatalf("%+v %v", pg, err)
+		}
+		for _, it := range pg.Items {
+			legacy[it.ID] = true
+		}
+		if cur = pg.NextCursor; cur == "" {
+			break
+		}
+	}
+	if len(legacy) != 5 {
+		t.Fatalf("legacy reached %d of 5", len(legacy))
 	}
 }

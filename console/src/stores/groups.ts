@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { api, ApiError } from '@/api/client'
 import type { components } from '@/api/schema'
+import { OPTIONS_SIZE } from '@/composables/usePagedList'
 
 export type Group = components['schemas']['Group']
 export type GroupMember = components['schemas']['GroupMember']
@@ -11,9 +12,10 @@ export type UserGroupRef = components['schemas']['UserGroupRef']
 export const useGroups = defineStore('groups', {
   state: () => ({ items: [] as Group[], loaded: false }),
   actions: {
+    /** Loads the groups for pickers: up to OPTIONS_SIZE, by name. */
     async load(q = ''): Promise<void> {
       try {
-        const page = await api<{ items: Group[] }>('GET', '/api/v1/admin/groups', undefined, { query: { q: q || undefined } })
+        const page = await api<{ items: Group[] }>('GET', '/api/v1/admin/groups', undefined, { query: { q: q || undefined, page: 1, page_size: OPTIONS_SIZE, sort: 'name', order: 'asc' } })
         this.items = page.items ?? []
       } catch (err) {
         if (!(err instanceof ApiError)) throw err
@@ -39,10 +41,6 @@ export const useGroups = defineStore('groups', {
     },
     async get(id: string): Promise<Group> {
       return api<Group>('GET', `/api/v1/admin/groups/${encodeURIComponent(id)}`)
-    },
-    async members(id: string): Promise<GroupMember[]> {
-      const page = await api<{ items: GroupMember[] }>('GET', `/api/v1/admin/groups/${encodeURIComponent(id)}/members`)
-      return page.items
     },
     async addMembers(id: string, userIds: string[]): Promise<number> {
       const res = await api<{ added: number }>('POST', `/api/v1/admin/groups/${encodeURIComponent(id)}/members`, { user_ids: userIds })

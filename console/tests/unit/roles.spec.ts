@@ -214,7 +214,7 @@ describe('roles console', () => {
     const extra = { ...moduleRoles[4]!, id: 'r-old2', slug: 'm.legacy.writer', display_name: 'Legacy writer' }
     const fetch = stubFetch((url, init) => {
       if (url.startsWith('/api/v1/admin/users') && url.endsWith('/roles') && init?.method === 'PUT') return { status: 409, body: { reason: 'role_retired' } }
-      if (url.startsWith('/api/v1/admin/users') && !url.includes('/u2/')) return { status: 200, body: { items: [{ id: 'u2', email: 'bob@x.test', display_name: 'Bob', status: 'active', mfa_enabled: false, roles: ['m.legacy.reader'], last_signin_at: null }] } }
+      if (url === '/api/v1/admin/users/u2') return { status: 200, body: { id: 'u2', email: 'bob@x.test', display_name: 'Bob', status: 'active', mfa_enabled: false, roles: ['m.legacy.reader'], last_signin_at: null } }
       if (url.startsWith('/api/v1/admin/roles')) return { status: 200, body: [...moduleRoles, extra] }
       return { status: 404, body: { reason: 'not_found' } }
     })

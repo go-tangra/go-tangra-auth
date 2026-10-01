@@ -164,7 +164,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List my sessions */
+        /** List my live sessions (paged, sorted). Without any list parameter the bare array of the previous release is returned (one release). */
         get: operations["listSessions"];
         put?: never;
         post?: never;
@@ -430,6 +430,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One user of the tenant as the users list shows it (admin) */
+        get: operations["getUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/invitations": {
         parameters: {
             query?: never;
@@ -621,7 +638,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List roles with permissions, origin (builtin, module, custom), module and retirement (feature 019) */
+        /** List roles with permissions, origin (builtin, module, custom), module and retirement (feature 019); paged and sorted. Without any list parameter the bare array of the previous release is returned (one release). */
         get: operations["listRoles"];
         put?: never;
         /** Create a custom role; permissions are qualified module:resource:action refs */
@@ -724,7 +741,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Tenant audit trail (filter by user, event_type, time; cursor-paged) */
+        /** Tenant audit trail (filter by user, event_type, time), newest first. Without from/to the last 7 days are listed (to defaults to now, from to to minus 7 days). Legacy: cursor/limit alone keep the cursor shape plus total for one release; mixing both styles is validation_failed on cursor. */
         get: operations["queryAudit"];
         put?: never;
         post?: never;
@@ -741,7 +758,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Registered client applications */
+        /** Registered client applications (paged, sorted). Without any list parameter the bare array of the previous release is returned (one release). */
         get: operations["listClients"];
         put?: never;
         /** Register a client application (redirect URIs; returns secret once for confidential clients) */
@@ -759,11 +776,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List tenants (operator) */
+        /** List tenants (operator; paged, sorted) */
         get: operations["listTenants"];
         put?: never;
         /** Create a tenant and invite its first owner */
         post: operations["createTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator/tenants/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One tenant (operator) */
+        get: operations["getTenant"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -995,7 +1029,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Groups of the tenant with member counts and roles (admin) */
+        /** Groups of the tenant with member counts and roles (admin; paged, sorted) */
         get: operations["listGroups"];
         put?: never;
         post: operations["createGroup"];
@@ -1045,6 +1079,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Members of a group, latest first (paged, sorted). Legacy: cursor alone keeps {items, next} plus total for one release; mixing both styles is validation_failed on cursor. */
         get: operations["listGroupMembers"];
         put?: never;
         /** Add users (max 100); existing members are no-ops; escalation guard applies */
@@ -1095,7 +1130,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** LDAP directory connections of the tenant (directory:manage) */
+        /** LDAP directory connections of the tenant (directory:manage; paged, sorted) */
         get: operations["listDirectories"];
         put?: never;
         /** Create a connection; the bind password is sealed and never returned (directory:manage) */
@@ -1249,6 +1284,38 @@ export interface components {
     schemas: {
         Error: {
             reason: string;
+        };
+        /** @description validation_failed; detail.param names the offending list parameter (never its value) */
+        ValidationError: {
+            reason: string;
+            detail?: {
+                param?: string;
+            };
+        };
+        /** @description List-contract page fields: total counts every record matching the filters that the caller may see; page is the page actually returned (a page beyond the end returns the last one) */
+        ListPage: {
+            total: number;
+            page: number;
+            page_size: number;
+            sort: string;
+            /** @enum {string} */
+            order: "asc" | "desc";
+        };
+        Client: {
+            client_id?: string;
+            display_name?: string;
+            redirect_uris?: string[];
+            public?: boolean;
+        };
+        Tenant: {
+            /** Format: uuid */
+            id?: string;
+            slug?: string;
+            display_name?: string;
+            status?: string;
+            kind?: string;
+            /** Format: date-time */
+            created_at?: string;
         };
         TenantRef: {
             /** Format: uuid */
@@ -1463,6 +1530,8 @@ export interface components {
             lockout_duration?: string;
         };
         AuditEvent: {
+            /** @description unique event id (the tie-breaker between events sharing ts) */
+            id?: string;
             /** Format: date-time */
             ts?: string;
             event_type?: string;
@@ -1671,6 +1740,9 @@ export interface components {
     responses: never;
     parameters: {
         csrf: string;
+        page: number;
+        pageSize: number;
+        order: "asc" | "desc";
     };
     requestBodies: never;
     headers: never;
@@ -1957,7 +2029,12 @@ export interface operations {
     };
     listSessions: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "created_at" | "last_seen_at" | "expires_at";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1970,7 +2047,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Session"][];
+                    "application/json": (components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["Session"][];
+                    }) | components["schemas"]["Session"][];
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
         };
@@ -2485,7 +2573,12 @@ export interface operations {
             query?: {
                 q?: string;
                 status?: string;
+                /** @description ignored (never used); sent together with list parameters it is validation_failed */
                 cursor?: string;
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "email" | "display_name" | "status" | "last_signin_at" | "created_at";
             };
             header?: never;
             path?: never;
@@ -2493,15 +2586,64 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description page of users */
+            /** @description page of users (every user of the tenant is reachable) */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["User"][];
+                    };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
+            };
+            /** @description denied */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
             /** @description denied */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description not_found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2884,7 +3026,12 @@ export interface operations {
     };
     listRoles: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "display_name" | "slug" | "origin";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2897,7 +3044,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Role"][];
+                    "application/json": (components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["Role"][];
+                    }) | components["schemas"]["Role"][];
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
         };
@@ -3147,6 +3305,11 @@ export interface operations {
                 from?: string;
                 to?: string;
                 cursor?: string;
+                limit?: number;
+                sort?: "ts";
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
             };
             header?: never;
             path?: never;
@@ -3160,17 +3323,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
+                    "application/json": (components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["AuditEvent"][];
+                    }) | {
                         items?: components["schemas"]["AuditEvent"][];
                         next_cursor?: string;
+                        total?: number;
                     };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
         };
     };
     listClients: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "display_name" | "client_id";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3182,7 +3362,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": (components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["Client"][];
+                    }) | components["schemas"]["Client"][];
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
             };
         };
     };
@@ -3216,7 +3409,12 @@ export interface operations {
     };
     listTenants: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "display_name" | "slug" | "status" | "kind" | "created_at";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3228,7 +3426,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["Tenant"][];
+                    };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
             };
         };
     };
@@ -3253,6 +3464,35 @@ export interface operations {
         responses: {
             /** @description created */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description tenant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tenant"];
+                };
+            };
+            /** @description not_found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3691,6 +3931,10 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string;
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "name" | "member_count" | "created_at";
             };
             header?: never;
             path?: never;
@@ -3704,9 +3948,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items?: components["schemas"]["Group"][];
+                    "application/json": components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["Group"][];
                     };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
         };
@@ -3841,6 +4094,10 @@ export interface operations {
         parameters: {
             query?: {
                 cursor?: string;
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "added_at" | "email" | "display_name" | "status";
             };
             header?: never;
             path: {
@@ -3855,7 +4112,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": (components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["GroupMember"][];
+                    }) | {
+                        items?: components["schemas"]["GroupMember"][];
+                        next?: string;
+                        total?: number;
+                    };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
+                };
             };
         };
     };
@@ -3968,7 +4242,12 @@ export interface operations {
     };
     listDirectories: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: components["parameters"]["page"];
+                page_size?: components["parameters"]["pageSize"];
+                order?: components["parameters"]["order"];
+                sort?: "name" | "created_at";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3981,9 +4260,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items?: components["schemas"]["DirectoryConnection"][];
+                    "application/json": components["schemas"]["ListPage"] & {
+                        items: components["schemas"]["DirectoryConnection"][];
                     };
+                };
+            };
+            /** @description validation_failed (detail.param) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationError"];
                 };
             };
             /** @description forbidden */

@@ -6,10 +6,13 @@ package memstore
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-tangra/go-tangra/v4/listquery"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
@@ -41,6 +44,7 @@ type Store struct {
 	Recoveries  map[string]store.RecoveryRequest
 	Grants      map[string]store.OperatorGrant
 	AuditRows   []store.AuditRow
+	auditSeq    int64
 	Now         func() time.Time
 	g           *groupState                           // feature 004 (see groups.go)
 	dir         *directoryState                       // feature 016 (see directory.go)
@@ -504,6 +508,39 @@ func (m *Store) ListUsers(_ context.Context, tid, q, status string, limit int) (
 	return out, nil
 }
 
+// PageUsers pages like store.PageUsers.
+func (m *Store) PageUsers(_ context.Context, tid string, f store.UserPageFilter, req listquery.Request) ([]store.User, int, listquery.Request, error) {
+	m.mu.Lock()
+	var all []store.User
+	for _, u := range m.Users {
+		if u.TenantID != tid || (f.Status != "" && u.Status != f.Status) || (f.ID != "" && u.ID != f.ID) || (f.Q != "" && !strings.Contains(strings.ToLower(u.Email+" "+u.DisplayName+" "+u.FirstName+" "+u.LastName), strings.ToLower(f.Q))) {
+			continue
+		}
+		all = append(all, m.withOriginLocked(u))
+	}
+	m.mu.Unlock()
+	req = store.ListRequest(req, store.UserList)
+	listquery.SortSlice(all, req, func(u store.User, field string) any {
+		switch field {
+		case "email":
+			return u.Email
+		case "display_name":
+			return u.DisplayName
+		case "status":
+			return u.Status
+		case "last_signin_at":
+			if u.LastSigninAt == nil {
+				return nil
+			}
+			return *u.LastSigninAt
+		default:
+			return u.CreatedAt
+		}
+	}, func(u store.User) string { return u.ID })
+	page, total, applied := listquery.Window(all, req)
+	return page, total, applied, nil
+}
+
 func (m *Store) InsertUser(_ context.Context, u store.User) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -834,20 +871,46 @@ func (m *Store) Enqueue(_ context.Context, it store.OutboxItem) error {
 func (m *Store) InsertAuditRows(_ context.Context, rows []store.AuditRow) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.AuditRows = append(m.AuditRows, rows...)
+	for _, r := range rows {
+		m.auditSeq++
+		r.ID = m.auditSeq // bigserial
+		m.AuditRows = append(m.AuditRows, r)
+	}
 	return nil
 }
 
-func (m *Store) QueryAudit(_ context.Context, tid, userID, eventType string, from, to, cursor time.Time, limit int) ([]store.AuditRow, error) {
+// auditMatchLocked filters the audit rows of a tenant like the SQL does
+// (user matches actor or subject; from/to inclusive, zero = unbounded) and
+// returns them newest first, id breaking timestamp ties.
+func (m *Store) auditMatchLocked(tid string, f store.AuditPageFilter) []store.AuditRow {
+	var out []store.AuditRow
+	for _, r := range m.AuditRows {
+		if r.TenantID != tid || (f.EventType != "" && r.EventType != f.EventType) {
+			continue
+		}
+		if f.UserID != "" && (r.ActorUserID == nil || *r.ActorUserID != f.UserID) && (r.SubjectID == nil || *r.SubjectID != f.UserID) {
+			continue
+		}
+		if (!f.From.IsZero() && r.TS.Before(f.From)) || (!f.To.IsZero() && r.TS.After(f.To)) {
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].TS.Equal(out[j].TS) {
+			return out[i].TS.After(out[j].TS)
+		}
+		return out[i].ID > out[j].ID
+	})
+	return out
+}
+
+func (m *Store) QueryAudit(_ context.Context, tid, userID, eventType string, from, to, cursor time.Time, cursorID int64, limit int) ([]store.AuditRow, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []store.AuditRow
-	for i := len(m.AuditRows) - 1; i >= 0; i-- {
-		r := m.AuditRows[i]
-		if r.TenantID != tid || (eventType != "" && r.EventType != eventType) || (userID != "" && (r.ActorUserID == nil || *r.ActorUserID != userID)) {
-			continue
-		}
-		if (!from.IsZero() && r.TS.Before(from)) || (!to.IsZero() && r.TS.After(to)) || (!cursor.IsZero() && !r.TS.Before(cursor)) {
+	for _, r := range m.auditMatchLocked(tid, store.AuditPageFilter{UserID: userID, EventType: eventType, From: from, To: to}) {
+		if !cursor.IsZero() && !r.TS.Before(cursor) && (cursorID <= 0 || !r.TS.Equal(cursor) || r.ID >= cursorID) {
 			continue
 		}
 		out = append(out, r)
@@ -856,4 +919,17 @@ func (m *Store) QueryAudit(_ context.Context, tid, userID, eventType string, fro
 		}
 	}
 	return out, nil
+}
+
+// PageAudit pages like store.PageAudit (the only sort field is ts).
+func (m *Store) PageAudit(_ context.Context, tid string, f store.AuditPageFilter, req listquery.Request) ([]store.AuditRow, int, listquery.Request, error) {
+	m.mu.Lock()
+	rows := m.auditMatchLocked(tid, f)
+	m.mu.Unlock()
+	req = store.ListRequest(req, store.AuditList)
+	if req.Order == listquery.Asc {
+		slices.Reverse(rows)
+	}
+	page, total, applied := listquery.Window(rows, req)
+	return append([]store.AuditRow{}, page...), total, applied, nil
 }

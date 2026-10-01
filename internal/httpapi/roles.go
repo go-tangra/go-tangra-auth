@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // US3Deps are the role and permission services.
@@ -79,12 +82,34 @@ func (s *Server) listRoles(d US3Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
+		legacy := !hasListParams(r.URL.Query())
+		var req listquery.Request
+		if !legacy {
+			var ok bool
+			if req, ok = parseList(w, r, store.RoleList); !ok {
+				return
+			}
+		}
 		roles, err := d.Roles.List(r.Context(), a.TenantID)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), roleError(err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, roles)
+		if legacy {
+			// Bare array for one release (pickers and scripts that predate paging).
+			WriteJSON(w, http.StatusOK, roles)
+			return
+		}
+		WriteJSON(w, http.StatusOK, windowed(roles, req, func(v authz.RoleView, field string) any {
+			switch field {
+			case "slug":
+				return v.Slug
+			case "origin":
+				return v.Origin
+			default:
+				return v.DisplayName
+			}
+		}, func(v authz.RoleView) string { return v.ID }))
 	}
 }
 

@@ -6,16 +6,18 @@ import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
 import type { DirectoryConnection } from '@/schemas/directory'
 import DirectoryDrawer from './DirectoryDrawer.vue'
+import { usePagedList, DIRECTORY_LIST } from '@/composables/usePagedList'
 
-const items = ref<DirectoryConnection[]>([])
-const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const drawer = ref(false)
 const editing = ref<DirectoryConnection | null>(null)
 const deleting = ref<DirectoryConnection | null>(null)
 type Row = DirectoryConnection & Record<string, unknown> & { id: string }
-const rows = computed<Row[]>(() => items.value.map((c) => ({ ...c, id: c.id ?? '' })))
+function failed(err: unknown): void { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not complete the directory request.' }
+// --- server paging and sorting (page / size / sort in the URL: ?directories.page=…) ---
+const list = usePagedList<DirectoryConnection>('directories', '/api/v1/admin/directories', DIRECTORY_LIST, () => ({}), failed)
+const rows = computed<Row[]>(() => list.items.value.map((c) => ({ ...c, id: c.id ?? '' })))
 const columns: Column<Row>[] = [
   { key: 'name', label: 'Directory', sortable: true },
   { key: 'url', label: 'URL' },
@@ -23,13 +25,9 @@ const columns: Column<Row>[] = [
   { key: 'last_test', label: 'Last test' },
 ]
 const outcomes: Record<string, string> = { ok: 'OK', unreachable: 'Unreachable', target_refused: 'Target refused', timeout: 'Timeout', tls_failed: 'TLS failed', invalid_credentials: 'Invalid credentials', base_not_found: 'Base not found', directory_error: 'Directory error' }
-function failed(err: unknown): void { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not complete the directory request.' }
 async function load(): Promise<void> {
-  loading.value = true
   error.value = ''
-  try { items.value = (await api<{ items: DirectoryConnection[] }>('GET', '/api/v1/admin/directories')).items }
-  catch (err) { failed(err) }
-  finally { loading.value = false }
+  await list.load()
 }
 function openNew(): void {
   editing.value = null
@@ -47,12 +45,10 @@ async function edit(c: DirectoryConnection): Promise<void> {
   } catch (err) { failed(err) }
   finally { busy.value = false }
 }
-function saved(c: DirectoryConnection): void {
-  const i = items.value.findIndex((item) => item.id === c.id)
-  if (i < 0) items.value.push(c)
-  else items.value[i] = c
+function saved(): void {
   drawer.value = false
   editing.value = null
+  void load()
 }
 async function remove(): Promise<void> {
   if (!deleting.value?.id || busy.value) return
@@ -61,8 +57,8 @@ async function remove(): Promise<void> {
   const id = deleting.value.id
   try {
     await api('POST', `/api/v1/admin/directories/${id}/remove`)
-    items.value = items.value.filter((c) => c.id !== id)
     deleting.value = null
+    await load()
   } catch (err) { failed(err) }
   finally { busy.value = false }
 }
@@ -74,7 +70,7 @@ onMounted(load)
     <template #actions><RouterLink :to="{ name: 'admin-directory-import' }" class="link link-primary">Import people</RouterLink><UiButton icon="mdi-plus" :disabled="busy || drawer" data-test="new-directory" @click="openNew">New directory</UiButton></template>
     <UiAlert v-if="error && !deleting" kind="error" class="mb-3">{{ error }} <UiButton variant="text" @click="load">Retry</UiButton></UiAlert>
     <UiCard :padded="false">
-      <UiDataTable :items="rows" :columns="columns" :loading="loading" caption="Directory connections" empty-title="No directories yet" :row-attrs="() => ({ 'data-test': 'directory-row' })">
+      <UiDataTable :items="rows" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Directory connections" empty-title="No directories yet" :row-attrs="() => ({ 'data-test': 'directory-row' })" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
         <template #cell-name="{ row }"><span data-test="directory-name">{{ row.name }}</span></template>
         <template #cell-url="{ row }"><span data-test="directory-url">{{ row.url }}</span></template>
         <template #cell-tls_mode="{ row }"><span data-test="directory-tls">{{ row.tls_mode }}</span></template>

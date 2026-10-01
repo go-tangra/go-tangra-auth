@@ -152,6 +152,7 @@ describe('admin console', () => {
 
   it('edits roles in the user detail and sends role ids', async () => {
     const fetch = stubFetch((url, init) => {
+      if (url === '/api/v1/admin/users/u2' && init?.method === 'GET') return { status: 200, body: users[1] }
       if (url.startsWith('/api/v1/admin/users') && init?.method === 'GET') return { status: 200, body: { items: users } }
       if (url.startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
       if (url.endsWith('/roles') && init?.method === 'PUT') return { status: 200, body: { roles: ['admin', 'auditor'] } }
@@ -177,6 +178,7 @@ describe('admin console', () => {
       if (url === '/api/v1/admin/users/u2/profile' && init?.method === 'PUT') return { status: 200, body: { id: 'u2', email: 'bob@x.test', display_name: 'Robert K', first_name: 'Robert', last_name: 'K', phone: '+14155550100', avatar_url: '' } }
       if (url === '/api/v1/admin/users/u2/profile') return { status: 200, body: { id: 'u2', email: 'bob@x.test', display_name: 'Bob', first_name: '', last_name: '', phone: '', avatar_url: '/api/v1/users/u2/avatar/abc' } }
       if (url === '/api/v1/admin/users/u2/avatar' && init?.method === 'DELETE') return { status: 204, body: null }
+      if (url === '/api/v1/admin/users/u2' && init?.method === 'GET') return { status: 200, body: { ...users[1], avatar_url: '/api/v1/users/u2/avatar/abc' } }
       if (url.startsWith('/api/v1/admin/users') && init?.method === 'GET') return { status: 200, body: { items: users.map((u) => ({ ...u, avatar_url: u.id === 'u2' ? '/api/v1/users/u2/avatar/abc' : '' })) } }
       if (url.startsWith('/api/v1/admin/roles')) return { status: 200, body: roles }
       return { status: 200, body: { items: [] } }
@@ -206,24 +208,35 @@ describe('admin console', () => {
     list.unmount()
   })
 
-  it('builds audit queries from the filters and pages with the cursor', async () => {
+  it('builds audit queries from the filters and pages on the server (last 7 days by default)', async () => {
+    const event = (i: number) => ({ id: String(100 - i), ts: '2026-09-22T09:00:00Z', event_type: 'signin_failed', outcome: 'refused', actor_kind: 'user', reason: 'wrong_password', details: {} })
     const fetch = stubFetch((url) => {
-      if (url.includes('cursor=')) return { status: 200, body: { items: [{ ts: '2026-09-22T10:00:00Z', event_type: 'signin_ok', outcome: 'ok', actor_kind: 'user', details: {} }] } }
-      return { status: 200, body: { items: [{ ts: '2026-09-22T09:00:00Z', event_type: 'signin_failed', outcome: 'refused', actor_kind: 'user', reason: 'wrong_password', details: {} }], next_cursor: 'c1' } }
+      const u = new URL(url, 'https://console.test')
+      const page = Number(u.searchParams.get('page') ?? 1)
+      return { status: 200, body: { items: [event(page * 2 - 1), event(page * 2)], total: 120, page, page_size: 50, sort: 'ts', order: 'desc' } }
     })
     await router.push('/admin/audit')
     const w = mountView(Audit)
     await flushPromises()
-    expect(w.findAll('[data-test="audit-row"]').length).toBe(1)
+    expect(w.findAll('[data-test="audit-row"]').length).toBe(2)
+    expect(w.find('[data-test="audit-window"]').text()).toMatch(/last 7 days/)
+    const first = String(fetch.mock.calls[0]![0])
+    expect(first).toContain('page=1')
+    expect(first).toContain('page_size=50')
+    expect(first).toContain('sort=ts')
+    expect(first).toContain('order=desc')
+    expect(first).not.toContain('cursor')
     await w.find('[data-test="filter-user"] input').setValue('u2')
     await w.find('[data-test="apply"]').trigger('click')
     await flushPromises()
     expect(fetch.mock.calls.some((c) => String(c[0]).includes('user_id=u2'))).toBe(true)
-    const more = w.findAll('button').find((b) => b.text() === 'Load more')!
-    await more.trigger('click')
+    // The table shows the total and pages through the server.
+    expect(w.text()).toMatch(/120/)
+    const next = w.findAll('button').find((b) => /next/i.test(b.attributes('aria-label') ?? b.text()))!
+    await next.trigger('click')
     await flushPromises()
-    expect(fetch.mock.calls.some((c) => String(c[0]).includes('cursor=c1'))).toBe(true)
-    expect(w.findAll('[data-test="audit-row"]').length).toBe(2)
+    expect(fetch.mock.calls.some((c) => String(c[0]).includes('page=2'))).toBe(true)
+    expect(router.currentRoute.value.query['audit.page']).toBe('2')
     w.unmount()
   })
 

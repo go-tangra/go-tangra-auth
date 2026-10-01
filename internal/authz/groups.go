@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
@@ -40,6 +42,8 @@ type GroupStore interface {
 	GroupMemberCounts(ctx context.Context, tenantID string) (map[string]int, error)
 	CountGroupMembers(ctx context.Context, tenantID, groupID string) (int, error)
 	ListGroupMembers(ctx context.Context, tenantID, groupID string, after time.Time, limit int) ([]store.GroupMember, error)
+	// PageGroupMembers counts and pages the members of a group (list contract).
+	PageGroupMembers(ctx context.Context, tenantID, groupID string, req listquery.Request) ([]store.GroupMember, int, listquery.Request, error)
 	AddGroupMembers(ctx context.Context, tenantID, groupID, addedBy string, userIDs []string) (int, error)
 	RemoveGroupMember(ctx context.Context, tenantID, groupID, userID string) error
 	IsGroupMember(ctx context.Context, tenantID, groupID, userID string) (bool, error)
@@ -299,6 +303,22 @@ func (g *Groups) Members(ctx context.Context, tenantID, id string, after time.Ti
 		limit = GroupBatchMax
 	}
 	return g.st.ListGroupMembers(ctx, tenantID, id, after, limit)
+}
+
+// MembersPage pages the members of a group (list contract) under the same
+// administrator check as Members; the total counts the group's members.
+func (g *Groups) MembersPage(ctx context.Context, tenantID, id string, req listquery.Request) (listquery.Page[store.GroupMember], error) {
+	if _, err := g.admin(ctx, tenantID, audit.GroupUpdated, "group", id); err != nil {
+		return listquery.Page[store.GroupMember]{}, err
+	}
+	if _, err := g.st.GetGroup(ctx, tenantID, id); err != nil {
+		return listquery.Page[store.GroupMember]{}, err
+	}
+	rows, total, applied, err := g.st.PageGroupMembers(ctx, tenantID, id, req)
+	if err != nil {
+		return listquery.Page[store.GroupMember]{}, err
+	}
+	return listquery.NewPage(rows, total, applied), nil
 }
 
 // UserGroups lists the groups of a user.

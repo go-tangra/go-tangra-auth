@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
@@ -73,16 +75,26 @@ func (s *Server) listGroups(d GroupDeps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
+		req, ok := parseList(w, r, store.GroupList)
+		if !ok {
+			return
+		}
 		groups, err := d.Groups.List(r.Context(), a.TenantID, r.URL.Query().Get("q"))
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), groupError(err))
 			return
 		}
-		items := make([]map[string]any, 0, len(groups))
-		for _, g := range groups {
-			items = append(items, groupJSON(g))
-		}
-		WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+		page := windowed(groups, req, func(g authz.GroupView, field string) any {
+			switch field {
+			case "member_count":
+				return g.MemberCount
+			case "created_at":
+				return g.CreatedAt
+			default:
+				return g.Name
+			}
+		}, func(g authz.GroupView) string { return g.ID })
+		WriteJSON(w, http.StatusOK, mapPage(page, groupJSON))
 	}
 }
 
@@ -176,6 +188,11 @@ func (s *Server) deleteGroup(d GroupDeps) http.HandlerFunc {
 	}
 }
 
+func memberJSON(m store.GroupMember) map[string]any {
+	return map[string]any{"user_id": m.UserID, "email": m.Email, "display_name": m.DisplayName, "status": m.Status,
+		"avatar_url": tenantctx.AvatarURL(m.UserID, m.AvatarID), "added_at": m.AddedAt.UTC().Format(time.RFC3339Nano)}
+}
+
 func (s *Server) listGroupMembers(d GroupDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a, err := RequireAdmin(r)
@@ -183,32 +200,56 @@ func (s *Server) listGroupMembers(d GroupDeps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
-		var after time.Time
-		if c := r.URL.Query().Get("cursor"); c != "" {
-			t, err := time.Parse(time.RFC3339Nano, c)
-			if err != nil {
-				Fail(w, r, nil, ErrValidation)
-				return
-			}
-			after = t
+		q := r.URL.Query()
+		if listquery.Legacy(q) {
+			s.legacyGroupMembers(w, r, d, a.TenantID)
+			return
 		}
-		members, err := d.Groups.Members(r.Context(), a.TenantID, r.PathValue("id"), after, authz.GroupBatchMax)
+		req, ok := parseList(w, r, store.GroupMemberList)
+		if !ok {
+			return
+		}
+		page, err := d.Groups.MembersPage(r.Context(), a.TenantID, r.PathValue("id"), req)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), groupError(err))
 			return
 		}
-		items := make([]map[string]any, 0, len(members))
-		var next string
-		for _, m := range members {
-			items = append(items, map[string]any{"user_id": m.UserID, "email": m.Email, "display_name": m.DisplayName, "status": m.Status,
-				"avatar_url": tenantctx.AvatarURL(m.UserID, m.AvatarID), "added_at": m.AddedAt.UTC().Format(time.RFC3339Nano)})
-			next = m.AddedAt.UTC().Format(time.RFC3339Nano)
-		}
-		if len(members) < authz.GroupBatchMax {
-			next = ""
-		}
-		WriteJSON(w, http.StatusOK, map[string]any{"items": items, "next": next})
+		WriteJSON(w, http.StatusOK, mapPage(page, memberJSON))
 	}
+}
+
+// legacyGroupMembers is the cursor path of one release: {items, next} plus
+// the member total.
+func (s *Server) legacyGroupMembers(w http.ResponseWriter, r *http.Request, d GroupDeps, tenantID string) {
+	var after time.Time
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		t, err := time.Parse(time.RFC3339Nano, c)
+		if err != nil {
+			WriteDetail(w, ErrValidation, map[string]any{"param": "cursor"})
+			return
+		}
+		after = t
+	}
+	members, err := d.Groups.Members(r.Context(), tenantID, r.PathValue("id"), after, authz.GroupBatchMax)
+	if err != nil {
+		Fail(w, r, s.rt.Logger(), groupError(err))
+		return
+	}
+	count, err := d.Groups.MembersPage(r.Context(), tenantID, r.PathValue("id"), listquery.Request{Page: 1, PageSize: 1})
+	if err != nil {
+		Fail(w, r, s.rt.Logger(), groupError(err))
+		return
+	}
+	items := make([]map[string]any, 0, len(members))
+	var next string
+	for _, m := range members {
+		items = append(items, memberJSON(m))
+		next = m.AddedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if len(members) < authz.GroupBatchMax {
+		next = ""
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"items": items, "next": next, "total": count.Total})
 }
 
 func (s *Server) addGroupMembers(d GroupDeps) http.HandlerFunc {

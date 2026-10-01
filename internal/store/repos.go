@@ -106,48 +106,6 @@ func GetUserByEmail(ctx context.Context, tx pgx.Tx, tenantID, email string) (Use
 	return scanUser(tx.QueryRow(ctx, "SELECT "+userCols+" FROM users WHERE tenant_id = $1 AND email = $2", tenantID, email))
 }
 
-// ListUsers with optional search and status. Each user carries its directory
-// origin (if imported from one) and, for invited users, the id of the most
-// recent pending invitation (expired ones included: resend renews them).
-func ListUsers(ctx context.Context, tx pgx.Tx, tenantID, q, status string, limit int) ([]User, error) {
-	rows, err := tx.Query(ctx, "SELECT "+prefixCols("u.", userCols)+", l.user_id IS NOT NULL, "+prefixCols("l.", linkCols)+`, inv.id
-		FROM users u
-		LEFT JOIN user_directory_links l ON l.user_id = u.id
-		LEFT JOIN LATERAL (SELECT i.id FROM invitations i WHERE i.tenant_id = u.tenant_id AND i.email = u.email
-			AND i.accepted_at IS NULL AND i.revoked_at IS NULL ORDER BY i.created_at DESC, i.id LIMIT 1) inv ON u.status = 'invited'
-		WHERE u.tenant_id = $1
-		AND ($2 = '' OR u.email ILIKE '%' || $2 || '%' OR u.display_name ILIKE '%' || $2 || '%' OR u.first_name ILIKE '%' || $2 || '%' OR u.last_name ILIKE '%' || $2 || '%')
-		AND ($3 = '' OR u.status = $3) ORDER BY u.created_at, u.id LIMIT $4`, tenantID, q, status, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []User
-	for rows.Next() {
-		var (
-			u               User
-			linked          bool
-			l               DirectoryLink
-			luid, ltid      *string
-			lname, lui, ldn *string
-			lfirst, llast   *time.Time
-		)
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.DisplayName, &u.Status, &u.PasswordHash, &u.PasswordChangedAt,
-			&u.MFAEnabled, &u.MFASecretEnc, &u.MFALastCounter, &u.CreatedAt, &u.UpdatedAt, &u.LastSigninAt,
-			&u.FirstName, &u.LastName, &u.Phone, &u.AvatarID, &u.DisplayNameExplicit, &u.ProfileUpdatedAt,
-			&linked, &luid, &ltid, &l.ConnectionID, &lname, &lui, &ldn, &lfirst, &llast, &l.ImportedBy, &u.InvitationID); err != nil {
-			return nil, err
-		}
-		if linked {
-			l.UserID, l.TenantID, l.ConnectionName, l.DirectoryUID, l.DirectoryDN = *luid, *ltid, *lname, *lui, *ldn
-			l.FirstImportedAt, l.LastImportedAt = *lfirst, *llast
-			u.Directory = &l
-		}
-		out = append(out, u)
-	}
-	return out, rows.Err()
-}
-
 // prefixCols qualifies a comma-separated column list with a table alias.
 func prefixCols(alias, cols string) string {
 	parts := strings.Split(cols, ", ")
@@ -740,22 +698,24 @@ func InsertAuditRows(ctx context.Context, tx pgx.Tx, rows []AuditRow) error {
 	return nil
 }
 
-// QueryAudit lists events of a tenant with filters; cursor = ts of the last row seen.
-func QueryAudit(ctx context.Context, tx pgx.Tx, tenantID, userID, eventType string, from, to, cursor time.Time, limit int) ([]AuditRow, error) {
-	rows, err := tx.Query(ctx, `SELECT ts, tenant_id, event_type, actor_user_id, actor_kind, actor_service, subject_kind, subject_id, outcome, reason,
-		origin_ip_hash, user_agent, correlation_id, trace_id, details FROM auth_audit_events
-		WHERE tenant_id = $1 AND ($2 = '' OR actor_user_id::text = $2 OR subject_id::text = $2) AND ($3 = '' OR event_type = $3)
-		AND ts >= $4 AND ts <= $5 AND ($6::timestamptz IS NULL OR ts < $6) ORDER BY ts DESC LIMIT $7`,
-		tenantID, userID, eventType, from, to, nullTime(cursor), limit)
+// QueryAudit lists events of a tenant with filters, newest first, for the
+// legacy cursor path: the cursor is the (ts, id) of the last row seen, so
+// events sharing a timestamp are never skipped. A cursor without an id (zero,
+// from a client of the previous release) resumes strictly before its ts.
+func QueryAudit(ctx context.Context, tx pgx.Tx, tenantID, userID, eventType string, from, to, cursor time.Time, cursorID int64, limit int) ([]AuditRow, error) {
+	rows, err := tx.Query(ctx, `SELECT `+auditCols+` FROM auth_audit_events a
+		WHERE a.tenant_id = $1 AND ($2 = '' OR a.actor_user_id::text = $2 OR a.subject_id::text = $2) AND ($3 = '' OR a.event_type = $3)
+		AND a.ts >= $4 AND a.ts <= $5 AND ($6::timestamptz IS NULL OR a.ts < $6 OR ($7::bigint > 0 AND a.ts = $6 AND a.id < $7))
+		ORDER BY a.ts DESC, a.id DESC LIMIT $8`,
+		tenantID, userID, eventType, from, to, nullTime(cursor), cursorID, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []AuditRow
 	for rows.Next() {
-		var r AuditRow
-		if err := rows.Scan(&r.TS, &r.TenantID, &r.EventType, &r.ActorUserID, &r.ActorKind, &r.ActorService, &r.SubjectKind, &r.SubjectID, &r.Outcome, &r.Reason,
-			&r.OriginIPHash, &r.UserAgent, &r.CorrelationID, &r.TraceID, &r.Details); err != nil {
+		r, err := scanAuditRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, r)

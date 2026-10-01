@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiInput, UiSelect, UiDataTable, UiStatusChip, UiAvatar, useToast, useConfirm, type Column, type SelectOption } from '@go-tangra/ui'
+import { usePagedList, USER_LIST } from '@/composables/usePagedList'
 import type { components } from '@/api/schema'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage, userStatuses } from '@/api/vocab'
@@ -26,7 +27,6 @@ export interface AdminUser extends Record<string, unknown> {
   groups?: { id: string; name: string }[]
 }
 
-const users = ref<AdminUser[]>([])
 const q = ref('')
 const status = ref<string | undefined>()
 const error = ref<string | null>(null)
@@ -72,20 +72,21 @@ const confirm = useConfirm()
 const { roles, load: loadRoles } = useRoles()
 const statusOptions: SelectOption[] = userStatuses.map((s) => ({ title: s, value: s }))
 
+// --- server paging and sorting (page / size / sort in the URL: ?users.page=…) ---
+const list = usePagedList<AdminUser>('users', '/api/v1/admin/users', USER_LIST, () => ({ q: q.value, status: status.value }),
+  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load users.' })
+const users = list.items
 async function load(): Promise<void> {
   selected.value = []
   error.value = null
-  try {
-    users.value = (await api<{ items: AdminUser[] }>('GET', '/api/v1/admin/users', undefined, { query: { q: q.value || undefined, status: status.value || undefined } })).items
-  } catch (err) {
-    error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load users.'
-  }
+  await list.load()
 }
+watch(list.lq.query, () => { selected.value = [] })
 let timer: number | undefined
 watch([q, status], () => {
   selected.value = []
   window.clearTimeout(timer)
-  timer = window.setTimeout(() => void load(), 250)
+  timer = window.setTimeout(() => void list.refilter(), 250)
 })
 onBeforeUnmount(() => window.clearTimeout(timer))
 async function act(u: AdminUser, op: 'deactivate' | 'reactivate' | 'sessions/revoke' | 'remove-imported'): Promise<void> {
@@ -111,9 +112,9 @@ const columns: Column<AdminUser>[] = [
   { key: 'selection', label: 'Select' },
   { key: 'email', label: 'Email', sortable: true },
   { key: 'display_name', label: 'Name', sortable: true },
-  { key: 'status', label: 'Status', width: 'sm' },
+  { key: 'status', label: 'Status', width: 'sm', sortable: true },
   { key: 'roles', label: 'Roles', format: (u) => u.roles.join(', '), hideOnStack: true },
-  { key: 'last_signin_at', label: 'Last sign-in', format: (u) => u.last_signin_at ?? 'never', hideOnStack: true },
+  { key: 'last_signin_at', label: 'Last sign-in', format: (u) => u.last_signin_at ?? 'never', hideOnStack: true, sortable: true },
 ]
 </script>
 
@@ -128,7 +129,7 @@ const columns: Column<AdminUser>[] = [
     </template>
     <UiAlert v-if="error" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
     <div class="mb-3 flex flex-wrap items-center gap-3">
-      <UiButton variant="text" data-test="select-all" :disabled="busy || !imported.length" @click="selected = selected.length ? [] : imported.slice(0, 100).map((u) => u.id)">{{ selected.length ? 'Clear selection' : 'Select imported users (up to 100)' }}</UiButton>
+      <UiButton variant="text" data-test="select-all" :disabled="busy || !imported.length" @click="selected = selected.length ? [] : imported.slice(0, 100).map((u) => u.id)">{{ selected.length ? 'Clear selection' : 'Select imported users on this page' }}</UiButton>
       <UiButton data-test="activate-selected" :disabled="busy || !selected.length" @click="openActivation(users.filter((u) => selected.includes(u.id)))">Activate selected ({{ selected.length }})</UiButton>
     </div>
     <div v-if="result" class="mb-3" role="status">
@@ -136,7 +137,7 @@ const columns: Column<AdminUser>[] = [
       <ul><li v-for="item in failures" :key="item.user_id" data-test="activate-failure">{{ resultEmails[item.user_id] ?? item.user_id }}: {{ reasonMessage(item.reason ?? 'generic') }}</li></ul>
     </div>
     <UiCard :padded="false">
-      <UiDataTable :items="users" :columns="columns" caption="Users" empty-title="No users match" :row-attrs="() => ({ 'data-test': 'user-row' })" data-test="users">
+      <UiDataTable :items="users" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Users" empty-title="No users match" :row-attrs="() => ({ 'data-test': 'user-row' })" data-test="users" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
         <template #cell-selection="{ row }">
           <input :id="`activate-select-${row.id}`" type="checkbox" class="checkbox checkbox-sm align-middle" data-test="row-select" :aria-label="`Select ${row.email}`" :checked="selected.includes(row.id)" :disabled="busy || row.status !== 'imported' || (selected.length >= 100 && !selected.includes(row.id))" @change="select(row, ($event.target as HTMLInputElement).checked)">
         </template>

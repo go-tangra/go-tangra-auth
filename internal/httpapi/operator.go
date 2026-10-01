@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
@@ -47,6 +49,7 @@ func operatorError(err error) error {
 func (s *Server) RegisterUS5(d US5Deps) {
 	s.grants = d.Grants
 	s.MustHandle("GET", "/api/v1/operator/tenants", s.listTenants(d))
+	s.MustHandle("GET", "/api/v1/operator/tenants/{id}", s.getTenant(d))
 	s.MustHandle("POST", "/api/v1/operator/tenants", s.createTenant(d))
 	s.MustHandle("POST", "/api/v1/operator/tenants/{id}/suspend", s.tenantStatus(d, "suspend"))
 	s.MustHandle("POST", "/api/v1/operator/tenants/{id}/reactivate", s.tenantStatus(d, "reactivate"))
@@ -74,12 +77,51 @@ func (s *Server) listTenants(d US5Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
+		req, ok := parseList(w, r, store.TenantList)
+		if !ok {
+			return
+		}
 		list, err := d.Tenants.List(r.Context())
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), operatorError(err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"items": list})
+		WriteJSON(w, http.StatusOK, windowed(list, req, func(v tenant.View, field string) any {
+			switch field {
+			case "slug":
+				return v.Slug
+			case "status":
+				return v.Status
+			case "kind":
+				return v.Kind
+			case "created_at":
+				return v.CreatedAt // RFC 3339 UTC: orders as text
+			default:
+				return v.DisplayName
+			}
+		}, func(v tenant.View) string { return v.ID }))
+	}
+}
+
+// getTenant returns one tenant (operator; the tenant detail view).
+func (s *Server) getTenant(d US5Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := requireOperator(r); err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		list, err := d.Tenants.List(r.Context())
+		if err != nil {
+			Fail(w, r, s.rt.Logger(), operatorError(err))
+			return
+		}
+		for _, t := range list {
+			if t.ID == r.PathValue("id") {
+				WriteJSON(w, http.StatusOK, t)
+				return
+			}
+		}
+		Fail(w, r, nil, ErrNotFound)
 	}
 }
 
@@ -202,16 +244,39 @@ func (s *Server) listClients(d US5Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
+		legacy := !hasListParams(r.URL.Query())
+		var req listquery.Request
+		if !legacy {
+			var ok bool
+			if req, ok = parseList(w, r, store.ClientList); !ok {
+				return
+			}
+		}
 		clients, err := d.Clients.ListClients(ctx, a.TenantID)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), operatorError(err))
 			return
 		}
-		out := make([]map[string]any, 0, len(clients))
-		for _, c := range clients {
-			out = append(out, map[string]any{"client_id": c.ClientID, "display_name": c.DisplayName, "redirect_uris": c.RedirectURIs, "public": c.Public})
+		// The secret hash never leaves the store layer: only these fields.
+		view := func(c store.ClientApplication) map[string]any {
+			return map[string]any{"client_id": c.ClientID, "display_name": c.DisplayName, "redirect_uris": c.RedirectURIs, "public": c.Public}
 		}
-		WriteJSON(w, http.StatusOK, out)
+		if legacy {
+			// Bare array for one release.
+			out := make([]map[string]any, 0, len(clients))
+			for _, c := range clients {
+				out = append(out, view(c))
+			}
+			WriteJSON(w, http.StatusOK, out)
+			return
+		}
+		page := windowed(clients, req, func(c store.ClientApplication, field string) any {
+			if field == "client_id" {
+				return c.ClientID
+			}
+			return c.DisplayName
+		}, func(c store.ClientApplication) string { return c.ClientID })
+		WriteJSON(w, http.StatusOK, mapPage(page, view))
 	}
 }
 

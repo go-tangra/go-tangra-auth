@@ -4,17 +4,21 @@ import { useRouter } from 'vue-router'
 import { UiPage, UiCard, UiAlert, UiButton, UiDataTable, UiBadge, UiTooltip, useConfirm, type Column } from '@go-tangra/ui'
 import { api, ApiError } from '@/api/client'
 import { reasonMessage } from '@/api/vocab'
-import { roleClonable, roleLocked, roleOrigin, useRoles, type Role } from '@/composables/useRoles'
+import { roleClonable, roleLocked, roleOrigin, type Role } from '@/composables/useRoles'
+import { usePagedList, ROLE_LIST } from '@/composables/usePagedList'
 import CloneRoleDialog from './CloneRoleDialog.vue'
 
 const router = useRouter()
 const confirm = useConfirm()
-const { roles, load } = useRoles()
 const error = ref<string | null>(null)
+// --- server paging and sorting (page / size / sort in the URL: ?roles.page=…) ---
+const list = usePagedList<Role>('roles', '/api/v1/admin/roles', ROLE_LIST, () => ({}),
+  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load roles.' })
+const load = () => list.load()
 const busy = ref(false)
 const cloning = ref<Role | null>(null)
 type Row = Role & Record<string, unknown> & { id: string }
-const rows = computed<Row[]>(() => roles.value.map((r) => ({ ...r, id: r.id ?? '' })))
+const rows = computed<Row[]>(() => list.items.value.map((r) => ({ ...r, id: r.id ?? '' })))
 /** Origin badge: built-in, the providing module's name, or custom. */
 function originLabel(r: Role): string {
   const o = roleOrigin(r)
@@ -43,10 +47,10 @@ function cloned(r: Role): void {
   else void load()
 }
 const open = (r: Row) => router.push({ name: 'admin-role', params: { id: r.id } })
-onMounted(load)
+onMounted(() => void load())
 const columns: Column<Row>[] = [
   { key: 'display_name', label: 'Role', sortable: true },
-  { key: 'slug', label: 'Slug', hideOnStack: true },
+  { key: 'slug', label: 'Slug', hideOnStack: true, sortable: true },
   { key: 'permissions', label: 'Permissions', format: (r) => (roleOrigin(r) === 'builtin' ? 'defined by the platform' : (r.permissions ?? []).join(', ')) },
 ]
 </script>
@@ -56,7 +60,7 @@ const columns: Column<Row>[] = [
     <template #actions><UiButton icon="mdi-plus" data-test="new-role" @click="router.push({ name: 'admin-role-new' })">New role</UiButton></template>
     <UiAlert v-if="error" kind="error" class="mb-3" data-test="error">{{ error }}</UiAlert>
     <UiCard :padded="false">
-      <UiDataTable :items="rows" :columns="columns" caption="Roles" empty-title="No roles" :row-attrs="() => ({ 'data-test': 'role-row' })" data-test="roles">
+      <UiDataTable :items="rows" :columns="columns" :loading="list.loading.value" :total="list.total.value" :page="list.lq.page.value" :page-size="list.lq.pageSize.value" :sort="list.lq.sort.value" caption="Roles" empty-title="No roles" :row-attrs="() => ({ 'data-test': 'role-row' })" data-test="roles" @update:page="list.lq.setPage" @update:page-size="list.lq.setPageSize" @update:sort="list.lq.setSort">
         <template #cell-display_name="{ row }">
           {{ row.display_name }}
           <UiBadge size="xs" :color="originColor(row)" soft data-test="origin">{{ originLabel(row) }}</UiBadge>

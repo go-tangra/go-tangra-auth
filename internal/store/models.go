@@ -209,6 +209,7 @@ type Revocation struct {
 
 // AuditRow is one application audit event.
 type AuditRow struct {
+	ID                      int64 // unique, increasing (0 before it is stored)
 	TS                      time.Time
 	TenantID, EventType     string
 	ActorUserID             *string

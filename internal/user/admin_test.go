@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/cache"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
@@ -36,11 +38,11 @@ func TestAdminOperations(t *testing.T) {
 	actor := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u-owner", TenantID: tA, Roles: []string{"owner"}}
 	actorCtx := tenantctx.WithActor(ctx, actor)
 
-	users, err := admin.List(ctx, actor, "bo", "")
-	if err != nil || len(users) != 1 || users[0].Email != "bob@x.test" || users[0].Roles[0] != "member" {
+	users, err := admin.List(ctx, actor, "bo", "", listquery.Request{})
+	if err != nil || len(users.Items) != 1 || users.Total != 1 || users.Items[0].Email != "bob@x.test" || users.Items[0].Roles[0] != "member" {
 		t.Fatalf("%v %v", users, err)
 	}
-	if users, _ := admin.List(ctx, actor, "", "deactivated"); len(users) != 0 {
+	if users, _ := admin.List(ctx, actor, "", "deactivated", listquery.Request{}); len(users.Items) != 0 || users.Total != 0 {
 		t.Fatal("status filter")
 	}
 	// Deactivation ends sessions and blocks sign-in.
@@ -210,7 +212,7 @@ func TestAdminRemoveImported(t *testing.T) {
 	if l, _ := ms.LinksByUIDs(ctx, tA, connA, []string{"imp"}); len(l) != 0 {
 		t.Fatalf("link did not cascade: %v", l)
 	}
-	if users, _ := admin.List(ctx, actor, "", "imported"); len(users) != 0 {
+	if users, _ := admin.List(ctx, actor, "", "imported", listquery.Request{}); len(users.Items) != 0 {
 		t.Fatalf("removed user still listed: %v", users)
 	}
 	if len(ms.Outbox) != 0 {

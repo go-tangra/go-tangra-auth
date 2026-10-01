@@ -24,9 +24,12 @@ const grantFields = zodToFields(grantSchema, {
 })
 
 async function load(): Promise<void> {
-  const list = (await api<{ items: Tenant[] }>('GET', '/api/v1/operator/tenants')).items
-  tenant.value = list.find((t) => t.id === id.value) ?? null
-  if (!tenant.value) error.value = reasonMessage('not_found')
+  try {
+    tenant.value = await api<Tenant>('GET', `/api/v1/operator/tenants/${encodeURIComponent(id.value)}`)
+  } catch (err) {
+    tenant.value = null
+    error.value = err instanceof ApiError ? reasonMessage(err.reason) : reasonMessage('not_found')
+  }
 }
 
 async function setStatus(op: 'suspend' | 'reactivate'): Promise<void> {

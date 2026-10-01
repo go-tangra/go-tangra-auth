@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
@@ -137,6 +139,35 @@ func (m *Store) ListGroupMembers(_ context.Context, tid, gid string, after time.
 		}
 	}
 	return out, nil
+}
+
+// PageGroupMembers pages like store.PageGroupMembers.
+func (m *Store) PageGroupMembers(_ context.Context, tid, gid string, req listquery.Request) ([]store.GroupMember, int, listquery.Request, error) {
+	m.mu.Lock()
+	s := m.gs()
+	var all []store.GroupMember
+	if g, ok := s.groups[gid]; ok && g.TenantID == tid {
+		for _, uid := range s.members[gid] {
+			_, u, _ := m.userByID(tid, uid)
+			all = append(all, store.GroupMember{UserID: uid, Email: u.Email, DisplayName: u.DisplayName, Status: u.Status, AvatarID: u.AvatarID, AddedAt: s.added[gid+"/"+uid]})
+		}
+	}
+	m.mu.Unlock()
+	req = store.ListRequest(req, store.GroupMemberList)
+	listquery.SortSlice(all, req, func(x store.GroupMember, field string) any {
+		switch field {
+		case "email":
+			return x.Email
+		case "display_name":
+			return x.DisplayName
+		case "status":
+			return x.Status
+		default:
+			return x.AddedAt
+		}
+	}, func(x store.GroupMember) string { return x.UserID })
+	page, total, applied := listquery.Window(all, req)
+	return page, total, applied, nil
 }
 
 func (m *Store) AddGroupMembers(_ context.Context, tid, gid, _ string, userIDs []string) (int, error) {

@@ -11,6 +11,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/token"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
+	"github.com/go-tangra/go-tangra/v4/listquery"
 	"github.com/go-tangra/go-tangra/v4/transport/edge"
 )
 
@@ -238,12 +239,34 @@ func (s *Server) listSessions(d US1Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
+		legacy := !hasListParams(r.URL.Query())
+		var req listquery.Request
+		if !legacy {
+			var ok bool
+			if req, ok = parseList(w, r, store.SessionList); !ok {
+				return
+			}
+		}
 		views, err := d.Sessions.ListMine(r.Context(), a.TenantID, a.UserID, a.SessionID)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), err)
 			return
 		}
-		WriteJSON(w, http.StatusOK, views)
+		if legacy {
+			// Bare array for one release.
+			WriteJSON(w, http.StatusOK, views)
+			return
+		}
+		WriteJSON(w, http.StatusOK, windowed(views, req, func(v session.View, field string) any {
+			switch field {
+			case "last_seen_at":
+				return v.LastSeenAt
+			case "expires_at":
+				return v.ExpiresAt
+			default:
+				return v.CreatedAt
+			}
+		}, func(v session.View) string { return v.ID }))
 	}
 }
 
