@@ -26,10 +26,10 @@ func TestListSpecs(t *testing.T) {
 			}
 		}
 	}
-	if got := (listquery.Request{Sort: "email", Order: listquery.Asc}).OrderBy(UserList); got != "lower(u.email) ASC NULLS LAST, u.id ASC" {
+	if got := (listquery.Request{Sort: "email", Order: listquery.Asc}).OrderBy(UserList); got != "lower(u.email) ASC, u.id ASC" { // NotNull: no NULLS clause
 		t.Fatalf("users order %q", got)
 	}
-	if got := (listquery.Request{Sort: "ts", Order: listquery.Desc}).OrderBy(AuditList); got != "a.ts DESC NULLS LAST, a.id DESC" {
+	if got := (listquery.Request{Sort: "ts", Order: listquery.Desc}).OrderBy(AuditList); got != "a.ts DESC, a.id DESC" {
 		t.Fatalf("audit order %q", got)
 	}
 }
@@ -42,5 +42,11 @@ func TestListRequestDefaults(t *testing.T) {
 	// A hand-built invalid request falls back to the defaults.
 	if r := ListRequest(listquery.Request{Sort: "nope", PageSize: 9999}, UserList); r.Sort != "email" || r.PageSize != 25 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestNullableSortKeepsNullsLast(t *testing.T) {
+	if got := (listquery.Request{Sort: "last_signin_at", Order: listquery.Desc}).OrderBy(UserList); got != "u.last_signin_at DESC NULLS LAST, u.id DESC" {
+		t.Fatalf("last sign-in order %q", got)
 	}
 }

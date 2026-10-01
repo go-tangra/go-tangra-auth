@@ -14,15 +14,21 @@ import (
 // sort field exposes a secret, a hash or an attribute the list does not show.
 // gRPC lists (profiles, contacts, member walks) and the backup walks keep
 // their own queries.
+//
+// NotNull marks columns declared NOT NULL in the migrations (the group
+// member page inner-joins users, so its u.* columns are too) and in-memory
+// keys that never return nil: OrderBy then omits NULLS LAST and a plain btree
+// (migrations 0012/0013) serves both directions. users.last_signin_at is
+// nullable and keeps NULLS LAST.
 var (
 	// UserList pages GET /admin/users by email.
 	UserList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"email":          {Expr: "u.email", Text: true},
-			"display_name":   {Expr: "u.display_name", Text: true},
-			"status":         {Expr: "u.status"},
+			"email":          {Expr: "u.email", Text: true, NotNull: true},
+			"display_name":   {Expr: "u.display_name", Text: true, NotNull: true},
+			"status":         {Expr: "u.status", NotNull: true},
 			"last_signin_at": {Expr: "u.last_signin_at", DefaultDir: listquery.Desc},
-			"created_at":     {Expr: "u.created_at", DefaultDir: listquery.Desc},
+			"created_at":     {Expr: "u.created_at", DefaultDir: listquery.Desc, NotNull: true},
 		},
 		Default: "email", TieBreak: "u.id",
 	}
@@ -30,17 +36,17 @@ var (
 	// (AuditWindow by default; research D6). The id breaks timestamp ties.
 	AuditList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"ts": {Expr: "a.ts", DefaultDir: listquery.Desc},
+			"ts": {Expr: "a.ts", DefaultDir: listquery.Desc, NotNull: true},
 		},
 		Default: "ts", TieBreak: "a.id", DefaultSize: 50,
 	}
 	// GroupMemberList pages GET /admin/groups/{id}/members, latest first.
 	GroupMemberList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"added_at":     {Expr: "m.added_at", DefaultDir: listquery.Desc},
-			"email":        {Expr: "u.email", Text: true},
-			"display_name": {Expr: "u.display_name", Text: true},
-			"status":       {Expr: "u.status"},
+			"added_at":     {Expr: "m.added_at", DefaultDir: listquery.Desc, NotNull: true},
+			"email":        {Expr: "u.email", Text: true, NotNull: true},
+			"display_name": {Expr: "u.display_name", Text: true, NotNull: true},
+			"status":       {Expr: "u.status", NotNull: true},
 		},
 		Default: "added_at", TieBreak: "m.user_id",
 	}
@@ -54,54 +60,54 @@ var (
 	// GroupList pages GET /admin/groups by name.
 	GroupList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"name":         {Expr: "name", Text: true},
-			"member_count": {Expr: "member_count", DefaultDir: listquery.Desc},
-			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc},
+			"name":         {Expr: "name", Text: true, NotNull: true},
+			"member_count": {Expr: "member_count", DefaultDir: listquery.Desc, NotNull: true},
+			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc, NotNull: true},
 		},
 		Default: "name", TieBreak: "id",
 	}
 	// RoleList pages GET /admin/roles by display name.
 	RoleList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"display_name": {Expr: "display_name", Text: true},
-			"slug":         {Expr: "slug", Text: true},
-			"origin":       {Expr: "origin"},
+			"display_name": {Expr: "display_name", Text: true, NotNull: true},
+			"slug":         {Expr: "slug", Text: true, NotNull: true},
+			"origin":       {Expr: "origin", NotNull: true},
 		},
 		Default: "display_name", TieBreak: "id",
 	}
 	// ClientList pages GET /admin/clients by display name.
 	ClientList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"display_name": {Expr: "display_name", Text: true},
-			"client_id":    {Expr: "client_id"},
+			"display_name": {Expr: "display_name", Text: true, NotNull: true},
+			"client_id":    {Expr: "client_id", NotNull: true},
 		},
 		Default: "display_name", TieBreak: "client_id",
 	}
 	// TenantList pages GET /operator/tenants by display name.
 	TenantList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"display_name": {Expr: "display_name", Text: true},
-			"slug":         {Expr: "slug"},
-			"status":       {Expr: "status"},
-			"kind":         {Expr: "kind"},
-			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc},
+			"display_name": {Expr: "display_name", Text: true, NotNull: true},
+			"slug":         {Expr: "slug", NotNull: true},
+			"status":       {Expr: "status", NotNull: true},
+			"kind":         {Expr: "kind", NotNull: true},
+			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc, NotNull: true},
 		},
 		Default: "display_name", TieBreak: "id",
 	}
 	// SessionList pages GET /sessions (the caller's own), newest first.
 	SessionList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc},
-			"last_seen_at": {Expr: "last_seen_at", DefaultDir: listquery.Desc},
-			"expires_at":   {Expr: "expires_at"},
+			"created_at":   {Expr: "created_at", DefaultDir: listquery.Desc, NotNull: true},
+			"last_seen_at": {Expr: "last_seen_at", DefaultDir: listquery.Desc, NotNull: true},
+			"expires_at":   {Expr: "expires_at", NotNull: true},
 		},
 		Default: "created_at", TieBreak: "id",
 	}
 	// DirectoryList pages GET /admin/directories by name.
 	DirectoryList = listquery.Spec{
 		Fields: map[string]listquery.Field{
-			"name":       {Expr: "name", Text: true},
-			"created_at": {Expr: "created_at", DefaultDir: listquery.Desc},
+			"name":       {Expr: "name", Text: true, NotNull: true},
+			"created_at": {Expr: "created_at", DefaultDir: listquery.Desc, NotNull: true},
 		},
 		Default: "name", TieBreak: "id",
 	}
