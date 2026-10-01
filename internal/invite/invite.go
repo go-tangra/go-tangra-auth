@@ -391,6 +391,41 @@ type Accepted struct {
 	Operator bool
 }
 
+// redeemable loads the open invitation behind a token hash with its tenant
+// and that tenant's policy; anything not redeemable is ErrInvalidToken.
+func (s *Service) redeemable(ctx context.Context, tx Tx, hash string) (store.Invitation, store.Tenant, tenant.Policy, error) {
+	inv, err := tx.InvitationByHash(ctx, hash)
+	if err != nil || inv.AcceptedAt != nil || inv.RevokedAt != nil || !s.now().Before(inv.ExpiresAt) {
+		return store.Invitation{}, store.Tenant{}, tenant.Policy{}, ErrInvalidToken
+	}
+	t, err := tx.Tenant(ctx, inv.TenantID)
+	if err != nil || t.Status != "active" {
+		return store.Invitation{}, store.Tenant{}, tenant.Policy{}, ErrInvalidToken
+	}
+	pol, err := tenant.ParsePolicy(t.Policy, t.Kind == "platform")
+	return inv, t, pol, err
+}
+
+// Requirements returns the password rules Accept will apply for a token that
+// is still redeemable. It reads only: the token is not consumed and nothing
+// about the invitee is returned.
+func (s *Service) Requirements(ctx context.Context, token string) (password.Requirements, error) {
+	if token == "" || len(token) > 256 {
+		return password.Requirements{}, ErrInvalidToken
+	}
+	hash := crypto.HashToken(token)
+	var out password.Requirements
+	err := s.st.Atomic(ctx, store.Scope{System: true}, func(raw any) error {
+		_, _, pol, err := s.redeemable(ctx, raw.(Tx), hash)
+		if err != nil {
+			return err
+		}
+		out = password.RequirementsFor(pol)
+		return nil
+	})
+	return out, err
+}
+
 // Accept redeems a token, applies the tenant password policy, creates or
 // activates the account and assigns the invited roles (mirror rows and FGA
 // tuples). The token is single-use and expires after Lifetime.
@@ -403,15 +438,7 @@ func (s *Service) Accept(ctx context.Context, token, displayName, pw string) (Ac
 	var tuples []authz.Tuple
 	err := s.st.Atomic(ctx, store.Scope{System: true}, func(raw any) error {
 		tx := raw.(Tx)
-		inv, err := tx.InvitationByHash(ctx, hash)
-		if err != nil || inv.AcceptedAt != nil || inv.RevokedAt != nil || !s.now().Before(inv.ExpiresAt) {
-			return ErrInvalidToken
-		}
-		t, err := tx.Tenant(ctx, inv.TenantID)
-		if err != nil || t.Status != "active" {
-			return ErrInvalidToken
-		}
-		pol, err := tenant.ParsePolicy(t.Policy, t.Kind == "platform")
+		inv, t, pol, err := s.redeemable(ctx, tx, hash)
 		if err != nil {
 			return err
 		}

@@ -55,6 +55,12 @@ func TestChange(t *testing.T) {
 	actor := tenantctx.Actor{Kind: tenantctx.KindUser, UserID: "u1", TenantID: tid, SessionID: s1.ID}
 	ch := NewChanger(ms, sm, nil)
 	ch.SetPad(func(time.Time) {})
+	if req, err := ch.Requirements(ctx, actor); err != nil || req != (Requirements{MinLength: 10, MaxLength: MaxLength, RejectTrivial: true}) {
+		t.Fatalf("%+v %v", req, err)
+	}
+	if _, err := ch.Requirements(ctx, tenantctx.Actor{TenantID: "missing"}); err == nil {
+		t.Fatal("unknown tenant")
+	}
 	if err := ch.Change(ctx, actor, "wrong", "new-password-long"); !errors.Is(err, ErrCurrent) {
 		t.Fatalf("wrong current: %v", err)
 	}
@@ -95,6 +101,12 @@ func TestRecovery(t *testing.T) {
 		if r.TokenHash == tok || r.TokenHash != crypto.HashToken(tok) || time.Until(r.ExpiresAt) > RecoveryLifetime+time.Minute {
 			t.Fatal("token must be stored hashed with a 30 min expiry")
 		}
+	}
+	if req, err := rec.Requirements(ctx, tok); err != nil || req.MinLength != 10 {
+		t.Fatalf("%+v %v", req, err)
+	}
+	if _, err := rec.Requirements(ctx, "nope"); !errors.Is(err, ErrInvalidToken) {
+		t.Fatal("unknown token has requirements")
 	}
 	if err := rec.Complete(ctx, tok, "short"); !errors.Is(err, ErrTooShort) {
 		t.Fatalf("policy before consumption: %v", err)

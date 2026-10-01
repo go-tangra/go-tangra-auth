@@ -97,25 +97,42 @@ func (r *Recovery) Request(ctx context.Context, tenantSlug, emailAddr, ipHash st
 	return nil
 }
 
-// Complete sets a new password from a single-use token and ends every
-// session of the user.
-func (r *Recovery) Complete(ctx context.Context, token, next string) error {
+// peek resolves an unused, unexpired token to its request and policy
+// without consuming it.
+func (r *Recovery) peek(ctx context.Context, token string) (store.RecoveryRequest, tenant.Policy, error) {
 	if token == "" || len(token) > 256 {
-		return ErrInvalidToken
+		return store.RecoveryRequest{}, tenant.Policy{}, ErrInvalidToken
 	}
-	hash := crypto.HashToken(token)
-	req, err := r.st.PeekRecovery(ctx, hash)
+	req, err := r.st.PeekRecovery(ctx, crypto.HashToken(token))
 	if err != nil {
-		return ErrInvalidToken
+		return store.RecoveryRequest{}, tenant.Policy{}, ErrInvalidToken
 	}
 	t, err := r.st.Tenant(ctx, req.TenantID)
 	if err != nil || t.Status != "active" {
-		return ErrInvalidToken
+		return store.RecoveryRequest{}, tenant.Policy{}, ErrInvalidToken
 	}
 	pol, err := tenantPolicy(t)
+	return req, pol, err
+}
+
+// Requirements returns the password rules that Complete will apply for a
+// still-valid token. The token is not consumed.
+func (r *Recovery) Requirements(ctx context.Context, token string) (Requirements, error) {
+	_, pol, err := r.peek(ctx, token)
+	if err != nil {
+		return Requirements{}, err
+	}
+	return RequirementsFor(pol), nil
+}
+
+// Complete sets a new password from a single-use token and ends every
+// session of the user.
+func (r *Recovery) Complete(ctx context.Context, token, next string) error {
+	req, pol, err := r.peek(ctx, token)
 	if err != nil {
 		return err
 	}
+	hash := crypto.HashToken(token)
 	if err := Check(pol, next); err != nil {
 		return err
 	}

@@ -31,13 +31,28 @@ func TestAdminFlows(t *testing.T) {
 		tok = tok[:i]
 	}
 	nb := e.Browser()
-	code, out := nb.JSON(http.MethodPost, "/api/v1/invitations/accept", map[string]string{"token": tok, "display_name": "New", "password": "a-long-enough-password"})
+	// The invitation page reads the tenant's password rules (policy only) without consuming the token.
+	code, out := nb.JSON(http.MethodPost, "/api/v1/invitations/password-policy", map[string]string{"token": tok})
+	if code != 200 || len(out) != 3 || out["min_length"] != float64(12) || out["max_length"] != float64(1024) || out["reject_trivial"] != true {
+		t.Fatalf("password policy %d %v", code, out)
+	}
+	code, out = nb.JSON(http.MethodPost, "/api/v1/invitations/accept", map[string]string{"token": tok, "display_name": "New", "password": "too-short"})
+	if d, _ := out["detail"].(map[string]any); code != 400 || out["reason"] != "password_policy" || d["rule"] != "min_length" {
+		t.Fatalf("policy refusal %d %v", code, out)
+	}
+	code, out = nb.JSON(http.MethodPost, "/api/v1/invitations/accept", map[string]string{"token": tok, "display_name": "New", "password": "a-long-enough-password"})
 	if code != 200 || out["signed_in"] != true {
 		t.Fatalf("%d %v", code, out)
 	}
 	code, out = nb.JSON(http.MethodGet, "/api/v1/session", nil)
 	if code != 200 || out["roles"].([]any)[0] != "auditor" {
 		t.Fatalf("%d %v", code, out)
+	}
+	if code, out := nb.JSON(http.MethodPost, "/api/v1/invitations/password-policy", map[string]string{"token": tok}); code != 400 || out["reason"] != "invalid_token" {
+		t.Fatalf("redeemed token %d %v", code, out)
+	}
+	if code, out := nb.JSON(http.MethodGet, "/api/v1/me/password-policy", nil); code != 200 || out["min_length"] != float64(12) {
+		t.Fatalf("my password policy %d %v", code, out)
 	}
 	newID := out["user"].(map[string]any)["id"].(string)
 	// Assign admin → the next token carries it; revoke → gone.

@@ -38,6 +38,19 @@ func NewChanger(st ChangeStore, sm *session.Manager, a *audit.Writer) *Changer {
 // SetPad overrides the timing pad (tests only).
 func (c *Changer) SetPad(f func(time.Time)) { c.pad = f }
 
+// Requirements returns the password rules of the actor's tenant.
+func (c *Changer) Requirements(ctx context.Context, actor tenantctx.Actor) (Requirements, error) {
+	t, err := c.st.Tenant(ctx, actor.TenantID)
+	if err != nil {
+		return Requirements{}, err
+	}
+	pol, err := tenantPolicy(t)
+	if err != nil {
+		return Requirements{}, err
+	}
+	return RequirementsFor(pol), nil
+}
+
 // Change verifies the current password, applies the policy, stores the new
 // hash and ends every other session of the user.
 func (c *Changer) Change(ctx context.Context, actor tenantctx.Actor, current, next string) error {

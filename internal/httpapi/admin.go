@@ -52,7 +52,7 @@ func adminError(err error) error {
 	case errors.Is(err, invite.ErrInvalidToken):
 		return errInvalidToken
 	case errors.Is(err, invite.ErrPolicy):
-		return errPasswordPolicy
+		return passwordPolicy(err)
 	case errors.Is(err, invite.ErrBadEmail), errors.Is(err, audit.ErrFilter):
 		return ErrValidation
 	case errors.Is(err, tenantctx.ErrNoActor), errors.Is(err, tenantctx.ErrCrossTenant), errors.Is(err, tenantctx.ErrNoOperatorGrant):
@@ -90,6 +90,7 @@ func (s *Server) RegisterUS2(d US2Deps) {
 	s.MustHandle("POST", "/api/v1/admin/invitations", s.createInvitation(d))
 	s.MustHandle("POST", "/api/v1/admin/invitations/{id}/resend", s.resendInvitation(d))
 	s.MustHandle("POST", "/api/v1/invitations/accept", s.acceptInvitation(d))
+	s.MustHandle("POST", "/api/v1/invitations/password-policy", s.invitationPasswordPolicy(d))
 	s.MustHandle("GET", "/api/v1/admin/audit", s.queryAudit(d))
 }
 

@@ -208,6 +208,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Password rules of the caller's tenant (shown on the change-password form) */
+        get: operations["myPasswordPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/mfa/enroll": {
         parameters: {
             query?: never;
@@ -396,6 +413,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recovery/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Password rules for a still-valid reset token (not consumed; token in the body, never the URL; rate-limited) */
+        post: operations["recoveryPasswordPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/invitations/accept": {
         parameters: {
             query?: never;
@@ -407,6 +441,23 @@ export interface paths {
         put?: never;
         /** Accept an invitation and set the initial password */
         post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/password-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Password rules for a still-redeemable invitation token (not consumed; token in the body, never the URL; no invitee data; rate-limited) */
+        post: operations["invitationPasswordPolicy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1292,6 +1343,21 @@ export interface components {
                 param?: string;
             };
         };
+        /** @description The effective password rules of a tenant (policy parameters only; no user data). Lengths count Unicode code points. */
+        PasswordRequirements: {
+            min_length: number;
+            max_length: number;
+            /** @description a blank password or one repeated character is refused */
+            reject_trivial: boolean;
+        };
+        /** @description password_policy; detail.rule names the violated PasswordRequirements key (min_length | max_length | reject_trivial), never the submitted value */
+        PasswordPolicyError: {
+            reason: string;
+            detail?: {
+                /** @enum {string} */
+                rule?: "min_length" | "max_length" | "reject_trivial";
+            };
+        };
         /** @description List-contract page fields: total counts every record matching the filters that the caller may see; page is the page actually returned (a page beyond the end returns the last one) */
         ListPage: {
             total: number;
@@ -2110,14 +2176,43 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description policy violation (reason password_policy) */
+            /** @description password_policy (detail.rule) */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicyError"];
+                };
+            };
+            /** @description invalid_credentials */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description invalid_credentials */
+        };
+    };
+    myPasswordPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordRequirements"];
+                };
+            };
+            /** @description unauthenticated */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2526,8 +2621,50 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description invalid_token | password_policy */
+            /** @description invalid_token | password_policy (detail.rule) */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicyError"];
+                };
+            };
+        };
+    };
+    recoveryPasswordPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordRequirements"];
+                };
+            };
+            /** @description invalid_token */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2559,8 +2696,50 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description invalid_token | password_policy (detail.rule) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordPolicyError"];
+                };
+            };
+        };
+    };
+    invitationPasswordPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordRequirements"];
+                };
+            };
             /** @description invalid_token */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

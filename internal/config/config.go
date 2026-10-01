@@ -184,8 +184,12 @@ type Session struct {
 // Default returns secure defaults on top of the Freya defaults.
 func Default() Config {
 	return Config{
-		Config:   fconfig.Default(),
-		Edge:     Edge{Addr: ":8443", RateLimit: edge.RateLimit{PerSecond: 20, Burst: 40, Routes: map[string]edge.RateLimit{"/api/v1/signin": {PerSecond: 2, Burst: 5}, "/api/v1/recovery": {PerSecond: 1, Burst: 3}}}},
+		Config: fconfig.Default(),
+		Edge: Edge{Addr: ":8443", RateLimit: edge.RateLimit{PerSecond: 20, Burst: 40, Routes: map[string]edge.RateLimit{
+			"/api/v1/signin": {PerSecond: 2, Burst: 5}, "/api/v1/recovery": {PerSecond: 1, Burst: 3},
+			// The unauthenticated password-rule lookups (one call per page load).
+			"/api/v1/invitations/password-policy": {PerSecond: 2, Burst: 10}, "/api/v1/recovery/password-policy": {PerSecond: 2, Burst: 10},
+		}}},
 		DB:       DB{MaxConns: 16},
 		KEK:      KEK{Source: "file"},
 		Email:    Email{Transport: "notification"},

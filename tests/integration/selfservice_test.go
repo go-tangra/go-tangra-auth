@@ -73,6 +73,9 @@ func TestRecovery(t *testing.T) {
 		t.Fatalf("recovery send %+v", r)
 	}
 	tok := strings.TrimSpace(strings.Split(mail[strings.Index(mail, "token=")+6:], "\n")[0])
+	if st, out := e.JSON(http.MethodPost, "/api/v1/recovery/password-policy", map[string]string{"token": tok}); st != 200 || out["min_length"] != float64(12) || out["reject_trivial"] != true {
+		t.Fatalf("password policy %d %v", st, out)
+	}
 	if st, _ := e.JSON(http.MethodPost, "/api/v1/recovery/complete", map[string]string{"token": tok, "new_password": "yet-another-long-password"}); st != 204 {
 		t.Fatal(st)
 	}
