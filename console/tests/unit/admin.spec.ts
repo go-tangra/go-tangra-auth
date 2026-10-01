@@ -9,6 +9,7 @@ import Policy from '@/views/admin/Policy.vue'
 import { router } from '@/router'
 import { useSession } from '@/stores/session'
 import { body, click, mountView, q, stubFetch, type } from './helpers'
+import { AUDIT_SPAN_MESSAGE } from '@/schemas'
 
 const users = [
   { id: 'u1', email: 'alice@x.test', display_name: 'Alice', status: 'active', mfa_enabled: true, roles: ['owner'], last_signin_at: null },
@@ -238,6 +239,33 @@ describe('admin console', () => {
     expect(fetch.mock.calls.some((c) => String(c[0]).includes('page=2'))).toBe(true)
     expect(router.currentRoute.value.query['audit.page']).toBe('2')
     w.unmount()
+  })
+
+  it('limits the audit date range to 90 days: inline before sending, and a server refusal reads the same', async () => {
+    const fetch = stubFetch(() => ({ status: 200, body: { items: [], total: 0, page: 1, page_size: 50, sort: 'ts', order: 'desc' } }))
+    await router.push('/admin/audit')
+    const w = mountView(Audit)
+    await flushPromises()
+    const sent = fetch.mock.calls.length
+    await w.find('[data-test="filter-from"] input').setValue('1970-01-01T00:00')
+    await w.find('[data-test="apply"]').trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain(AUDIT_SPAN_MESSAGE)
+    expect(fetch.mock.calls.length).toBe(sent)
+    // Exactly 90 days goes through.
+    await w.find('[data-test="filter-from"] input').setValue('2026-01-01T00:00')
+    await w.find('[data-test="filter-to"] input').setValue('2026-04-01T00:00')
+    await w.find('[data-test="apply"]').trigger('click')
+    await flushPromises()
+    expect(fetch.mock.calls.length).toBe(sent + 1)
+    expect(String(fetch.mock.calls.at(-1)![0])).toContain('from=')
+    w.unmount()
+
+    stubFetch(() => ({ status: 400, body: { reason: 'validation_failed', detail: { param: 'from' } } }))
+    const v = mountView(Audit)
+    await flushPromises()
+    expect(v.find('[data-test="error"]').text()).toBe(AUDIT_SPAN_MESSAGE)
+    v.unmount()
   })
 
   it('validates the security policy with zod (durations, bounds, idle ≤ session) and saves it', async () => {

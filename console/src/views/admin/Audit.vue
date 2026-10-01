@@ -5,7 +5,7 @@ import { useZodForm } from '@go-tangra/ui/forms'
 import { ApiError } from '@/api/client'
 import { usePagedList, AUDIT_LIST } from '@/composables/usePagedList'
 import { auditEventLabel, auditEventTypes, reasonMessage } from '@/api/vocab'
-import { auditFilterSchema } from '@/schemas'
+import { auditFilterSchema, AUDIT_SPAN_MESSAGE, MAX_AUDIT_SPAN_DAYS } from '@/schemas'
 
 /** One row of GET /api/v1/admin/audit (internal/audit.Item). */
 interface AuditEvent {
@@ -29,7 +29,7 @@ type Filter = ReturnType<typeof auditFilterSchema.parse>
 const current = ref<Partial<Filter>>({})
 const list = usePagedList<AuditEvent>('audit', '/api/v1/admin/audit', AUDIT_LIST,
   () => ({ event_type: current.value.event_type, user_id: current.value.user_id || undefined, from: current.value.from, to: current.value.to }),
-  (err) => { error.value = err instanceof ApiError ? reasonMessage(err.reason) : 'Could not load the audit trail.' })
+  (err) => { error.value = !(err instanceof ApiError) ? 'Could not load the audit trail.' : err.reason === 'validation_failed' && err.detail?.param === 'from' ? AUDIT_SPAN_MESSAGE : reasonMessage(err.reason) })
 const filter = useZodForm(auditFilterSchema, {
   initial: { user_id: '', from: '', to: '' },
   onSubmit: async (f) => {
@@ -40,7 +40,7 @@ const filter = useZodForm(auditFilterSchema, {
 })
 const apply = () => void filter.submit()
 onMounted(apply)
-const windowHint = computed(() => (current.value.from || current.value.to ? '' : 'Showing the last 7 days. Set From / To for older events.'))
+const windowHint = computed(() => (current.value.from || current.value.to ? '' : `Showing the last 7 days. Set From / To for older events (at most ${MAX_AUDIT_SPAN_DAYS} days at a time).`))
 const rows = computed(() => list.items.value.map((e, i) => ({ ...e, id: e.id ?? e.ts + ':' + i })))
 const columns: Column<(typeof rows.value)[number]>[] = [
   { key: 'ts', label: 'Time', format: (e) => new Date(e.ts).toLocaleString(), sortable: true },

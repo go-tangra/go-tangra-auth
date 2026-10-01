@@ -364,7 +364,7 @@ func (s *Server) queryAudit(d US2Deps) http.HandlerFunc {
 			}
 			page, err := audit.Query(r.Context(), d.Audit, a.TenantID, f)
 			if err != nil {
-				Fail(w, r, s.rt.Logger(), adminError(err))
+				s.failAudit(w, r, err)
 				return
 			}
 			WriteJSON(w, http.StatusOK, page)
@@ -376,11 +376,22 @@ func (s *Server) queryAudit(d US2Deps) http.HandlerFunc {
 		}
 		page, err := audit.List(r.Context(), d.Audit, a.TenantID, f, req, time.Now())
 		if err != nil {
-			Fail(w, r, s.rt.Logger(), adminError(err))
+			s.failAudit(w, r, err)
 			return
 		}
 		WriteJSON(w, http.StatusOK, page)
 	}
+}
+
+// failAudit answers an audit query error: a parameter refusal (the 90-day
+// span cap names from) is validation_failed {param} without the value.
+func (s *Server) failAudit(w http.ResponseWriter, r *http.Request, err error) {
+	var le *listquery.Error
+	if errors.As(err, &le) {
+		WriteDetail(w, ErrValidation, map[string]any{"param": le.Param})
+		return
+	}
+	Fail(w, r, s.rt.Logger(), adminError(err))
 }
 
 func hasAny(roles []string, want ...string) bool {

@@ -3302,7 +3302,9 @@ export interface operations {
             query?: {
                 user_id?: string;
                 event_type?: string;
+                /** @description default: 7 days before to; the from..to span is at most 90 days (wider: 400 validation_failed {param: from}) */
                 from?: string;
+                /** @description default: now; to - from must not exceed 90 days */
                 to?: string;
                 cursor?: string;
                 limit?: number;
