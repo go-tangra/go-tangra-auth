@@ -142,6 +142,12 @@ func TestListValidationNamesTheParameter(t *testing.T) {
 		{"/api/v1/admin/audit?cursor=1&page=1", "cursor", ""},
 		{"/api/v1/admin/audit?limit=1000", "limit", ""},
 		{"/api/v1/admin/audit?from=yesterday", "from", "yesterday"},
+		// A window wider than 90 days (security review F-2), paged and legacy.
+		{"/api/v1/admin/audit?from=1970-01-01T00:00:00Z", "from", "1970"},
+		{"/api/v1/admin/audit?from=1970-01-01T00:00:00Z&page=1", "from", "1970"},
+		{"/api/v1/admin/audit?from=1970-01-01T00:00:00Z&limit=5", "from", "1970"},
+		{"/api/v1/admin/audit?from=2026-01-01T00:00:00Z&to=2026-04-02T00:00:00Z", "from", "2026"},
+		{"/api/v1/admin/audit?from=2026-01-01T00:00:00Z&to=2026-04-02T00:00:00Z&cursor=", "from", "2026"},
 		{"/api/v1/admin/groups?sort=secret", "sort", "secret"},
 		{"/api/v1/admin/groups/0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c00/members?sort=phone", "sort", "phone"},
 		{"/api/v1/admin/groups/0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4c00/members?cursor=x&page_size=5", "cursor", ""},
@@ -220,6 +226,14 @@ func TestAuditPagesNeverSkipEqualTimestamps(t *testing.T) {
 	}
 	if pg := u.page(t, "/api/v1/admin/audit?event_type=tenant_suspended&limit=50&from="+from, owner); pg.Total != 8 || len(pg.Items) != 8 {
 		t.Fatalf("legacy explicit window: total %d items %d", pg.Total, len(pg.Items))
+	}
+	// Exactly 90 days is accepted on both paths (the cap is 90 days).
+	span := "&from=" + url.QueryEscape(now.Add(-90*24*time.Hour).Format(time.RFC3339)) + "&to=" + url.QueryEscape(now.Format(time.RFC3339))
+	if pg := u.page(t, "/api/v1/admin/audit?event_type=tenant_suspended"+span, owner); pg.Total != 8 {
+		t.Fatalf("90-day window total %d", pg.Total)
+	}
+	if pg := u.page(t, "/api/v1/admin/audit?event_type=tenant_suspended&limit=50"+span, owner); pg.Total != 8 {
+		t.Fatalf("90-day legacy window total %d", pg.Total)
 	}
 	// A cursor of the previous release (ts only) is still accepted.
 	prev := fmt.Sprint(now.UnixNano())

@@ -57,6 +57,22 @@ type Page struct {
 // ErrFilter is returned for malformed filters.
 var ErrFilter = errors.New("audit: invalid filter")
 
+// ErrSpan refuses a window wider than store.MaxAuditSpan; it names the from
+// parameter (validation_failed {param: from}) and never carries the value.
+var ErrSpan = &listquery.Error{Param: "from"}
+
+// checkSpan refuses an explicit from more than store.MaxAuditSpan before to
+// (now when absent).
+func checkSpan(from, to, now time.Time) error {
+	if to.IsZero() {
+		to = now
+	}
+	if !from.IsZero() && to.Sub(from) > store.MaxAuditSpan {
+		return ErrSpan
+	}
+	return nil
+}
+
 // validate checks the filter vocabulary and the time range.
 func (f Filter) validate() error {
 	if f.EventType != "" {
@@ -91,11 +107,15 @@ func parseCursor(c string) (time.Time, int64, error) {
 // tenant id (never by a client-supplied one). It is the legacy cursor path
 // (one release, go-tangra specs/032-server-side-tables D7); the cursor
 // carries the id tie-breaker so events sharing a timestamp are never skipped.
+// An explicit window wider than store.MaxAuditSpan is ErrSpan.
 func Query(ctx context.Context, q Querier, tenantID string, f Filter) (Page, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 50
 	}
 	if err := f.validate(); err != nil {
+		return Page{}, err
+	}
+	if err := checkSpan(f.From, f.To, time.Now()); err != nil {
 		return Page{}, err
 	}
 	var (
@@ -143,7 +163,11 @@ func Query(ctx context.Context, q Querier, tenantID string, f Filter) (Page, err
 // List pages the events of one tenant (list contract). Without From/To it
 // covers the last store.AuditWindow before now; To defaults to now and From
 // to To minus the window (research D6), so the exact count stays bounded.
+// An explicit window wider than store.MaxAuditSpan is ErrSpan.
 func List(ctx context.Context, q Querier, tenantID string, f Filter, req listquery.Request, now time.Time) (listquery.Page[Item], error) {
+	if err := checkSpan(f.From, f.To, now); err != nil {
+		return listquery.Page[Item]{}, err
+	}
 	if f.To.IsZero() {
 		f.To = now
 	}

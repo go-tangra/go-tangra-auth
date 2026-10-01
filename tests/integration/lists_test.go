@@ -181,6 +181,12 @@ func TestServerSideLists(t *testing.T) {
 		if code, body := e.rawGet("/api/v1/admin/audit?cursor=1&page=2"); code != 400 || !strings.Contains(string(body), `"param":"cursor"`) {
 			t.Fatalf("mixed styles → %d %s", code, body)
 		}
+		// A window wider than 90 days (security review F-2), paged and legacy.
+		for _, q := range []string{"from=1970-01-01T00:00:00Z", "from=1970-01-01T00:00:00Z&limit=5"} {
+			if code, body := e.rawGet("/api/v1/admin/audit?" + q); code != 400 || !strings.Contains(string(body), `"param":"from"`) || strings.Contains(string(body), "1970") {
+				t.Fatalf("wide window %s → %d %s", q, code, body)
+			}
+		}
 	})
 
 	t.Run("groups and members", func(t *testing.T) {
