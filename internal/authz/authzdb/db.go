@@ -8,6 +8,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -210,6 +212,13 @@ func (d DBGroupStore) CountGroupMembers(ctx context.Context, tid, gid string) (n
 }
 func (d DBGroupStore) ListGroupMembers(ctx context.Context, tid, gid string, after time.Time, limit int) (out []store.GroupMember, err error) {
 	err = d.tx(ctx, tid, func(tx pgx.Tx) error { out, err = store.ListGroupMembers(ctx, tx, tid, gid, after, limit); return err })
+	return
+}
+func (d DBGroupStore) PageGroupMembers(ctx context.Context, tid, gid string, req listquery.Request) (out []store.GroupMember, total int, applied listquery.Request, err error) {
+	err = d.tx(ctx, tid, func(tx pgx.Tx) error {
+		out, total, applied, err = store.PageGroupMembers(ctx, tx, tid, gid, req)
+		return err
+	})
 	return
 }
 func (d DBGroupStore) AddGroupMembers(ctx context.Context, tid, gid, addedBy string, userIDs []string) (n int, err error) {

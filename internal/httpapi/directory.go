@@ -163,15 +163,21 @@ func (s *Server) directoryRoute(d DirectoryDeps, h directoryHandler) http.Handle
 }
 
 func (s *Server) listDirectories(w http.ResponseWriter, r *http.Request, d DirectoryDeps, a *tenantctx.Actor) {
+	req, ok := parseList(w, r, store.DirectoryList)
+	if !ok {
+		return
+	}
 	conns, err := d.Directories.List(r.Context(), *a, a.TenantID)
 	if err != nil {
 		Fail(w, r, s.rt.Logger(), directoryError(err))
 		return
 	}
-	if conns == nil {
-		conns = []directory.Connection{}
-	}
-	WriteJSON(w, http.StatusOK, map[string]any{"items": conns})
+	WriteJSON(w, http.StatusOK, windowed(conns, req, func(c directory.Connection, field string) any {
+		if field == "created_at" {
+			return c.CreatedAt
+		}
+		return c.Name
+	}, func(c directory.Connection) string { return c.ID }))
 }
 
 func (s *Server) createDirectory(w http.ResponseWriter, r *http.Request, d DirectoryDeps, a *tenantctx.Actor) {

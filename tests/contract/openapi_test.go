@@ -130,10 +130,18 @@ func TestOpenAPIDirectoryConnections(t *testing.T) {
 		}
 	}
 	if op := operation(doc, directoryRoutes[0]); op != nil {
+		// A list-contract page (feature 032): ListPage plus items.
 		s := responseSchema(op, "200")
-		if s == nil || s.Properties["items"] == nil || s.Properties["items"].Value.Items == nil ||
-			s.Properties["items"].Value.Items.Ref != "#/components/schemas/DirectoryConnection" {
-			t.Errorf("%s: 200 must be {items: DirectoryConnection[]}", directoryRoutes[0])
+		var items *openapi3.SchemaRef
+		if s != nil {
+			for _, part := range s.AllOf {
+				if part.Value != nil && part.Value.Properties["items"] != nil {
+					items = part.Value.Properties["items"]
+				}
+			}
+		}
+		if items == nil || items.Value.Items == nil || items.Value.Items.Ref != "#/components/schemas/DirectoryConnection" {
+			t.Errorf("%s: 200 must be a page of {items: DirectoryConnection[]}", directoryRoutes[0])
 		}
 	}
 	for _, r := range directoryRoutes[5:] {

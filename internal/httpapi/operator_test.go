@@ -64,6 +64,21 @@ func TestOperatorPolicyAndClients(t *testing.T) {
 	if w.Code != 200 || len(list.Items) != 3 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
+	// Tenants page (operator only) and one tenant by id.
+	tp := u.page(t, "/api/v1/operator/tenants?page_size=2&sort=slug", op)
+	if tp.Total != 3 || len(tp.Items) != 2 || tp.Items[0]["slug"] != "acme" || tp.Items[1]["slug"] != "globex" {
+		t.Fatalf("tenants page %+v", tp)
+	}
+	if w, out := u.call("GET", "/api/v1/operator/tenants/"+globex, "", op); w.Code != 200 || out["slug"] != "globex" {
+		t.Fatalf("get tenant → %d %v", w.Code, out)
+	}
+	if w, _ := u.call("GET", "/api/v1/operator/tenants/"+globex, "", owner); w.Code != 403 {
+		t.Fatalf("get tenant as tenant admin → %d", w.Code)
+	}
+	if w, _ := u.call("GET", "/api/v1/operator/tenants/nope", "", op); w.Code != 404 {
+		t.Fatalf("unknown tenant → %d", w.Code)
+	}
+	u.refused(t, "/api/v1/operator/tenants?sort=policy", "sort", "policy", op)
 	// Policy: owner reads/updates their own; invalid refused.
 	if w, out := u.call("GET", "/api/v1/admin/policy", "", owner); w.Code != 200 || out["password_min_length"].(float64) != 12 {
 		t.Fatalf("%d %v", w.Code, out)
@@ -138,12 +153,40 @@ func TestOperatorPolicyAndClients(t *testing.T) {
 	if w.Code != 200 || strings.Contains(w.Body.String(), "secret") || !strings.Contains(w.Body.String(), "Backend") {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
+	// Paged (feature 032): bare array without list parameters, a page with
+	// them; neither carries the secret.
+	if !strings.HasPrefix(w.Body.String(), "[") {
+		t.Fatalf("legacy clients must stay a bare array: %s", w.Body.String())
+	}
+	if _, out := u.call("POST", "/api/v1/admin/clients", `{"display_name":"alpha","redirect_uris":["https://a.example.org/cb"],"public":true}`, owner); out["client_id"] == nil {
+		t.Fatalf("second client %v", out)
+	}
+	cp := u.page(t, "/api/v1/admin/clients?page_size=1", owner)
+	if cp.Total != 2 || len(cp.Items) != 1 || cp.Items[0]["display_name"] != "alpha" || cp.Sort != "display_name" {
+		t.Fatalf("clients page %+v", cp)
+	}
+	if w, _ := u.call("GET", "/api/v1/admin/clients?page=1", "", owner); strings.Contains(w.Body.String(), "secret") {
+		t.Fatalf("paged clients leak the secret: %s", w.Body.String())
+	}
+	u.refused(t, "/api/v1/admin/clients?sort=secret_hash", "sort", "secret_hash", owner)
+	// Roles keep their bare array for one release; a page with list parameters.
+	w, _ = u.call("GET", "/api/v1/admin/roles", "", owner)
+	if w.Code != 200 || !strings.HasPrefix(w.Body.String(), "[") {
+		t.Fatalf("legacy roles %d %s", w.Code, w.Body.String())
+	}
+	var all []map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &all)
+	rp := u.page(t, "/api/v1/admin/roles?page_size=2&sort=slug", owner)
+	if rp.Total != len(all) || len(rp.Items) != 2 || rp.Sort != "slug" {
+		t.Fatalf("roles page %+v (all %d)", rp, len(all))
+	}
+	u.refused(t, "/api/v1/admin/roles?sort=permissions", "sort", "permissions", owner)
 	aw.Close()
 	types := map[string]int{}
 	for _, r := range u.ms.AuditRows {
 		types[r.EventType]++
 	}
-	if types["tenant_created"] != 1 || types["operator_grant_created"] != 1 || types["operator_grant_used"] < 2 || types["tenant_suspended"] != 1 || types["client_registered"] != 1 || types["policy_updated"] != 1 {
+	if types["tenant_created"] != 1 || types["operator_grant_created"] != 1 || types["operator_grant_used"] < 2 || types["tenant_suspended"] != 1 || types["client_registered"] != 2 || types["policy_updated"] != 1 {
 		t.Fatalf("audit %v", types)
 	}
 }

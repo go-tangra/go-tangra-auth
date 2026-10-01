@@ -5,6 +5,7 @@ package userdb
 
 import (
 	"context"
+	"github.com/go-tangra/go-tangra/v4/listquery"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -53,8 +54,11 @@ func (d DBAdminStore) UserAnyTenant(ctx context.Context, id string) (u store.Use
 	}
 	return
 }
-func (d DBAdminStore) ListUsers(ctx context.Context, tid, q, status string, limit int) (out []store.User, err error) {
-	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListUsers(ctx, tx, tid, q, status, limit); return err })
+func (d DBAdminStore) PageUsers(ctx context.Context, tid string, f store.UserPageFilter, req listquery.Request) (out []store.User, total int, applied listquery.Request, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error {
+		out, total, applied, err = store.PageUsers(ctx, tx, tid, f, req)
+		return err
+	})
 	return
 }
 func (d DBAdminStore) UpdateUserStatus(ctx context.Context, tid, id, status string) error {

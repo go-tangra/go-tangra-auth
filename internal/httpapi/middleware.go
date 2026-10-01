@@ -59,6 +59,14 @@ func (s *Server) validate(next http.Handler) http.Handler {
 			r.Body = body // JSON bodies come back re-readable from the validator
 		}
 		if err != nil {
+			// A query parameter outside its declared schema (list paging:
+			// page, page_size, sort, order …) names the parameter, never the
+			// value (go-tangra specs/032-server-side-tables).
+			var re *openapi3filter.RequestError
+			if errors.As(err, &re) && re.Parameter != nil && re.Parameter.In == "query" {
+				WriteDetail(w, ErrValidation, map[string]any{"param": re.Parameter.Name})
+				return
+			}
 			var pe *openapi3filter.ParseError
 			if errors.As(err, &pe) {
 				WriteError(w, http.StatusBadRequest, ErrMalformed.Reason)

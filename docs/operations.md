@@ -419,3 +419,34 @@ the directory server's own log for the details.
   platform operators are unaffected. If an administrator's scripted
   invitations start failing after the upgrade, give them the role
   themselves or have an owner send those invitations.
+
+## Server-side tables (feature 032)
+
+Every console table is paged and sorted by the server: `page`, `page_size`
+(≤ 200), `sort` (the list's allowed fields) and `order` in; `{items, total,
+page, page_size, sort, order}` out. `total` counts only what the caller may
+see; a page beyond the end answers the last page. Invalid values answer
+`400 validation_failed` with `detail.param` naming the parameter (never its
+value).
+
+- **Users** reach every user of the tenant (the former 200-row cap is gone).
+  `GET /api/v1/admin/users/{id}` serves the user detail view.
+- **Audit** lists the last 7 days unless `from`/`to` are sent (`to` defaults
+  to now, `from` to `to` − 7 days) so the exact count stays bounded; events
+  sharing a timestamp are ordered by their new `id`.
+- **One-release compatibility**: the audit and group-member lists keep their
+  `cursor`/`limit` path (old shape plus `total`; the audit cursor now carries
+  the event id, old cursors are still accepted); roles, clients and own
+  sessions keep answering a bare array to a request without any list
+  parameter. Mixing both styles is `validation_failed` on `cursor`.
+
+Migration `0012_list_indexes` adds `(tenant_id, lower(email), id)` and
+`(tenant_id, created_at, id)` indexes on `users` and an `id bigserial` column
+on `auth_audit_events` (granted to `auth_app`). The audit hypertable carries
+row-level security and therefore no compression, so adding the column
+rewrites each chunk once, numbering the existing rows (bounded by the 400-day
+retention): expect the migration to take time proportional to the audit
+volume. It holds an exclusive lock on the audit table while it runs; the
+migration runs at start-up before the new version listens, so only a still
+running previous instance waits on it (its audit inserts block until the
+migration commits).

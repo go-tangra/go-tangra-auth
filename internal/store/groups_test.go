@@ -276,7 +276,7 @@ func TestGroupRepos(t *testing.T) {
 		if u.FirstName != "Dana" || u.Phone != "+385911234567" || u.DisplayName != "Dana Kovač" || u.DisplayNameExplicit || u.ProfileUpdatedAt == nil {
 			t.Fatalf("profile %+v", u)
 		}
-		found, err := ListUsers(ctx, tx, tA, "kova", "", 10)
+		found, err := listUsers(ctx, tx, tA, "kova", "", 10)
 		if err != nil || len(found) != 1 {
 			t.Fatalf("search by last name %v %v", found, err)
 		}

@@ -70,3 +70,10 @@ func DecodeJSON(r *http.Request, v any) error {
 	}
 	return nil
 }
+
+// WriteDetail emits {"reason": ..., "detail": {...}} with e's status. The
+// detail names request parts (e.g. the offending parameter) and never echoes
+// submitted values.
+func WriteDetail(w http.ResponseWriter, e *Error, detail map[string]any) {
+	WriteJSON(w, e.Status, map[string]any{"reason": e.Reason, "detail": detail})
+}

@@ -3,7 +3,10 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/go-tangra/go-tangra/v4/listquery"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/authz"
@@ -77,6 +80,7 @@ func RequireAdmin(r *http.Request) (tenantctx.Actor, error) {
 // RegisterUS2 mounts the administration routes.
 func (s *Server) RegisterUS2(d US2Deps) {
 	s.MustHandle("GET", "/api/v1/admin/users", s.listUsers(d))
+	s.MustHandle("GET", "/api/v1/admin/users/{id}", s.getUser(d))
 	s.MustHandle("PUT", "/api/v1/admin/users/{id}/roles", s.setUserRoles(d))
 	s.MustHandle("POST", "/api/v1/admin/users/{id}/deactivate", s.userStatus(d, "deactivate"))
 	s.MustHandle("POST", "/api/v1/admin/users/{id}/reactivate", s.userStatus(d, "reactivate"))
@@ -96,12 +100,35 @@ func (s *Server) listUsers(d US2Deps) http.HandlerFunc {
 			Fail(w, r, nil, err)
 			return
 		}
-		users, err := d.Admin.List(r.Context(), a, r.URL.Query().Get("q"), r.URL.Query().Get("status"))
+		req, ok := parseList(w, r, store.UserList)
+		if !ok {
+			return
+		}
+		q := r.URL.Query()
+		page, err := d.Admin.List(r.Context(), a, q.Get("q"), q.Get("status"), req)
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), adminError(err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"items": users})
+		WriteJSON(w, http.StatusOK, page)
+	}
+}
+
+// getUser returns one user of the administrator's tenant (the user detail
+// view; the list no longer carries every user).
+func (s *Server) getUser(d US2Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, err := RequireAdmin(r)
+		if err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		v, err := d.Admin.Get(r.Context(), a, r.PathValue("id"))
+		if err != nil {
+			Fail(w, r, s.rt.Logger(), adminError(err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, v)
 	}
 }
 
@@ -309,7 +336,7 @@ func (s *Server) queryAudit(d US2Deps) http.HandlerFunc {
 			return
 		}
 		q := r.URL.Query()
-		f := audit.Filter{UserID: q.Get("user_id"), EventType: q.Get("event_type"), Cursor: q.Get("cursor")}
+		f := audit.Filter{UserID: q.Get("user_id"), EventType: q.Get("event_type")}
 		for _, p := range []struct {
 			key string
 			dst *time.Time
@@ -317,13 +344,37 @@ func (s *Server) queryAudit(d US2Deps) http.HandlerFunc {
 			if v := q.Get(p.key); v != "" {
 				ts, err := time.Parse(time.RFC3339, v)
 				if err != nil {
-					Fail(w, r, nil, ErrValidation)
+					WriteDetail(w, ErrValidation, map[string]any{"param": p.key})
 					return
 				}
 				*p.dst = ts
 			}
 		}
-		page, err := audit.Query(r.Context(), d.Audit, a.TenantID, f)
+		if listquery.Legacy(q) {
+			// Legacy cursor path (one release): old shape plus total, within
+			// the same default window.
+			f.Cursor = q.Get("cursor")
+			if v := q.Get("limit"); v != "" {
+				n, err := strconv.Atoi(v)
+				if err != nil || n < 1 || n > listquery.MaxPageSize {
+					WriteDetail(w, ErrValidation, map[string]any{"param": "limit"})
+					return
+				}
+				f.Limit = n
+			}
+			page, err := audit.Query(r.Context(), d.Audit, a.TenantID, f)
+			if err != nil {
+				Fail(w, r, s.rt.Logger(), adminError(err))
+				return
+			}
+			WriteJSON(w, http.StatusOK, page)
+			return
+		}
+		req, ok := parseList(w, r, store.AuditList)
+		if !ok {
+			return
+		}
+		page, err := audit.List(r.Context(), d.Audit, a.TenantID, f, req, time.Now())
 		if err != nil {
 			Fail(w, r, s.rt.Logger(), adminError(err))
 			return

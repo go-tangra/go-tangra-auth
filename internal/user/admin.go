@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
+
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
@@ -23,7 +25,8 @@ var (
 type AdminStore interface {
 	User(ctx context.Context, tenantID, id string) (store.User, error)
 	UserAnyTenant(ctx context.Context, id string) (store.User, error)
-	ListUsers(ctx context.Context, tenantID, q, status string, limit int) ([]store.User, error)
+	// PageUsers counts and pages the users of a tenant (list contract).
+	PageUsers(ctx context.Context, tenantID string, f store.UserPageFilter, req listquery.Request) ([]store.User, int, listquery.Request, error)
 	UpdateUserStatus(ctx context.Context, tenantID, id, status string) error
 	Roles(ctx context.Context, tenantID, userID string) ([]string, error) // effective roles
 	CountWithRole(ctx context.Context, tenantID, slug string) (int, error)
@@ -85,34 +88,57 @@ type GroupRef struct {
 	Name string `json:"name"`
 }
 
-// List searches the actor's tenant.
-func (a *Admin) List(ctx context.Context, actor tenantctx.Actor, q, status string) ([]UserView, error) {
-	users, err := a.st.ListUsers(ctx, actor.TenantID, q, status, 200)
+// List pages the users of the actor's tenant (every user is reachable; the
+// total counts the tenant's users matching q and status).
+func (a *Admin) List(ctx context.Context, actor tenantctx.Actor, q, status string, req listquery.Request) (listquery.Page[UserView], error) {
+	users, total, applied, err := a.st.PageUsers(ctx, actor.TenantID, store.UserPageFilter{Q: q, Status: status}, req)
 	if err != nil {
-		return nil, err
+		return listquery.Page[UserView]{}, err
 	}
 	out := make([]UserView, 0, len(users))
-	for _, u := range users {
-		roles, _ := a.st.Roles(ctx, actor.TenantID, u.ID)
-		v := UserView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Status: u.Status, MFAEnabled: u.MFAEnabled, Roles: nonNilStrings(roles),
-			FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{},
-			InvitationID: u.InvitationID}
-		if l := u.Directory; l != nil {
-			v.Directory = &DirectoryOrigin{ConnectionID: l.ConnectionID, ConnectionName: l.ConnectionName, DirectoryUID: l.DirectoryUID,
-				LastImportedAt: l.LastImportedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
-		}
-		if groups, err := a.st.UserGroups(ctx, actor.TenantID, u.ID); err == nil {
-			for _, g := range groups {
-				v.Groups = append(v.Groups, GroupRef{ID: g.ID, Name: g.Name})
-			}
-		}
-		if u.LastSigninAt != nil {
-			s := u.LastSigninAt.UTC().Format("2006-01-02T15:04:05Z07:00")
-			v.LastSignin = &s
-		}
-		out = append(out, v)
+	for i := range users {
+		out = append(out, a.view(ctx, actor.TenantID, &users[i]))
 	}
-	return out, nil
+	return listquery.NewPage(out, total, applied), nil
+}
+
+// Get returns one user of the actor's tenant as the list shows it; a user of
+// another tenant is audited and reported as not found (see lookup).
+func (a *Admin) Get(ctx context.Context, actor tenantctx.Actor, uid string) (UserView, error) {
+	if _, err := a.lookup(ctx, actor, uid); err != nil {
+		return UserView{}, err
+	}
+	// The list row carries the directory origin and pending invitation.
+	users, _, _, err := a.st.PageUsers(ctx, actor.TenantID, store.UserPageFilter{ID: uid}, listquery.Request{Page: 1, PageSize: 1})
+	if err != nil {
+		return UserView{}, err
+	}
+	if len(users) != 1 || users[0].ID != uid {
+		return UserView{}, ErrNotFound
+	}
+	return a.view(ctx, actor.TenantID, &users[0]), nil
+}
+
+// view projects a user for administrators (no hashes, no secrets).
+func (a *Admin) view(ctx context.Context, tenantID string, u *store.User) UserView {
+	roles, _ := a.st.Roles(ctx, tenantID, u.ID)
+	v := UserView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Status: u.Status, MFAEnabled: u.MFAEnabled, Roles: nonNilStrings(roles),
+		FirstName: u.FirstName, LastName: u.LastName, AvatarURL: tenantctx.AvatarURL(u.ID, u.AvatarID), Groups: []GroupRef{},
+		InvitationID: u.InvitationID}
+	if l := u.Directory; l != nil {
+		v.Directory = &DirectoryOrigin{ConnectionID: l.ConnectionID, ConnectionName: l.ConnectionName, DirectoryUID: l.DirectoryUID,
+			LastImportedAt: l.LastImportedAt.UTC().Format("2006-01-02T15:04:05Z07:00")}
+	}
+	if groups, err := a.st.UserGroups(ctx, tenantID, u.ID); err == nil {
+		for _, g := range groups {
+			v.Groups = append(v.Groups, GroupRef{ID: g.ID, Name: g.Name})
+		}
+	}
+	if u.LastSigninAt != nil {
+		s := u.LastSigninAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		v.LastSignin = &s
+	}
+	return v
 }
 
 // Lookup is lookup for callers outside the package.

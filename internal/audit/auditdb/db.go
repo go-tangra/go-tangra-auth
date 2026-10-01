@@ -7,16 +7,26 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
+	"github.com/go-tangra/go-tangra/v4/listquery"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 )
 
 // DBQuerier reads from the database under the tenant scope.
 type DBQuerier struct{ St *store.Store }
 
-func (d DBQuerier) QueryAudit(ctx context.Context, tid, uid, et string, from, to, cursor time.Time, limit int) (out []store.AuditRow, err error) {
+func (d DBQuerier) QueryAudit(ctx context.Context, tid, uid, et string, from, to, cursor time.Time, cursorID int64, limit int) (out []store.AuditRow, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error {
-		out, err = store.QueryAudit(ctx, tx, tid, uid, et, from, to, cursor, limit)
+		out, err = store.QueryAudit(ctx, tx, tid, uid, et, from, to, cursor, cursorID, limit)
+		return err
+	})
+	return
+}
+
+func (d DBQuerier) PageAudit(ctx context.Context, tid string, f store.AuditPageFilter, req listquery.Request) (out []store.AuditRow, total int, applied listquery.Request, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error {
+		out, total, applied, err = store.PageAudit(ctx, tx, tid, f, req)
 		return err
 	})
 	return

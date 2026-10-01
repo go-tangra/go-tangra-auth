@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-tangra/go-tangra/v4/listquery"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -211,7 +212,10 @@ func TestDirectoryRepos(t *testing.T) {
 			t.Fatal(err)
 		}
 		var list []User
-		if err := inA(func(tx pgx.Tx) (err error) { list, err = ListUsers(ctx, tx, tA, "", "", 50); return err }); err != nil {
+		if err := inA(func(tx pgx.Tx) (err error) {
+			list, _, _, err = PageUsers(ctx, tx, tA, UserPageFilter{}, listquery.Request{PageSize: 50})
+			return err
+		}); err != nil {
 			t.Fatal(err)
 		}
 		by := map[string]User{}
@@ -231,7 +235,7 @@ func TestDirectoryRepos(t *testing.T) {
 		if act := by[uAct]; act.Directory != nil || act.InvitationID != nil {
 			t.Fatalf("active user: %+v", act)
 		}
-		if err := inA(func(tx pgx.Tx) (err error) { list, err = ListUsers(ctx, tx, tA, "", "imported", 50); return err }); err != nil || len(list) != 1 || list[0].ID != uImp {
+		if err := inA(func(tx pgx.Tx) (err error) { list, err = listUsers(ctx, tx, tA, "", "imported", 50); return err }); err != nil || len(list) != 1 || list[0].ID != uImp {
 			t.Fatalf("status=imported: %v %d", err, len(list))
 		}
 		// Connection delete keeps the origin label with a NULL connection id.
@@ -241,7 +245,7 @@ func TestDirectoryRepos(t *testing.T) {
 		if err := inA(func(tx pgx.Tx) error { return DeleteDirectoryConnection(ctx, tx, tA, conn.ID) }); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("second delete: %v", err)
 		}
-		if err := inA(func(tx pgx.Tx) (err error) { list, err = ListUsers(ctx, tx, tA, "imp", "imported", 50); return err }); err != nil || len(list) != 1 {
+		if err := inA(func(tx pgx.Tx) (err error) { list, err = listUsers(ctx, tx, tA, "imp", "imported", 50); return err }); err != nil || len(list) != 1 {
 			t.Fatalf("after delete: %v %d", err, len(list))
 		}
 		if d := list[0].Directory; d == nil || d.ConnectionID != nil || d.ConnectionName != "Corp 2" {
