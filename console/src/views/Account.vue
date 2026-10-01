@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { UiPage, UiCard, UiForm, UiInput, UiSecretField, UiButton, UiAlert, UiIcon } from '@go-tangra/ui'
 import { useZodForm } from '@go-tangra/ui/forms'
 import { api, ApiError } from '@/api/client'
@@ -11,6 +11,9 @@ import { changePasswordSchema, mfaEnrolSchema, totpSchema } from '@/schemas'
 import ProfileForm from '@/components/ProfileForm.vue'
 import RecoveryCodes from '@/components/RecoveryCodes.vue'
 import SecurityKeys from '@/components/SecurityKeys.vue'
+import PasswordRequirements from '@/components/PasswordRequirements.vue'
+import { usePasswordPolicy } from '@/composables/usePasswordPolicy'
+import { summary } from '@/password/rules'
 
 const session = useSession()
 async function profileChanged(): Promise<void> {
@@ -21,22 +24,34 @@ async function profileChanged(): Promise<void> {
 // --- password ---
 const pwDone = ref(false)
 const pwError = ref<string | null>(null)
-const password = useZodForm(changePasswordSchema(), {
+const password = useZodForm(changePasswordSchema(() => pwPolicy.requirements.value), {
   initial: { current_password: '', new_password: '', confirm: '' },
   onSubmit: async (v) => {
     pwDone.value = false
     pwError.value = null
+    let refusal: string | undefined
     try {
       await api('POST', '/api/v1/me/password', { current_password: v.current_password, new_password: v.new_password })
       pwDone.value = true
     } catch (err) {
-      pwError.value = err instanceof ApiError ? (err.reason === 'invalid_credentials' ? 'Your current password was not accepted.' : reasonMessage(err.reason)) : 'Could not change the password.'
-      throw err
+      refusal = pwPolicy.refusal(err)
+      if (refusal === undefined) {
+        pwError.value = err instanceof ApiError ? (err.reason === 'invalid_credentials' ? 'Your current password was not accepted.' : reasonMessage(err.reason)) : 'Could not change the password.'
+        throw err
+      }
     } finally {
       password.reset({ current_password: '', new_password: '', confirm: '' })
     }
+    if (refusal === undefined) return
+    await nextTick()
+    password.setFieldError('new_password', refusal)
   },
 })
+const pwPolicy = usePasswordPolicy(
+  () => api('GET', '/api/v1/me/password-policy'),
+  () => String(password.values.new_password ?? ''),
+  () => String(password.values.confirm ?? ''),
+)
 
 // --- second factors (authenticator app + security keys, feature 018) ---
 const { enrolment, qr, recoveryCodes, error: mfaError, busy: mfaBusy, start, confirm } = useMfa()
@@ -108,11 +123,12 @@ const regenForm = useZodForm(totpSchema, {
         <UiForm :form="password">
           <div class="flex flex-col gap-3">
             <UiSecretField v-bind="password.field('current_password')" label="Current password" autocomplete="current-password" required data-test="current" />
-            <UiSecretField v-bind="password.field('new_password')" label="New password" autocomplete="new-password" required data-test="new" />
+            <UiSecretField v-bind="password.field('new_password')" label="New password" autocomplete="new-password" :hint="summary(pwPolicy.requirements.value)" required data-test="new" />
             <UiSecretField v-bind="password.field('confirm')" label="Confirm new password" autocomplete="new-password" required data-test="confirm" />
+            <PasswordRequirements id="change-pw-rules" :checklist="pwPolicy.rules.value" :refused="pwPolicy.refused.value" />
             <UiAlert v-if="pwError" kind="error" data-test="pw-error">{{ pwError }}</UiAlert>
             <UiAlert v-if="pwDone" kind="success" data-test="pw-done">Password changed. Other devices were signed out.</UiAlert>
-            <div><UiButton type="submit" :loading="password.submitting.value" data-test="pw-submit">Change password</UiButton></div>
+            <div><UiButton type="submit" :disabled="!pwPolicy.satisfied.value" :loading="password.submitting.value" data-test="pw-submit">Change password</UiButton></div>
           </div>
         </UiForm>
       </UiCard>

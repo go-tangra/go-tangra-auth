@@ -26,6 +26,42 @@ var (
 	ErrWeak     = errors.New("password: must not be blank or a single repeated character")
 )
 
+// Rule names: the keys of Requirements and the detail.rule of a
+// password_policy refusal, so a client can mark the rule that failed.
+const (
+	RuleMinLength     = "min_length"
+	RuleMaxLength     = "max_length"
+	RuleRejectTrivial = "reject_trivial"
+)
+
+// Requirements are the effective rules Check applies for a tenant, published
+// to the pages where a password is chosen. They carry policy parameters only.
+type Requirements struct {
+	// MinLength and MaxLength count Unicode code points.
+	MinLength int `json:"min_length"`
+	MaxLength int `json:"max_length"`
+	// RejectTrivial refuses a blank password or one repeated character.
+	RejectTrivial bool `json:"reject_trivial"`
+}
+
+// RequirementsFor returns the rules Check enforces under p.
+func RequirementsFor(p tenant.Policy) Requirements {
+	return Requirements{MinLength: p.PasswordMinLength, MaxLength: MaxLength, RejectTrivial: true}
+}
+
+// Rule names the requirement a Check error violated ("" for other errors).
+func Rule(err error) string {
+	switch {
+	case errors.Is(err, ErrTooShort):
+		return RuleMinLength
+	case errors.Is(err, ErrTooLong):
+		return RuleMaxLength
+	case errors.Is(err, ErrWeak):
+		return RuleRejectTrivial
+	}
+	return ""
+}
+
 // Check applies the tenant policy to a new password.
 func Check(p tenant.Policy, pw string) error {
 	n := utf8.RuneCountInString(pw)
@@ -34,10 +70,21 @@ func Check(p tenant.Policy, pw string) error {
 		return ErrTooLong
 	case n < p.PasswordMinLength:
 		return ErrTooShort
-	case strings.TrimSpace(pw) == "" || strings.Count(pw, pw[:1]) == len(pw):
+	case strings.TrimSpace(pw) == "" || singleRune(pw):
 		return ErrWeak
 	}
 	return nil
+}
+
+// singleRune reports whether pw repeats one character (code point).
+func singleRune(pw string) bool {
+	first, _ := utf8.DecodeRuneInString(pw)
+	for _, r := range pw {
+		if r != first {
+			return false
+		}
+	}
+	return true
 }
 
 // Hash produces an argon2id PHC string with the current parameters.

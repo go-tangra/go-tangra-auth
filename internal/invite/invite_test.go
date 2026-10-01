@@ -14,6 +14,7 @@ import (
 	"github.com/go-tangra/go-tangra-auth/v4/internal/crypto"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/email"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/memstore"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/password"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
@@ -91,7 +92,18 @@ func TestCreateResendAccept(t *testing.T) {
 		t.Fatal("rotated token accepted")
 	}
 	tok = tokenFrom(t, ob, ms.Outbox[1])
-	if _, err := svc.Accept(ctx, tok, "New Person", "short"); !errors.Is(err, ErrPolicy) {
+	if _, err := svc.Requirements(ctx, tok[:len(tok)-1]+"x"); !errors.Is(err, ErrInvalidToken) {
+		t.Fatal("unknown token has requirements")
+	}
+	for _, bad := range []string{"", strings.Repeat("a", 257)} {
+		if _, err := svc.Requirements(ctx, bad); !errors.Is(err, ErrInvalidToken) {
+			t.Fatal("malformed token has requirements")
+		}
+	}
+	if req, err := svc.Requirements(ctx, tok); err != nil || req != (password.Requirements{MinLength: 10, MaxLength: password.MaxLength, RejectTrivial: true}) {
+		t.Fatalf("%+v %v", req, err)
+	}
+	if _, err := svc.Accept(ctx, tok, "New Person", "short"); !errors.Is(err, ErrPolicy) || password.Rule(err) != password.RuleMinLength {
 		t.Fatalf("policy: %v", err)
 	}
 	acc, err := svc.Accept(ctx, tok, "New Person", "long-enough-password")
@@ -142,6 +154,9 @@ func TestAcceptExpiryAndInvitedUser(t *testing.T) {
 	if _, err := svc.Accept(ctx, tok2, "Late", "long-enough-password"); !errors.Is(err, ErrInvalidToken) {
 		t.Fatal("expired token accepted")
 	}
+	if _, err := svc.Requirements(ctx, tok2); !errors.Is(err, ErrInvalidToken) {
+		t.Fatal("expired token has no requirements")
+	}
 	_ = id2
 	// Suspended tenant blocks acceptance.
 	svc.now = time.Now
@@ -152,6 +167,9 @@ func TestAcceptExpiryAndInvitedUser(t *testing.T) {
 	ms.AddTenant(tn)
 	if _, err := svc.Accept(ctx, tok3, "F", "long-enough-password"); !errors.Is(err, ErrInvalidToken) {
 		t.Fatal("suspended tenant accepted")
+	}
+	if _, err := svc.Requirements(ctx, tok3); !errors.Is(err, ErrInvalidToken) {
+		t.Fatal("suspended tenant has no requirements")
 	}
 	_ = id3
 }

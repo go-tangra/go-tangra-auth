@@ -45,6 +45,9 @@ func WriteError(w http.ResponseWriter, status int, reason string) {
 // Fail maps err to a response: *Error verbatim, anything else 500 "internal"
 // (details go to the log only).
 func Fail(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
+	if writePolicyRefusal(w, err) {
+		return
+	}
 	var e *Error
 	if errors.As(err, &e) {
 		WriteError(w, e.Status, e.Reason)

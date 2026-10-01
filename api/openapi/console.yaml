@@ -35,6 +35,19 @@ components:
       description: 'validation_failed; detail.param names the offending list parameter (never its value)'
       required: [reason]
       properties: { reason: { type: string }, detail: { type: object, properties: { param: { type: string } } } }
+    PasswordRequirements:
+      type: object
+      description: 'The effective password rules of a tenant (policy parameters only; no user data). Lengths count Unicode code points.'
+      required: [min_length, max_length, reject_trivial]
+      properties:
+        min_length: { type: integer, minimum: 8 }
+        max_length: { type: integer }
+        reject_trivial: { type: boolean, description: 'a blank password or one repeated character is refused' }
+    PasswordPolicyError:
+      type: object
+      description: 'password_policy; detail.rule names the violated PasswordRequirements key (min_length | max_length | reject_trivial), never the submitted value'
+      required: [reason]
+      properties: { reason: { type: string }, detail: { type: object, properties: { rule: { type: string, enum: [min_length, max_length, reject_trivial] } } } }
     ListPage:
       type: object
       description: 'List-contract page fields: total counts every record matching the filters that the caller may see; page is the page actually returned (a page beyond the end returns the last one)'
@@ -501,7 +514,12 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }]
       summary: Change password (ends all other sessions)
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [current_password, new_password], properties: { current_password: { type: string }, new_password: { type: string } } } } } }
-      responses: { '204': { description: changed }, '400': { description: policy violation (reason password_policy) }, '401': { description: invalid_credentials } }
+      responses: { '204': { description: changed }, '400': { description: 'password_policy (detail.rule)', content: { application/json: { schema: { $ref: '#/components/schemas/PasswordPolicyError' } } } }, '401': { description: invalid_credentials } }
+  /api/v1/me/password-policy:
+    get:
+      operationId: myPasswordPolicy
+      summary: Password rules of the caller's tenant (shown on the change-password form)
+      responses: { '200': { description: rules, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordRequirements' } } } }, '401': { description: unauthenticated } }
   /api/v1/me/mfa/enroll:
     post:
       operationId: enrollMfa
@@ -582,7 +600,14 @@ paths:
       security: []
       summary: Set a new password with a recovery token (single use)
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [token, new_password], properties: { token: { type: string }, new_password: { type: string } } } } } }
-      responses: { '204': { description: done }, '400': { description: invalid_token | password_policy } }
+      responses: { '204': { description: done }, '400': { description: 'invalid_token | password_policy (detail.rule)', content: { application/json: { schema: { $ref: '#/components/schemas/PasswordPolicyError' } } } } }
+  /api/v1/recovery/password-policy:
+    post:
+      operationId: recoveryPasswordPolicy
+      security: []
+      summary: Password rules for a still-valid reset token (not consumed; token in the body, never the URL; rate-limited)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [token], properties: { token: { type: string, maxLength: 256 } } } } } }
+      responses: { '200': { description: rules, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordRequirements' } } } }, '400': { description: invalid_token }, '429': { description: rate_limited } }
 
   /api/v1/invitations/accept:
     post:
@@ -590,7 +615,14 @@ paths:
       security: []
       summary: Accept an invitation and set the initial password
       requestBody: { content: { application/json: { schema: { type: object, additionalProperties: false, required: [token, display_name, password], properties: { token: { type: string }, display_name: { type: string }, password: { type: string } } } } } }
-      responses: { '200': { description: account active + signed in }, '400': { description: invalid_token } }
+      responses: { '200': { description: account active + signed in }, '400': { description: 'invalid_token | password_policy (detail.rule)', content: { application/json: { schema: { $ref: '#/components/schemas/PasswordPolicyError' } } } } }
+  /api/v1/invitations/password-policy:
+    post:
+      operationId: invitationPasswordPolicy
+      security: []
+      summary: Password rules for a still-redeemable invitation token (not consumed; token in the body, never the URL; no invitee data; rate-limited)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [token], properties: { token: { type: string, maxLength: 256 } } } } } }
+      responses: { '200': { description: rules, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordRequirements' } } } }, '400': { description: invalid_token }, '429': { description: rate_limited } }
 
   /api/v1/admin/users:
     get:

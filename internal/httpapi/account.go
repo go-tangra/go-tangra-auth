@@ -29,7 +29,7 @@ func accountError(err error) error {
 	case errors.Is(err, password.ErrCurrent):
 		return ErrInvalidCredentials
 	case errors.Is(err, password.ErrTooShort), errors.Is(err, password.ErrTooLong), errors.Is(err, password.ErrWeak):
-		return errPasswordPolicy
+		return passwordPolicy(err)
 	case errors.Is(err, password.ErrInvalidToken):
 		return errInvalidToken
 	case errors.Is(err, mfa.ErrInvalidCode):
@@ -47,12 +47,14 @@ func accountError(err error) error {
 // RegisterUS4 mounts account security and recovery routes.
 func (s *Server) RegisterUS4(d US4Deps) {
 	s.MustHandle("POST", "/api/v1/me/password", s.changePassword(d))
+	s.MustHandle("GET", "/api/v1/me/password-policy", s.myPasswordPolicy(d))
 	s.MustHandle("POST", "/api/v1/me/mfa/enroll", s.mfaEnrol(d))
 	s.MustHandle("POST", "/api/v1/me/mfa/confirm", s.mfaConfirm(d))
 	s.MustHandle("POST", "/api/v1/me/mfa/disable", s.mfaDisable(d))
 	s.MustHandle("POST", "/api/v1/me/mfa/recovery-codes", s.mfaRecoveryCodes(d))
 	s.MustHandle("POST", "/api/v1/recovery", s.recoveryRequest(d))
 	s.MustHandle("POST", "/api/v1/recovery/complete", s.recoveryComplete(d))
+	s.MustHandle("POST", "/api/v1/recovery/password-policy", s.recoveryPasswordPolicy(d))
 }
 
 func (s *Server) changePassword(d US4Deps) http.HandlerFunc {

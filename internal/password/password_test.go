@@ -26,6 +26,26 @@ func TestCheckPolicy(t *testing.T) {
 	}
 }
 
+func TestRequirementsAndRule(t *testing.T) {
+	p := tenant.DefaultPolicy()
+	p.PasswordMinLength = 16
+	if got := RequirementsFor(p); got != (Requirements{MinLength: 16, MaxLength: MaxLength, RejectTrivial: true}) {
+		t.Fatalf("%+v", got)
+	}
+	for pw, want := range map[string]string{"short": RuleMinLength, strings.Repeat("x", 1025): RuleMaxLength, strings.Repeat("é", 16): RuleRejectTrivial, "a perfectly fine password": ""} {
+		if got := Rule(Check(p, pw)); got != want {
+			t.Errorf("%q: rule %q, want %q", pw[:5], got, want)
+		}
+	}
+	if Rule(errors.New("other")) != "" || Rule(nil) != "" {
+		t.Fatal("unrelated errors name no rule")
+	}
+	// A repeated multi-byte character is trivial; mixed characters are not.
+	if err := Check(p, strings.Repeat("é", 15)+"e"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestVerifyRehashAndDummy(t *testing.T) {
 	h, err := Hash("correct horse battery")
 	if err != nil {

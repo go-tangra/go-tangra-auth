@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { signInEmail, optionalTenantSlug, newPassword, withConfirm } from './common'
+import { signInEmail, optionalTenantSlug, newPassword, withConfirm, type PasswordRulesSource } from './common'
 
 export const forgotSchema = z.object({ tenant: optionalTenantSlug, email: signInEmail })
-export const resetSchema = (min = 8) => withConfirm({ password: newPassword(min), confirm: z.string() }, 'password', 'confirm')
+export const resetSchema = (rules?: PasswordRulesSource) => withConfirm({ password: newPassword(rules), confirm: z.string() }, 'password', 'confirm')
