@@ -86,10 +86,8 @@ github.com/go-tangra/go-tangra-notification/sdk/v4 v4.2.0 h1:/3FczTz9n8Pq1vcOU6r
 github.com/go-tangra/go-tangra-notification/sdk/v4 v4.2.0/go.mod h1:y729N1SBDGRzRjuRW7Te6BTfg1J7e/XDEutrEQ5DxBU=
 github.com/go-tangra/go-tangra-portal/sdk/v4 v4.0.0 h1:THNjBM31OknVg0TJey5EuntROMaCY1ndozbN5ZBlLlg=
 github.com/go-tangra/go-tangra-portal/sdk/v4 v4.0.0/go.mod h1:SKP6ZWoKPtYo7IZboDjGZW3rbGnKtSBr7I24EoLT2Bk=
-github.com/go-tangra/go-tangra/v4 v4.0.0 h1:INrx5y8rsFkIL4iDxA+tCS3jyTOlPD3T9cPJbcxHHww=
-github.com/go-tangra/go-tangra/v4 v4.0.0/go.mod h1:NzD0r1e1eIeLofboJfKAGrKtBKfIa7LlUxaLXOtyvVo=
-github.com/go-tangra/go-tangra/v4 v4.3.0 h1:igAHXVw2FcINLgPxx3zHXeekS94Q0z1fPZlHiWiHJbc=
-github.com/go-tangra/go-tangra/v4 v4.3.0/go.mod h1:NzD0r1e1eIeLofboJfKAGrKtBKfIa7LlUxaLXOtyvVo=
+github.com/go-tangra/go-tangra/v4 v4.3.1 h1:wPPjsVjuwvelKKzrDZrEDDCPXm0Zs5eQt4dsQKqyxiE=
+github.com/go-tangra/go-tangra/v4 v4.3.1/go.mod h1:NzD0r1e1eIeLofboJfKAGrKtBKfIa7LlUxaLXOtyvVo=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/go-webauthn/webauthn v0.18.2 h1:0BeftmEHU7i3Dv0VFwBtidy/ba37Vcdjvqst9EYu8Sk=

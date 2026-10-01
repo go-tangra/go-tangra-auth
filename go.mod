@@ -7,7 +7,7 @@ toolchain go1.26.8
 require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-kratos/kratos/v3 v3.0.0 // indirect
-	github.com/go-tangra/go-tangra/v4 v4.3.0
+	github.com/go-tangra/go-tangra/v4 v4.3.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/openfga/go-sdk v0.8.2

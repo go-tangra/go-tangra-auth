@@ -82,7 +82,9 @@ func userSearch(tenantID string, f UserPageFilter, a *args) string {
 
 // PageUsers pages the users of a tenant matching f. Each user carries its
 // directory origin (if imported) and, for invited users, the id of the most
-// recent pending invitation (expired ones included: resend renews them).
+// recent pending invitation (expired ones included: resend renews them). The
+// status test inside the LATERAL skips the lookup for every other user; the
+// lookup itself scans invitations_pending_email (0013).
 func PageUsers(ctx context.Context, tx pgx.Tx, tenantID string, f UserPageFilter, req listquery.Request) ([]User, int, listquery.Request, error) {
 	var a args
 	where := userSearch(tenantID, f, &a)
@@ -91,8 +93,8 @@ func PageUsers(ctx context.Context, tx pgx.Tx, tenantID string, f UserPageFilter
 		countFrom: "users u",
 		from: `users u
 		LEFT JOIN user_directory_links l ON l.user_id = u.id
-		LEFT JOIN LATERAL (SELECT i.id FROM invitations i WHERE i.tenant_id = u.tenant_id AND i.email = u.email
-			AND i.accepted_at IS NULL AND i.revoked_at IS NULL ORDER BY i.created_at DESC, i.id LIMIT 1) inv ON u.status = 'invited'`,
+		LEFT JOIN LATERAL (SELECT i.id FROM invitations i WHERE u.status = 'invited' AND i.tenant_id = u.tenant_id AND i.email = u.email
+			AND i.accepted_at IS NULL AND i.revoked_at IS NULL ORDER BY i.created_at DESC, i.id LIMIT 1) inv ON true`,
 		where: where,
 	}
 	return runPage(ctx, tx, q, a, UserList, req, scanUserRow)
