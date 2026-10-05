@@ -28,6 +28,12 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
     effect: allow
+  - id: deployer-directory
+    # Job events are addressed to the members holding deployer jobs:read.
+    from: ["spiffe://example.org/svc/deployer"]
+    to: ["auth"]
+    operations: ["/auth.v1.Profiles/ListMembers"]
+    effect: allow
   - id: signing-directory
     from: ["spiffe://example.org/svc/signing"]
     to: ["auth"]
