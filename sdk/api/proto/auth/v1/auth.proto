@@ -175,6 +175,12 @@ message RegisterPermissionsRequest {
   // true: roles is the module's complete role set (absent slugs are retired).
   // false: roles are left unchanged (gateway, old modules).
   bool declares_roles = 7;
+  // true: builtin_grants is the module's complete built-in grant set: in every
+  // tenant, a built-in role's grants of this module's permissions that the
+  // set no longer lists are revoked (a module withdrawing a grant reaches
+  // existing tenants). false: grants are only added (gateway, old modules).
+  // Legacy (module-less) grants are never touched.
+  bool declares_builtin_grants = 8;
 }
 // ModuleRoleDef is a locked role a module provides in every tenant (feature 019).
 message ModuleRoleDef {
@@ -191,6 +197,7 @@ message RegisterPermissionsResponse {
   repeated RoleError role_errors = 3;       // roles rejected individually
   uint32 roles_upserted = 4;                // definitions created or changed
   repeated string roles_retired = 5;        // slugs retired by this registration
+  uint32 grants_revoked = 6;                // built-in grants withdrawn (declares_builtin_grants), all tenants
 }
 // SkippedGrant reports a built-in grant whose role does not exist in some tenants.
 message SkippedGrant {

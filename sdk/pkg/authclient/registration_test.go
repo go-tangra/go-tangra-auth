@@ -104,6 +104,14 @@ func TestRegistrationRequest(t *testing.T) {
 	if !r.Request().GetDeclaresRoles() || len(r.Request().GetRoles()) != 0 {
 		t.Fatal("empty role set")
 	}
+	// Grants are additive unless the module declares its complete set.
+	if r.Request().GetDeclaresBuiltinGrants() {
+		t.Fatal("declares_builtin_grants without DeclaresGrants")
+	}
+	r.DeclaresGrants = true
+	if !r.Request().GetDeclaresBuiltinGrants() {
+		t.Fatal("DeclaresGrants not sent")
+	}
 }
 
 // fakeConn answers Authorization/RegisterPermissions in memory.

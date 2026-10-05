@@ -157,7 +157,7 @@ func (s *AuthorizationServer) RegisterPermissions(ctx context.Context, req *auth
 			SubjectKind: "module", Details: map[string]any{"module": module, "caller": c.module}})
 		return nil, errModuleMismatch
 	}
-	if c.gateway && (len(req.GetRoles()) > 0 || req.GetDeclaresRoles() || len(req.GetBuiltinGrants()) > 0) {
+	if c.gateway && (len(req.GetRoles()) > 0 || req.GetDeclaresRoles() || len(req.GetBuiltinGrants()) > 0 || req.GetDeclaresBuiltinGrants()) {
 		return nil, status.Error(codes.InvalidArgument, "the gateway may not register roles or grants")
 	}
 	if len(req.GetPermissions()) > authz.MaxRegistrationPermissions || len(req.GetRoles()) > authz.MaxModuleRoles {
@@ -220,7 +220,7 @@ func (s *AuthorizationServer) RegisterPermissions(ctx context.Context, req *auth
 		return nil, status.Error(codes.Unavailable, "registration unavailable")
 	}
 	reg := authz.Registration{Module: module, DisplayName: req.GetModuleDisplayName(), Registrant: c.id, Permissions: defs, DeclaresRoles: req.GetDeclaresRoles(),
-		Grants: grants, Tenants: tenants}
+		Grants: grants, DeclaresGrants: req.GetDeclaresBuiltinGrants(), Tenants: tenants}
 	if c.gateway {
 		reg.Delegate = "gateway"
 	}
@@ -231,7 +231,10 @@ func (s *AuthorizationServer) RegisterPermissions(ctx context.Context, req *auth
 	if err != nil {
 		return nil, decisionError(err)
 	}
-	out := &authv1.RegisterPermissionsResponse{Registered: uint32(res.Registered), RolesUpserted: uint32(res.RolesUpserted), RolesRetired: res.RolesRetired}
+	out := &authv1.RegisterPermissionsResponse{Registered: uint32(res.Registered), RolesUpserted: uint32(res.RolesUpserted), RolesRetired: res.RolesRetired, GrantsRevoked: uint32(res.GrantsRevoked)}
+	if res.GrantsRevoked > 0 {
+		s.log().Info("registration: built-in grants revoked", "module", module, "grants", res.GrantsRevoked)
+	}
 	for _, sg := range res.Skipped {
 		out.SkippedGrants = append(out.SkippedGrants, &authv1.SkippedGrant{Role: sg.Role, Tenants: uint32(sg.Tenants), SampleTenantIds: sg.Sample, Reason: sg.Reason})
 		s.log().Warn("registration: built-in grant skipped", "module", module, "role", sg.Role, "tenants", sg.Tenants, "sample", sg.Sample, "reason", sg.Reason)

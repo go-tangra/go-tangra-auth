@@ -263,6 +263,20 @@ start: missing roles are created, a custom role named `auditor` is adopted);
 a grant to a role a tenant lacks comes back in `skipped_grants` and is
 logged by auth and by the SDK helper.
 
+**Withdrawing built-in grants.** Built-in grants are only ever added unless
+the registration sets `declares_builtin_grants` (SDK:
+`Registration.DeclaresGrants`): its `builtin_grants` are then the module's
+complete set, and in every tenant a built-in role loses the grants of that
+module's permissions the set no longer lists for it (a role the set does not
+name keeps none). The change reaches existing tenants with the module's next
+registration (every five minutes) and comes back as `grants_revoked`, logged
+by auth and the SDK and audited as `role.updated` with the revoked refs.
+Legacy (module-less) grants and other modules' grants are never touched; a
+module-scoped check does not consult the legacy object once the module
+registered the permission, so a kept legacy twin grants nothing. Since built-in
+roles are locked, a module's registrations are the only source of its grants
+on them; opt in only when the module's grant map is authoritative.
+
 **Rollout** (no access is lost at any step):
 
 1. Upgrade auth (and publish `sdk/v4.1.0`). Optionally record the effective

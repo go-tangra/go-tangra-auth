@@ -37,6 +37,9 @@ message RegisterPermissionsRequest {
   // true: `roles` is the module's complete role set (absent slugs are
   // retired). false: roles are left unchanged (gateway, old modules).
   bool declares_roles = 7;
+  // Follow-up: builtin_grants is the complete set; withdrawn module-scoped
+  // grants are revoked from built-in roles (response: grants_revoked = 6).
+  bool declares_builtin_grants = 8;
 }
 
 message ModuleRoleDef {

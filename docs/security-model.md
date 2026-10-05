@@ -431,7 +431,10 @@ for the password.
   with origin `builtin`: before 019 a holder of `roles:manage` could create an
   empty custom `operator` role in a customer tenant and receive every module's
   operator grants within five minutes; `verify` lists such roles (`review`)
-  for an administrator.
+  for an administrator. A module declaring its complete grant set
+  (`declares_builtin_grants`) withdraws grants it no longer lists from the
+  built-in roles of every tenant — only its own module-scoped grants, only on
+  origin-`builtin` roles; the gateway may not send the flag.
 - **Migration.** The first scoped registration of a module in a tenant grants
   the scoped permission to every role holding the legacy one (system actor,
   audited); the tenant marker is set only after the OpenFGA writes, which are
