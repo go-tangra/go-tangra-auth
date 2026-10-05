@@ -79,7 +79,10 @@ type Registration struct {
 	Roles               []ModuleRole
 	DeclaresRoles       bool
 	Grants              []BuiltinGrant
-	Tenants             []string
+	// DeclaresGrants: Grants is the module's complete built-in grant set;
+	// built-in roles lose this module's grants the set no longer lists.
+	DeclaresGrants bool
+	Tenants        []string
 }
 
 // SkippedGrant reports a built-in grant that found no role in some tenants.
@@ -100,6 +103,7 @@ type RegisterResult struct {
 	RoleErrors    []RoleError
 	RolesUpserted int
 	RolesRetired  []string
+	GrantsRevoked int // built-in grants withdrawn, all tenants
 }
 
 // Modules owns module registration: the platform catalogue, module-scoped
@@ -295,6 +299,13 @@ func (m *Modules) Register(ctx context.Context, reg Registration) (RegisterResul
 		for slug, c := range counts {
 			kept[slug] += c
 		}
+		if reg.DeclaresGrants {
+			n, err := m.revokeBuiltin(sys, tid, reg.Module, reg.Grants)
+			if err != nil {
+				return res, err
+			}
+			res.GrantsRevoked += n
+		}
 		for _, g := range reg.Grants {
 			found, err := m.grantBuiltin(sys, tid, reg.Module, g)
 			if err != nil {
@@ -326,7 +337,7 @@ func (m *Modules) Register(ctx context.Context, reg Registration) (RegisterResul
 	}
 	m.emit(audit.Event{Type: audit.ModuleRegistered, TenantID: at, ActorKind: "service", ActorService: reg.Registrant, Outcome: "ok", SubjectKind: "module", SubjectID: "",
 		Details: map[string]any{"module": reg.Module, "delegate": reg.Delegate, "permissions": len(reg.Permissions), "roles": len(defs), "tenants": len(reg.Tenants),
-			"role_errors": len(res.RoleErrors), "skipped_grants": len(res.Skipped)}})
+			"role_errors": len(res.RoleErrors), "skipped_grants": len(res.Skipped), "grants_revoked": res.GrantsRevoked}})
 	for _, d := range upserted {
 		m.emit(audit.Event{Type: audit.ModuleRoleUpserted, TenantID: at, ActorKind: "service", ActorService: reg.Registrant, Outcome: "ok", SubjectKind: "module_role",
 			Details: map[string]any{"module": d.Module, "slug": d.Slug, "permissions": qualify(d.Module, d.Permissions), "tenants": len(reg.Tenants)}})
@@ -509,6 +520,31 @@ func (m *Modules) grantBuiltin(ctx context.Context, tenantID, module string, g B
 		}
 	}
 	return m.roles.GrantBuiltin(ctx, tenantID, g.Role, refs)
+}
+
+// revokeBuiltin withdraws from every built-in role of the tenant the grants
+// of module's own permissions that grants (the module's complete built-in
+// grant set) no longer lists for that role; a role grants does not name
+// keeps none of them. Built-in roles are locked, so registrations are the
+// only source of these grants. Legacy (module-less) grants and other
+// modules' grants are never touched.
+func (m *Modules) revokeBuiltin(ctx context.Context, tenantID, module string, grants []BuiltinGrant) (int, error) {
+	want := map[string]map[PermissionRef]bool{}
+	for _, g := range grants {
+		set := want[g.Role]
+		if set == nil {
+			set = map[PermissionRef]bool{}
+			want[g.Role] = set
+		}
+		for _, s := range g.Permissions {
+			ref, err := permref.Qualify(module, s)
+			if err != nil {
+				return 0, ErrBadRegistration
+			}
+			set[ref] = true
+		}
+	}
+	return m.roles.RevokeBuiltin(ctx, tenantID, module, want)
 }
 
 // InstantiateTenant gives a new tenant every non-retired module permission

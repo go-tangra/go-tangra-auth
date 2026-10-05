@@ -1423,8 +1423,14 @@ type RegisterPermissionsRequest struct {
 	// true: roles is the module's complete role set (absent slugs are retired).
 	// false: roles are left unchanged (gateway, old modules).
 	DeclaresRoles bool `protobuf:"varint,7,opt,name=declares_roles,json=declaresRoles,proto3" json:"declares_roles,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// true: builtin_grants is the module's complete built-in grant set: in every
+	// tenant, a built-in role's grants of this module's permissions that the
+	// set no longer lists are revoked (a module withdrawing a grant reaches
+	// existing tenants). false: grants are only added (gateway, old modules).
+	// Legacy (module-less) grants are never touched.
+	DeclaresBuiltinGrants bool `protobuf:"varint,8,opt,name=declares_builtin_grants,json=declaresBuiltinGrants,proto3" json:"declares_builtin_grants,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *RegisterPermissionsRequest) Reset() {
@@ -1502,6 +1508,13 @@ func (x *RegisterPermissionsRequest) GetRoles() []*ModuleRoleDef {
 func (x *RegisterPermissionsRequest) GetDeclaresRoles() bool {
 	if x != nil {
 		return x.DeclaresRoles
+	}
+	return false
+}
+
+func (x *RegisterPermissionsRequest) GetDeclaresBuiltinGrants() bool {
+	if x != nil {
+		return x.DeclaresBuiltinGrants
 	}
 	return false
 }
@@ -1694,6 +1707,7 @@ type RegisterPermissionsResponse struct {
 	RoleErrors    []*RoleError           `protobuf:"bytes,3,rep,name=role_errors,json=roleErrors,proto3" json:"role_errors,omitempty"`           // roles rejected individually
 	RolesUpserted uint32                 `protobuf:"varint,4,opt,name=roles_upserted,json=rolesUpserted,proto3" json:"roles_upserted,omitempty"` // definitions created or changed
 	RolesRetired  []string               `protobuf:"bytes,5,rep,name=roles_retired,json=rolesRetired,proto3" json:"roles_retired,omitempty"`     // slugs retired by this registration
+	GrantsRevoked uint32                 `protobuf:"varint,6,opt,name=grants_revoked,json=grantsRevoked,proto3" json:"grants_revoked,omitempty"` // built-in grants withdrawn (declares_builtin_grants), all tenants
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1761,6 +1775,13 @@ func (x *RegisterPermissionsResponse) GetRolesRetired() []string {
 		return x.RolesRetired
 	}
 	return nil
+}
+
+func (x *RegisterPermissionsResponse) GetGrantsRevoked() uint32 {
+	if x != nil {
+		return x.GrantsRevoked
+	}
+	return 0
 }
 
 // SkippedGrant reports a built-in grant whose role does not exist in some tenants.
@@ -2429,7 +2450,7 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x16\n" +
 	"\x06module\x18\x03 \x01(\tR\x06module\"F\n" +
 	"\x12BatchCheckResponse\x120\n" +
-	"\aresults\x18\x01 \x03(\v2\x16.auth.v1.CheckResponseR\aresults\"\xd0\x02\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.auth.v1.CheckResponseR\aresults\"\x88\x03\n" +
 	"\x1aRegisterPermissionsRequest\x128\n" +
 	"\vpermissions\x18\x01 \x03(\v2\x16.auth.v1.PermissionDefR\vpermissions\x12\x1d\n" +
 	"\n" +
@@ -2438,7 +2459,8 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x06module\x18\x04 \x01(\tR\x06module\x12.\n" +
 	"\x13module_display_name\x18\x05 \x01(\tR\x11moduleDisplayName\x12,\n" +
 	"\x05roles\x18\x06 \x03(\v2\x16.auth.v1.ModuleRoleDefR\x05roles\x12%\n" +
-	"\x0edeclares_roles\x18\a \x01(\bR\rdeclaresRoles\"\x8a\x01\n" +
+	"\x0edeclares_roles\x18\a \x01(\bR\rdeclaresRoles\x126\n" +
+	"\x17declares_builtin_grants\x18\b \x01(\bR\x15declaresBuiltinGrants\"\x8a\x01\n" +
 	"\rModuleRoleDef\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
@@ -2450,7 +2472,7 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\rPermissionDef\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xfc\x01\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xa3\x02\n" +
 	"\x1bRegisterPermissionsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\rR\n" +
@@ -2459,7 +2481,8 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\vrole_errors\x18\x03 \x03(\v2\x12.auth.v1.RoleErrorR\n" +
 	"roleErrors\x12%\n" +
 	"\x0eroles_upserted\x18\x04 \x01(\rR\rrolesUpserted\x12#\n" +
-	"\rroles_retired\x18\x05 \x03(\tR\frolesRetired\"\x80\x01\n" +
+	"\rroles_retired\x18\x05 \x03(\tR\frolesRetired\x12%\n" +
+	"\x0egrants_revoked\x18\x06 \x01(\rR\rgrantsRevoked\"\x80\x01\n" +
 	"\fSkippedGrant\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12\x18\n" +
 	"\atenants\x18\x02 \x01(\rR\atenants\x12*\n" +

@@ -480,6 +480,46 @@ func (r *Roles) GrantBuiltin(ctx context.Context, tenantID, slug string, refs []
 	return true, nil
 }
 
+// RevokeBuiltin removes, from each built-in role (origin builtin) of the
+// tenant, its grants of module's permissions that keep[slug] does not list,
+// without an actor (registrations). Other grants are kept. It reports how
+// many grants were removed.
+func (r *Roles) RevokeBuiltin(ctx context.Context, tenantID, module string, keep map[string]map[PermissionRef]bool) (int, error) {
+	roles, err := r.st.ListRoles(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, ro := range roles {
+		if ro.OriginOf() != store.OriginBuiltin {
+			continue
+		}
+		current, err := r.st.RolePermissions(ctx, tenantID, ro.ID)
+		if err != nil {
+			return total, err
+		}
+		want := make([]PermissionRef, 0, len(current))
+		var gone []string
+		for _, p := range current {
+			if p.Module == module && !keep[ro.Slug][p] {
+				gone = append(gone, p.String())
+				continue
+			}
+			want = append(want, p)
+		}
+		if len(gone) == 0 {
+			continue
+		}
+		_, removed, err := r.setGrants(ctx, tenantID, ro, want)
+		if err != nil {
+			return total, err
+		}
+		total += removed
+		r.emit(audit.Event{Type: audit.RoleUpdated, TenantID: tenantID, ActorKind: "system", Outcome: "ok", SubjectKind: "role", SubjectID: ro.ID, Details: map[string]any{"slug": ro.Slug, "revoked": gone}})
+	}
+	return total, nil
+}
+
 // EnsureBuiltin makes sure the tenant has the built-in roles slugs (feature
 // 019: auditor in every tenant). A custom role already using a slug is adopted
 // as the built-in role, keeping its grants and assignments. It returns the

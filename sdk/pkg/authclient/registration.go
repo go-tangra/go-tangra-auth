@@ -62,6 +62,12 @@ type Registration struct {
 	// BuiltinGrants maps built-in role slugs (owner, admin, member, auditor,
 	// operator) to "resource:action" references of this registration.
 	BuiltinGrants map[string][]string
+	// DeclaresGrants makes BuiltinGrants the module's complete built-in grant
+	// set: in every tenant, auth revokes this module's grants a built-in role
+	// holds that BuiltinGrants no longer lists for it (a role absent from the
+	// map keeps none), so withdrawing a grant reaches existing tenants.
+	// false: grants are only ever added.
+	DeclaresGrants bool
 	// TenantIDs limits the registration (empty: every active tenant).
 	TenantIDs []string
 }
@@ -155,9 +161,10 @@ func (r Registration) Validate() error {
 }
 
 // Request renders the registration (declares_roles: Roles is the complete
-// set; grants sorted by role for stable requests).
+// set; declares_builtin_grants per DeclaresGrants; grants sorted by role for
+// stable requests).
 func (r Registration) Request() *authv1.RegisterPermissionsRequest {
-	req := &authv1.RegisterPermissionsRequest{Module: r.Module, ModuleDisplayName: r.DisplayName, DeclaresRoles: true, TenantIds: r.TenantIDs}
+	req := &authv1.RegisterPermissionsRequest{Module: r.Module, ModuleDisplayName: r.DisplayName, DeclaresRoles: true, DeclaresBuiltinGrants: r.DeclaresGrants, TenantIds: r.TenantIDs}
 	for _, p := range r.Permissions {
 		req.Permissions = append(req.Permissions, &authv1.PermissionDef{Resource: p.Resource, Action: p.Action, Description: p.Description})
 	}
@@ -201,6 +208,9 @@ func (r Registration) Register(ctx context.Context, cc grpc.ClientConnInterface,
 	}
 	if len(resp.GetRolesRetired()) > 0 {
 		log.Info("auth registration: module roles retired", "module", r.Module, "roles", resp.GetRolesRetired())
+	}
+	if n := resp.GetGrantsRevoked(); n > 0 {
+		log.Info("auth registration: built-in grants revoked", "module", r.Module, "grants", n)
 	}
 	return resp, nil
 }

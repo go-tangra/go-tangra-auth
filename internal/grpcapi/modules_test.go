@@ -120,11 +120,12 @@ func TestRegisterModuleAttribution(t *testing.T) {
 			t.Fatal("a module named gateway was created")
 		}
 	}
-	// Gateway with roles, declares_roles or grants → InvalidArgument.
+	// Gateway with roles, declares_roles, grants or declares_builtin_grants → InvalidArgument.
 	for name, req := range map[string]*authv1.RegisterPermissionsRequest{
-		"roles":    {Module: "ipam", Permissions: wardenPerms, Roles: []*authv1.ModuleRoleDef{{Slug: "viewer", DisplayName: "V", Permissions: []string{"secrets:read"}}}},
-		"declares": {Module: "ipam", Permissions: wardenPerms, DeclaresRoles: true},
-		"grants":   {Module: "ipam", Permissions: wardenPerms, BuiltinGrants: []*authv1.BuiltinGrant{{Role: "member", Permissions: []string{"secrets:read"}}}},
+		"roles":           {Module: "ipam", Permissions: wardenPerms, Roles: []*authv1.ModuleRoleDef{{Slug: "viewer", DisplayName: "V", Permissions: []string{"secrets:read"}}}},
+		"declares":        {Module: "ipam", Permissions: wardenPerms, DeclaresRoles: true},
+		"grants":          {Module: "ipam", Permissions: wardenPerms, BuiltinGrants: []*authv1.BuiltinGrant{{Role: "member", Permissions: []string{"secrets:read"}}}},
+		"declares-grants": {Module: "ipam", Permissions: wardenPerms, DeclaresBuiltinGrants: true},
 	} {
 		if _, err := m.srv.RegisterPermissions(gw, req); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("gateway %s: %v", name, err)
@@ -196,6 +197,18 @@ func TestRegisterRolesAndSkippedGrants(t *testing.T) {
 	resp, err = m.srv.RegisterPermissions(peer(t, "warden"), &authv1.RegisterPermissionsRequest{Permissions: wardenPerms, DeclaresRoles: true})
 	if err != nil || len(resp.RolesRetired) != 1 || resp.RolesRetired[0] != "viewer" {
 		t.Fatalf("%+v %v", resp, err)
+	}
+	// A declared grant set withdraws member's secrets:read and reports it.
+	if _, err := m.srv.RegisterPermissions(peer(t, "warden"), &authv1.RegisterPermissionsRequest{Permissions: wardenPerms, DeclaresRoles: true,
+		BuiltinGrants: []*authv1.BuiltinGrant{{Role: "member", Permissions: []string{"secrets:read"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err = m.srv.RegisterPermissions(peer(t, "warden"), &authv1.RegisterPermissionsRequest{Permissions: wardenPerms, DeclaresRoles: true, DeclaresBuiltinGrants: true})
+	if err != nil || resp.GrantsRevoked != 1 || !strings.Contains(m.log.String(), "built-in grants revoked") {
+		t.Fatalf("%+v %v", resp, err)
+	}
+	if got, _ := m.ms.RolePermissions(context.Background(), tid, "r-member"); len(got) != 0 {
+		t.Fatalf("member kept %v", got)
 	}
 	// Grant validation is unchanged: unknown role, foreign permission.
 	if _, err := m.srv.RegisterPermissions(peer(t, "warden"), &authv1.RegisterPermissionsRequest{Permissions: wardenPerms, BuiltinGrants: []*authv1.BuiltinGrant{{Role: "custom", Permissions: []string{"secrets:read"}}}}); status.Code(err) != codes.InvalidArgument {

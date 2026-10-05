@@ -765,3 +765,85 @@ func TestCatalogue(t *testing.T) {
 		t.Fatalf("%v", grantable)
 	}
 }
+
+// A module declaring its complete built-in grant set withdraws, in existing
+// tenants, the grants it no longer lists (OpenFGA and the mirror); without
+// the declaration grants are only added. Other modules' grants stay.
+func TestDeclaredBuiltinGrantsRevokeWithdrawn(t *testing.T) {
+	f := newModFixture(t)
+	ctx := context.Background()
+	if _, err := f.mods.Register(f.sys, wardenReg(tB)); err != nil {
+		t.Fatal(err)
+	}
+	ipam := ipamReg(tB)
+	ipam.Grants = []BuiltinGrant{{Role: "auditor", Permissions: []string{"ipam:read"}}}
+	if _, err := f.mods.Register(f.sys, ipam); err != nil {
+		t.Fatal(err)
+	}
+	auditor := f.roleBySlug(t, tB, "auditor")
+	admin := f.roleBySlug(t, tB, "admin")
+	statsRead := PermissionRef{Module: "warden", Resource: "stats", Action: "read"}
+	has := func(ro store.Role, p PermissionRef) bool {
+		ok, err := f.fga.Check(ctx, GrantTuple(tB, ro.Slug, p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+
+	// Withdrawn from auditor, not declared: kept.
+	reg := wardenReg(tB)
+	reg.Grants = reg.Grants[:1] // admin only; auditor and operator dropped
+	if res, err := f.mods.Register(f.sys, reg); err != nil || res.GrantsRevoked != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if got, _ := f.ms.RolePermissions(ctx, tB, auditor.ID); !slices.Contains(refsOf(got), "warden:stats:read") {
+		t.Fatalf("undeclared registration revoked: %v", refsOf(got))
+	}
+
+	// Declared: auditor loses warden:stats:read, keeps ipam's grant; admin keeps its set.
+	reg.DeclaresGrants = true
+	res, err := f.mods.Register(f.sys, reg)
+	if err != nil || res.GrantsRevoked != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	// The legacy twin (tB still has legacy rows) is never touched.
+	if got, _ := f.ms.RolePermissions(ctx, tB, auditor.ID); !slices.Equal(refsOf(got), []string{"stats:read", "ipam:ipam:read"}) {
+		t.Fatalf("auditor %v", refsOf(got))
+	}
+	if has(auditor, statsRead) {
+		t.Fatal("OpenFGA still grants the withdrawn permission")
+	}
+	adminGot, _ := f.ms.RolePermissions(ctx, tB, admin.ID)
+	if r := refsOf(adminGot); !slices.Contains(r, "warden:backup:manage") || !slices.Contains(r, "warden:stats:read") || !slices.Contains(r, "ipam:backup:manage") || !has(admin, statsRead) {
+		t.Fatalf("admin %v", r)
+	}
+
+	// Idempotent.
+	if res, err := f.mods.Register(f.sys, reg); err != nil || res.GrantsRevoked != 0 {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+// The decision follows the withdrawal: the module-scoped check no longer
+// passes even though the legacy twin grant is kept.
+func TestDeclaredBuiltinGrantsDecision(t *testing.T) {
+	f := newModFixture(t)
+	if _, err := f.mods.Register(f.sys, wardenReg(tA)); err != nil {
+		t.Fatal(err)
+	}
+	f.ms.AddUser(store.User{ID: "u-audit", TenantID: tA, Email: "u-audit@x.test", Status: "active"})
+	f.bind(t, "u-audit", f.roleBySlug(t, tA, "auditor").ID)
+	if !f.allowed(t, "u-audit", "warden:stats:read") {
+		t.Fatal("auditor should read warden stats")
+	}
+	reg := wardenReg(tA)
+	reg.Grants = reg.Grants[:1]
+	reg.DeclaresGrants = true
+	if _, err := f.mods.Register(f.sys, reg); err != nil {
+		t.Fatal(err)
+	}
+	if f.allowed(t, "u-audit", "warden:stats:read") {
+		t.Fatal("withdrawn built-in grant still allows")
+	}
+}
