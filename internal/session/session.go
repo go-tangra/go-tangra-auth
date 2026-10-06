@@ -33,6 +33,15 @@ const (
 // RevocationRetention is how long feed entries and marks live (> max token life).
 const RevocationRetention = 60 * time.Minute
 
+// Session refresh (Renew): a replaced secret keeps resolving for RenewGrace
+// so requests already in flight with it (other tabs, the gateway's identity
+// cache) do not fail; a session renewed less than RenewMinInterval ago is
+// only touched, not rotated again.
+const (
+	RenewGrace       = time.Minute
+	RenewMinInterval = 30 * time.Second
+)
+
 // ErrNoSession means the cookie does not map to a live session.
 var ErrNoSession = errors.New("session: no live session")
 
@@ -43,6 +52,7 @@ type Store interface {
 	Get(ctx context.Context, tenantID, id string) (store.Session, error)
 	ListUser(ctx context.Context, tenantID, userID string) ([]store.Session, error)
 	Touch(ctx context.Context, tenantID, id string) error
+	Renew(ctx context.Context, tenantID, id string, hash []byte, expiresAt time.Time) error
 	Revoke(ctx context.Context, tenantID, id, reason string) error
 	RevokeUser(ctx context.Context, tenantID, userID, reason, keepID string) error
 	RevokeTenant(ctx context.Context, tenantID, reason string) error
@@ -79,6 +89,11 @@ type view struct {
 	PolicyVersion int64
 	DisplayName   string
 	AvatarURL     string
+	// RenewedAt is the last refresh (zero: never renewed).
+	RenewedAt time.Time
+	// GraceUntil is set on the view of a secret replaced by a refresh: it
+	// resolves until then, then never again.
+	GraceUntil time.Time
 }
 
 // CreateParams describe a new session.
@@ -171,6 +186,11 @@ func (m *Manager) putView(ctx context.Context, hash string, v view) {
 	if rem := v.ExpiresAt.Sub(m.now()); rem < ttl {
 		ttl = rem
 	}
+	if !v.GraceUntil.IsZero() {
+		if rem := v.GraceUntil.Sub(m.now()); rem < ttl {
+			ttl = rem
+		}
+	}
 	if ttl > 0 {
 		_ = m.cache.KV().Set(ctx, cache.SessionKey(hash), string(b), ttl)
 	}
@@ -206,6 +226,12 @@ func (m *Manager) Resolve(ctx context.Context, secret string) (tenantctx.Actor, 
 		v.PolicyVersion = m.tenantVersion(ctx, s.TenantID)
 		m.loadProfile(ctx, &v)
 	} else {
+		if !v.GraceUntil.IsZero() && !now.Before(v.GraceUntil) {
+			// A secret replaced by a refresh, past its grace: the session
+			// itself lives on under the new secret.
+			m.evictView(ctx, hash)
+			return tenantctx.Actor{}, ErrNoSession
+		}
 		v, _ = m.refreshIfStale(ctx, v)
 	}
 	if !now.Before(v.ExpiresAt) {
@@ -227,6 +253,74 @@ func (m *Manager) Resolve(ctx context.Context, secret string) (tenantctx.Actor, 
 	}
 	m.putView(ctx, hash, v)
 	return v.actor(), nil
+}
+
+// Renewal is the outcome of a session refresh.
+type Renewal struct {
+	// Secret is the new cookie secret ("" when the session was renewed less
+	// than RenewMinInterval ago and kept its secret).
+	Secret    string
+	SessionID string
+	ExpiresAt time.Time     // absolute expiry after the refresh
+	Idle      time.Duration // idle timeout (from the last activity)
+}
+
+// Renew refreshes a live session from its cookie secret: same liveness rules
+// as Resolve, then a new secret and the absolute expiry moved to now + the
+// tenant's session lifetime (an active user stays signed in; the idle
+// timeout still ends an unattended one). Every replaced secret keeps
+// resolving for RenewGrace.
+func (m *Manager) Renew(ctx context.Context, secret string) (Renewal, error) {
+	a, err := m.Resolve(ctx, secret)
+	if err != nil {
+		return Renewal{}, err
+	}
+	s, err := m.st.Get(ctx, a.TenantID, a.SessionID)
+	if err != nil || s.RevokedAt != nil {
+		return Renewal{}, ErrNoSession
+	}
+	t, err := m.st.Tenant(ctx, s.TenantID)
+	if err != nil || t.Status != "active" {
+		return Renewal{}, ErrNoSession
+	}
+	pol, err := tenant.ParsePolicy(t.Policy, t.Kind == "platform")
+	if err != nil {
+		return Renewal{}, err
+	}
+	now := m.now()
+	v, ok := m.getView(ctx, crypto.HashToken(secret))
+	if !ok {
+		v = view{ID: s.ID, TenantID: s.TenantID, UserID: s.UserID, Roles: nonNil(a.Roles), AMR: s.AMR, Operator: t.Kind == "platform", CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt, DisplayName: a.DisplayName, AvatarURL: a.AvatarURL}
+		v.PolicyVersion = m.tenantVersion(ctx, s.TenantID)
+	}
+	v.Idle = pol.IdleTimeout.D()
+	if !v.GraceUntil.IsZero() || (!v.RenewedAt.IsZero() && now.Sub(v.RenewedAt) < RenewMinInterval) {
+		// A secret already replaced (the browser holds the newer one), or a
+		// session renewed moments ago (another tab): Resolve touched it.
+		return Renewal{SessionID: s.ID, ExpiresAt: s.ExpiresAt, Idle: v.Idle}, nil
+	}
+	next, err := crypto.RandomToken(32)
+	if err != nil {
+		return Renewal{}, err
+	}
+	hash := crypto.HashToken(next)
+	expires := now.Add(pol.SessionLifetime.D())
+	if err := m.st.Renew(ctx, s.TenantID, s.ID, []byte(hash), expires); err != nil {
+		return Renewal{}, ErrNoSession
+	}
+	// The replaced secret(s) — the one presented and the row's current one,
+	// which differ when two tabs refresh at once — resolve for RenewGrace.
+	grace := v
+	grace.GraceUntil, grace.RenewedAt, grace.ExpiresAt = now.Add(RenewGrace), now, expires
+	for _, old := range []string{crypto.HashToken(secret), string(s.SecretHash)} {
+		m.putView(ctx, old, grace)
+	}
+	v.GraceUntil = time.Time{}
+	v.LastSeen, v.ExpiresAt, v.RenewedAt = now, expires, now
+	m.putView(ctx, hash, v)
+	m.emit(audit.Event{Type: audit.SessionRenewed, TenantID: s.TenantID, ActorKind: string(a.Kind), ActorUserID: a.UserID, SubjectKind: "session", SubjectID: s.ID, Outcome: "ok",
+		Details: map[string]any{"expires_at": expires.UTC().Format(time.RFC3339)}})
+	return Renewal{Secret: next, SessionID: s.ID, ExpiresAt: expires, Idle: v.Idle}, nil
 }
 
 func (v view) actor() tenantctx.Actor {

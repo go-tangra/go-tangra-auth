@@ -39,6 +39,7 @@ const (
 	UserDeactivated      EventType = "user_deactivated"
 	UserReactivated      EventType = "user_reactivated"
 	SessionRevoked       EventType = "session_revoked"
+	SessionRenewed       EventType = "session_renewed"
 	TenantCreated        EventType = "tenant_created"
 	TenantSuspended      EventType = "tenant_suspended"
 	TenantReactivated    EventType = "tenant_reactivated"
@@ -95,7 +96,7 @@ var known = map[EventType]struct{}{}
 func init() {
 	for _, t := range []EventType{SigninOK, SigninFailed, Lockout, Signout, MFAEnrolled, MFARemoved, RecoveryCodesRegen, PasswordChanged,
 		RecoveryRequested, RecoveryCompleted, InviteCreated, InviteAccepted, InviteRevoked, RoleCreated, RoleUpdated, RoleDeleted, RoleAssigned,
-		RoleRevoked, PermissionRegistered, UserDeactivated, UserReactivated, SessionRevoked, TenantCreated, TenantSuspended, TenantReactivated,
+		RoleRevoked, PermissionRegistered, UserDeactivated, UserReactivated, SessionRevoked, SessionRenewed, TenantCreated, TenantSuspended, TenantReactivated,
 		OperatorGrantCreated, OperatorGrantUsed, ClientRegistered, PolicyUpdated, CrossTenantRefused, AuthzDenied, TokenExchanged,
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,

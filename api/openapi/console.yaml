@@ -248,6 +248,10 @@ components:
         reason: { type: string }
         correlation_id: { type: string }
         details: { type: object, additionalProperties: true }
+    SessionRefresh:
+      type: object
+      required: [session_id, expires_at, idle_timeout_seconds, renewed]
+      properties: { session_id: { type: string }, expires_at: { type: string, format: date-time }, idle_timeout_seconds: { type: integer }, renewed: { type: boolean, description: 'false: renewed moments ago (another tab), only touched; the cookie is unchanged' } }
     TokenResponse:
       type: object
       properties: { access_token: { type: string }, token_type: { type: string, enum: [Bearer] }, expires_in: { type: integer } }
@@ -495,6 +499,12 @@ paths:
       parameters: [{ $ref: '#/components/parameters/csrf' }]
       summary: Mint a fresh access token from the live session
       responses: { '200': { description: token, content: { application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } } } } }
+  /api/v1/session/refresh:
+    post:
+      operationId: refreshSession
+      parameters: [{ $ref: '#/components/parameters/csrf' }]
+      summary: 'Renew the live session while the user is active: a new cookie secret and the absolute expiry moved forward by the session lifetime (the idle timeout still applies). A replaced secret keeps working for one minute.'
+      responses: { '200': { description: renewed, content: { application/json: { schema: { $ref: '#/components/schemas/SessionRefresh' } } } }, '401': { description: no session } }
   /api/v1/sessions:
     get:
       operationId: listSessions
