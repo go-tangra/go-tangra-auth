@@ -68,6 +68,16 @@ func (f *fakeStore) Touch(_ context.Context, tid, id string) error {
 	}
 	return nil
 }
+func (f *fakeStore) Renew(_ context.Context, tid, id string, hash []byte, expiresAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sessions[id]
+	if !ok || s.TenantID != tid || s.RevokedAt != nil {
+		return store.ErrNotFound
+	}
+	s.SecretHash, s.ExpiresAt, s.LastSeen = append([]byte(nil), hash...), expiresAt, f.now()
+	return nil
+}
 func (f *fakeStore) revoke(id, reason string) {
 	if s, ok := f.sessions[id]; ok && s.RevokedAt == nil {
 		t := f.now()

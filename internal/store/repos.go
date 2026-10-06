@@ -454,6 +454,19 @@ func TouchSession(ctx context.Context, tx pgx.Tx, tenantID, id string) error {
 	return err
 }
 
+// RenewSession rotates a live session's secret hash and moves its absolute
+// expiry (session refresh); last-seen is touched.
+func RenewSession(ctx context.Context, tx pgx.Tx, tenantID, id string, hash []byte, expiresAt time.Time) error {
+	tag, err := tx.Exec(ctx, "UPDATE sessions SET secret_hash = $3, expires_at = $4, last_seen_at = now() WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL", tenantID, id, hash, expiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RevokeSession marks one session.
 func RevokeSession(ctx context.Context, tx pgx.Tx, tenantID, id, reason string) error {
 	_, err := tx.Exec(ctx, "UPDATE sessions SET revoked_at = now(), revoked_reason = $3 WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL", tenantID, id, reason)

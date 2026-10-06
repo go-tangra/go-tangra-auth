@@ -39,6 +39,9 @@ func (d DBStore) ListUser(ctx context.Context, tid, uid string) (out []store.Ses
 func (d DBStore) Touch(ctx context.Context, tid, id string) error {
 	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.TouchSession(ctx, tx, tid, id) })
 }
+func (d DBStore) Renew(ctx context.Context, tid, id string, hash []byte, expiresAt time.Time) error {
+	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.RenewSession(ctx, tx, tid, id, hash, expiresAt) })
+}
 func (d DBStore) Revoke(ctx context.Context, tid, id, reason string) error {
 	return d.tx(ctx, tid, func(tx pgx.Tx) error { return store.RevokeSession(ctx, tx, tid, id, reason) })
 }

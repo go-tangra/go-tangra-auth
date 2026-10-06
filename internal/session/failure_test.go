@@ -53,6 +53,18 @@ func (f *failStore) Touch(ctx context.Context, tid, id string) error {
 	}
 	return f.fakeStore.Touch(ctx, tid, id)
 }
+func (f *failStore) Get(ctx context.Context, tid, id string) (store.Session, error) {
+	if f.on("get") {
+		return store.Session{}, errDown
+	}
+	return f.fakeStore.Get(ctx, tid, id)
+}
+func (f *failStore) Renew(ctx context.Context, tid, id string, hash []byte, expiresAt time.Time) error {
+	if f.on("renew") {
+		return errDown
+	}
+	return f.fakeStore.Renew(ctx, tid, id, hash, expiresAt)
+}
 func (f *failStore) Revoke(ctx context.Context, tid, id, reason string) error {
 	if f.on("revoke") {
 		return errDown

@@ -382,6 +382,16 @@ func (m *Store) Touch(_ context.Context, tid, id string) error {
 	}
 	return nil
 }
+func (m *Store) Renew(_ context.Context, tid, id string, hash []byte, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.Sessions[id]
+	if !ok || s.TenantID != tid || s.RevokedAt != nil {
+		return store.ErrNotFound
+	}
+	s.SecretHash, s.ExpiresAt, s.LastSeen = append([]byte(nil), hash...), expiresAt, m.Now()
+	return nil
+}
 func (m *Store) revoke(id, reason string) {
 	if s, ok := m.Sessions[id]; ok && s.RevokedAt == nil {
 		t := m.Now()

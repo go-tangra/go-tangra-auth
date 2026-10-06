@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/session"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
@@ -72,6 +73,7 @@ func (s *Server) RegisterUS1(d US1Deps) {
 	s.MustHandle("POST", "/api/v1/signout", s.signOut(d))
 	s.MustHandle("GET", "/api/v1/session", s.getSession(d))
 	s.MustHandle("POST", "/api/v1/session/token", s.issueToken(d))
+	s.MustHandle("POST", "/api/v1/session/refresh", s.refreshSession(d))
 	s.MustHandle("GET", "/api/v1/sessions", s.listSessions(d))
 	s.MustHandle("POST", "/api/v1/sessions/{id}/revoke", s.revokeSession(d))
 	s.MustHandle("GET", "/.well-known/jwks.json", s.jwks(d))
@@ -207,6 +209,48 @@ func sessionInfo(ctx context.Context, d US1Deps, a tenantctx.Actor) SessionInfo 
 		}
 	}
 	return info
+}
+
+// SessionRefresh is the POST /api/v1/session/refresh body: when the session
+// now ends (absolute) and the idle timeout counted from this refresh.
+type SessionRefresh struct {
+	SessionID          string    `json:"session_id"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	IdleTimeoutSeconds int       `json:"idle_timeout_seconds"`
+	// Renewed is false when the session was renewed moments ago (another
+	// tab) and only touched; the cookie is then left as it is.
+	Renewed bool `json:"renewed"`
+}
+
+// refreshSession renews the caller's session while they are active: a new
+// cookie secret and the absolute expiry moved forward by the tenant's session
+// lifetime. The idle timeout still ends an unattended session.
+func (s *Server) refreshSession(d US1Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, err := RequireUser(r); err != nil {
+			Fail(w, r, nil, err)
+			return
+		}
+		c, err := r.Cookie(SessionCookie)
+		if err != nil || c.Value == "" {
+			Fail(w, r, nil, ErrUnauthenticated)
+			return
+		}
+		ren, err := d.Sessions.Renew(r.Context(), c.Value)
+		if errors.Is(err, session.ErrNoSession) {
+			ClearSessionCookie(w)
+			Fail(w, r, nil, ErrUnauthenticated)
+			return
+		}
+		if err != nil {
+			Fail(w, r, s.rt.Logger(), err)
+			return
+		}
+		if ren.Secret != "" {
+			SetSessionCookie(w, ren.Secret, int(time.Until(ren.ExpiresAt).Seconds()))
+		}
+		WriteJSON(w, http.StatusOK, SessionRefresh{SessionID: ren.SessionID, ExpiresAt: ren.ExpiresAt.UTC(), IdleTimeoutSeconds: int(ren.Idle.Seconds()), Renewed: ren.Secret != ""})
+	}
 }
 
 func (s *Server) issueToken(d US1Deps) http.HandlerFunc {

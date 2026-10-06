@@ -13,8 +13,8 @@ func TestDirectoryManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if Version != "1.2.0" || m.Version != "1.2.0" {
-		t.Errorf("version: const %q manifest %q, want 1.2.0", Version, m.Version)
+	if Version != "1.3.0" || m.Version != "1.3.0" {
+		t.Errorf("version: const %q manifest %q, want 1.3.0", Version, m.Version)
 	}
 
 	want := gatewayclient.Permission{Resource: "directory", Action: "manage", Description: "Connect LDAP directories, search them and import users as inactive"}

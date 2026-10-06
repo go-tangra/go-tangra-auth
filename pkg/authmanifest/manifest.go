@@ -18,7 +18,7 @@ import (
 const (
 	Module        = "auth"
 	ConsolePrefix = "/console"
-	Version       = "1.2.0"
+	Version       = "1.3.0"
 )
 
 // Permissions the console registers (granted to builtin roles by the service).
