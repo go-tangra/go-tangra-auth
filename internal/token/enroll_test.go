@@ -131,3 +131,45 @@ func TestEnrollmentFailures(t *testing.T) {
 		t.Fatalf("empty ring: %v", err)
 	}
 }
+
+func TestVerifyEnrollmentRefusalKinds(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	r, _ := newRing(t, &now)
+	iss := NewIssuer(r, "https://auth.example.org")
+	iss.now = r.now
+	at := func(ts time.Time) *Issuer {
+		i := NewIssuer(r, "https://auth.example.org")
+		i.now = func() time.Time { return ts }
+		return i
+	}
+
+	// Expired: minted an hour ago with a one-minute lifetime.
+	old, _, _ := at(now.Add(-time.Hour)).IssueEnrollment("t1", []string{"svc/x"}, time.Minute)
+	if _, err := iss.VerifyEnrollment(old); !errors.Is(err, ErrEnrollmentExpired) || errors.Is(err, ErrEnrollmentNotYetValid) {
+		t.Fatalf("expired: %v", err)
+	}
+	// Not yet valid: minted (nbf, iat) beyond the clock skew in the future.
+	future, _, _ := at(now.Add(time.Hour)).IssueEnrollment("t1", []string{"svc/x"}, time.Minute)
+	if _, err := iss.VerifyEnrollment(future); !errors.Is(err, ErrEnrollmentNotYetValid) || errors.Is(err, ErrEnrollmentExpired) {
+		t.Fatalf("not yet valid: %v", err)
+	}
+
+	// Opaque: an expired token from a different issuer, an expired access token
+	// (wrong audience), a forged signature and garbage never name the window.
+	other := NewIssuer(r, "https://other.example.org")
+	other.now = func() time.Time { return now.Add(-time.Hour) }
+	foreign, _, _ := other.IssueEnrollment("t1", []string{"svc/x"}, time.Minute)
+	oldIss := at(now.Add(-time.Hour))
+	access, _, _ := oldIss.Issue(Request{UserID: "u1", TenantID: "t1", SessionID: "s1", Audience: "app"})
+	good, _, _ := iss.IssueEnrollment("t1", []string{"svc/x"}, time.Minute)
+	forged := good[:len(good)-4] + "AAAA"
+	if forged == good {
+		forged = good[:len(good)-4] + "BBBB"
+	}
+	for name, s := range map[string]string{"foreign issuer": foreign, "access token": access, "forged": forged, "garbage": "not.a.jwt"} {
+		_, err := iss.VerifyEnrollment(s)
+		if err == nil || errors.Is(err, ErrEnrollmentExpired) || errors.Is(err, ErrEnrollmentNotYetValid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}

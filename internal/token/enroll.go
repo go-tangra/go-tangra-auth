@@ -19,6 +19,14 @@ const (
 	defaultEnrollLifetime = 10 * time.Minute
 )
 
+// Time-window refusals of an otherwise authentic enrollment token (good
+// signature, kid, issuer and audience). VerifyEnrollment wraps them so the
+// caller can tell an operator WHY a join failed; every other failure is opaque.
+var (
+	ErrEnrollmentExpired     = errors.New("token: enrollment token expired")
+	ErrEnrollmentNotYetValid = errors.New("token: enrollment token not yet valid")
+)
+
 // EnrollClaims are the claims of an lcm enrollment token: a short-lived,
 // single-use, service-to-service credential authorising ONE SVID enrollment for
 // a bounded set of SPIFFE paths. It carries no user/session (unlike access
@@ -100,7 +108,7 @@ func (i *Issuer) VerifyEnrollment(s string) (EnrollGrant, error) {
 		return pub, nil
 	})
 	if err != nil {
-		return EnrollGrant{}, fmt.Errorf("token: %w", err)
+		return EnrollGrant{}, enrollParseError(err)
 	}
 	if c.ExpiresAt == nil || c.IssuedAt == nil || c.ExpiresAt.Sub(c.IssuedAt.Time) > maxEnrollLifetime {
 		return EnrollGrant{}, errors.New("token: lifetime exceeds the maximum")
@@ -109,4 +117,19 @@ func (i *Issuer) VerifyEnrollment(s string) (EnrollGrant, error) {
 		return EnrollGrant{}, errors.New("token: required claims missing")
 	}
 	return EnrollGrant{JTI: c.ID, TenantID: c.TenantID, SpiffePaths: c.SpiffePaths, ExpiresAt: c.ExpiresAt.Time}, nil
+}
+
+// enrollParseError names a time-window failure only when it is the sole claim
+// failure: the signature was already verified (jwt checks it before claims), and
+// a wrong issuer or audience keeps the token opaque even if it is also expired.
+func enrollParseError(err error) error {
+	if !errors.Is(err, jwt.ErrTokenInvalidIssuer) && !errors.Is(err, jwt.ErrTokenInvalidAudience) {
+		switch {
+		case errors.Is(err, jwt.ErrTokenExpired):
+			return fmt.Errorf("%w: %w", ErrEnrollmentExpired, err)
+		case errors.Is(err, jwt.ErrTokenNotValidYet), errors.Is(err, jwt.ErrTokenUsedBeforeIssued):
+			return fmt.Errorf("%w: %w", ErrEnrollmentNotYetValid, err)
+		}
+	}
+	return fmt.Errorf("token: %w", err)
 }

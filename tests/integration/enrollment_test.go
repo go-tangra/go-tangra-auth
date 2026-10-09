@@ -32,7 +32,14 @@ func TestEnrollmentTokenMintVerifyReplay(t *testing.T) {
 		t.Fatalf("verify: %+v %v", v, err)
 	}
 	// replay: the jti is burned, so a second verify must fail single-use.
-	if _, err := srv.VerifyEnrollmentToken(ctx, &authv1.VerifyEnrollmentTokenRequest{Token: mint.GetToken()}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("replay must be Unauthenticated, got %v", err)
+	// The status message is the closed reason lcm relays to the workload.
+	_, err = srv.VerifyEnrollmentToken(ctx, &authv1.VerifyEnrollmentTokenRequest{Token: mint.GetToken()})
+	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated || st.Message() != grpcapi.EnrollTokenUsed {
+		t.Fatalf("replay must be Unauthenticated %s, got %v", grpcapi.EnrollTokenUsed, err)
+	}
+	// a garbage token is opaque: enrollment_token_invalid.
+	_, err = srv.VerifyEnrollmentToken(ctx, &authv1.VerifyEnrollmentTokenRequest{Token: "x.y.z"})
+	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated || st.Message() != grpcapi.EnrollTokenInvalid {
+		t.Fatalf("garbage must be Unauthenticated %s, got %v", grpcapi.EnrollTokenInvalid, err)
 	}
 }
