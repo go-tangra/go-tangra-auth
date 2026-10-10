@@ -59,6 +59,12 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Enrollment/MintEnrollmentToken"]
     effect: allow
+  - id: gateway-enrollment-status
+    # Whether a join token the gateway minted was used (add-module wizard).
+    from: ["spiffe://example.org/svc/gateway"]
+    to: ["auth"]
+    operations: ["/auth.v1.Enrollment/TokenStatus"]
+    effect: allow
   - id: gateway-forwards
     from: ["spiffe://example.org/svc/gateway"]
     to: ["auth"]

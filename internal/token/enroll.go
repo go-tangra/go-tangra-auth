@@ -13,11 +13,21 @@ import (
 // EnrollAudience is the fixed audience of an lcm enrollment (join) token.
 const EnrollAudience = "lcm"
 
-// maxEnrollLifetime caps an enrollment token's lifetime; the default is shorter.
+// maxEnrollLifetime caps an enrollment token's lifetime (24 h: the gateway's
+// add-module join bundles are installed by an operator later in the day); a
+// longer request is refused, not shortened. The default is 10 minutes. The
+// ring keeps a retired signing key at least this long (see Ring.Sweep), so a
+// token stays verifiable for its whole life across key rotations.
 const (
-	maxEnrollLifetime     = 30 * time.Minute
+	maxEnrollLifetime     = 24 * time.Hour
 	defaultEnrollLifetime = 10 * time.Minute
 )
+
+// MaxEnrollLifetime is the longest lifetime IssueEnrollment accepts.
+const MaxEnrollLifetime = maxEnrollLifetime
+
+// ErrEnrollmentLifetime refuses a requested lifetime above maxEnrollLifetime.
+var ErrEnrollmentLifetime = fmt.Errorf("token: enrollment token lifetime exceeds the maximum of %s", maxEnrollLifetime)
 
 // Time-window refusals of an otherwise authentic enrollment token (good
 // signature, kid, issuer and audience). VerifyEnrollment wraps them so the
@@ -47,13 +57,18 @@ type EnrollGrant struct {
 }
 
 // IssueEnrollment signs a single-use enrollment token authorising enrollment of
-// spiffePaths under tenantID, valid for ttl (clamped to maxEnrollLifetime).
+// spiffePaths under tenantID, valid for ttl: ttl <= 0 means the default (10
+// min); a ttl above maxEnrollLifetime (24 h) is refused with
+// ErrEnrollmentLifetime.
 func (i *Issuer) IssueEnrollment(tenantID string, spiffePaths []string, ttl time.Duration) (string, EnrollGrant, error) {
 	if tenantID == "" || len(spiffePaths) == 0 {
 		return "", EnrollGrant{}, errors.New("token: tenant and spiffe paths are required")
 	}
-	if ttl <= 0 || ttl > maxEnrollLifetime {
+	switch {
+	case ttl <= 0:
 		ttl = defaultEnrollLifetime
+	case ttl > maxEnrollLifetime:
+		return "", EnrollGrant{}, ErrEnrollmentLifetime
 	}
 	k, err := i.Ring.active()
 	if err != nil {

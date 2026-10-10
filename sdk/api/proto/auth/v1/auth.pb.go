@@ -990,6 +990,102 @@ func (x *MintEnrollmentTokenResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type TokenStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Jti           string                 `protobuf:"bytes,1,opt,name=jti,proto3" json:"jti,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenStatusRequest) Reset() {
+	*x = TokenStatusRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenStatusRequest) ProtoMessage() {}
+
+func (x *TokenStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenStatusRequest.ProtoReflect.Descriptor instead.
+func (*TokenStatusRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TokenStatusRequest) GetJti() string {
+	if x != nil {
+		return x.Jti
+	}
+	return ""
+}
+
+type TokenStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Consumed      bool                   `protobuf:"varint,1,opt,name=consumed,proto3" json:"consumed,omitempty"`
+	ConsumedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=consumed_at,json=consumedAt,proto3" json:"consumed_at,omitempty"` // unset when not consumed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenStatusResponse) Reset() {
+	*x = TokenStatusResponse{}
+	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenStatusResponse) ProtoMessage() {}
+
+func (x *TokenStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenStatusResponse.ProtoReflect.Descriptor instead.
+func (*TokenStatusResponse) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *TokenStatusResponse) GetConsumed() bool {
+	if x != nil {
+		return x.Consumed
+	}
+	return false
+}
+
+func (x *TokenStatusResponse) GetConsumedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ConsumedAt
+	}
+	return nil
+}
+
 type VerifyEnrollmentTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -999,7 +1095,7 @@ type VerifyEnrollmentTokenRequest struct {
 
 func (x *VerifyEnrollmentTokenRequest) Reset() {
 	*x = VerifyEnrollmentTokenRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_auth_v1_auth_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1011,7 +1107,7 @@ func (x *VerifyEnrollmentTokenRequest) String() string {
 func (*VerifyEnrollmentTokenRequest) ProtoMessage() {}
 
 func (x *VerifyEnrollmentTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[16]
+	mi := &file_auth_v1_auth_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1024,7 +1120,7 @@ func (x *VerifyEnrollmentTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyEnrollmentTokenRequest.ProtoReflect.Descriptor instead.
 func (*VerifyEnrollmentTokenRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{16}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *VerifyEnrollmentTokenRequest) GetToken() string {
@@ -1045,7 +1141,7 @@ type VerifyEnrollmentTokenResponse struct {
 
 func (x *VerifyEnrollmentTokenResponse) Reset() {
 	*x = VerifyEnrollmentTokenResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_auth_v1_auth_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1057,7 +1153,7 @@ func (x *VerifyEnrollmentTokenResponse) String() string {
 func (*VerifyEnrollmentTokenResponse) ProtoMessage() {}
 
 func (x *VerifyEnrollmentTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[17]
+	mi := &file_auth_v1_auth_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1070,7 +1166,7 @@ func (x *VerifyEnrollmentTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyEnrollmentTokenResponse.ProtoReflect.Descriptor instead.
 func (*VerifyEnrollmentTokenResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{17}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *VerifyEnrollmentTokenResponse) GetTenantId() string {
@@ -1111,7 +1207,7 @@ type CheckRequest struct {
 
 func (x *CheckRequest) Reset() {
 	*x = CheckRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_auth_v1_auth_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1219,7 @@ func (x *CheckRequest) String() string {
 func (*CheckRequest) ProtoMessage() {}
 
 func (x *CheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[18]
+	mi := &file_auth_v1_auth_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1232,7 @@ func (x *CheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
 func (*CheckRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{18}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CheckRequest) GetTenantId() string {
@@ -1192,7 +1288,7 @@ type CheckResponse struct {
 
 func (x *CheckResponse) Reset() {
 	*x = CheckResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[19]
+	mi := &file_auth_v1_auth_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1300,7 @@ func (x *CheckResponse) String() string {
 func (*CheckResponse) ProtoMessage() {}
 
 func (x *CheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[19]
+	mi := &file_auth_v1_auth_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1313,7 @@ func (x *CheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
 func (*CheckResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{19}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CheckResponse) GetAllowed() bool {
@@ -1252,7 +1348,7 @@ type BatchCheckRequest struct {
 
 func (x *BatchCheckRequest) Reset() {
 	*x = BatchCheckRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[20]
+	mi := &file_auth_v1_auth_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1264,7 +1360,7 @@ func (x *BatchCheckRequest) String() string {
 func (*BatchCheckRequest) ProtoMessage() {}
 
 func (x *BatchCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[20]
+	mi := &file_auth_v1_auth_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1277,7 +1373,7 @@ func (x *BatchCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCheckRequest.ProtoReflect.Descriptor instead.
 func (*BatchCheckRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{20}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *BatchCheckRequest) GetTenantId() string {
@@ -1312,7 +1408,7 @@ type PermissionRef struct {
 
 func (x *PermissionRef) Reset() {
 	*x = PermissionRef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[21]
+	mi := &file_auth_v1_auth_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1324,7 +1420,7 @@ func (x *PermissionRef) String() string {
 func (*PermissionRef) ProtoMessage() {}
 
 func (x *PermissionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[21]
+	mi := &file_auth_v1_auth_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1337,7 +1433,7 @@ func (x *PermissionRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionRef.ProtoReflect.Descriptor instead.
 func (*PermissionRef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{21}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PermissionRef) GetResource() string {
@@ -1370,7 +1466,7 @@ type BatchCheckResponse struct {
 
 func (x *BatchCheckResponse) Reset() {
 	*x = BatchCheckResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[22]
+	mi := &file_auth_v1_auth_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1382,7 +1478,7 @@ func (x *BatchCheckResponse) String() string {
 func (*BatchCheckResponse) ProtoMessage() {}
 
 func (x *BatchCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[22]
+	mi := &file_auth_v1_auth_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1395,7 +1491,7 @@ func (x *BatchCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCheckResponse.ProtoReflect.Descriptor instead.
 func (*BatchCheckResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{22}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *BatchCheckResponse) GetResults() []*CheckResponse {
@@ -1435,7 +1531,7 @@ type RegisterPermissionsRequest struct {
 
 func (x *RegisterPermissionsRequest) Reset() {
 	*x = RegisterPermissionsRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[23]
+	mi := &file_auth_v1_auth_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1447,7 +1543,7 @@ func (x *RegisterPermissionsRequest) String() string {
 func (*RegisterPermissionsRequest) ProtoMessage() {}
 
 func (x *RegisterPermissionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[23]
+	mi := &file_auth_v1_auth_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1460,7 +1556,7 @@ func (x *RegisterPermissionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPermissionsRequest.ProtoReflect.Descriptor instead.
 func (*RegisterPermissionsRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{23}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RegisterPermissionsRequest) GetPermissions() []*PermissionDef {
@@ -1532,7 +1628,7 @@ type ModuleRoleDef struct {
 
 func (x *ModuleRoleDef) Reset() {
 	*x = ModuleRoleDef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	mi := &file_auth_v1_auth_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1544,7 +1640,7 @@ func (x *ModuleRoleDef) String() string {
 func (*ModuleRoleDef) ProtoMessage() {}
 
 func (x *ModuleRoleDef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[24]
+	mi := &file_auth_v1_auth_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1557,7 +1653,7 @@ func (x *ModuleRoleDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModuleRoleDef.ProtoReflect.Descriptor instead.
 func (*ModuleRoleDef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{24}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ModuleRoleDef) GetSlug() string {
@@ -1598,7 +1694,7 @@ type BuiltinGrant struct {
 
 func (x *BuiltinGrant) Reset() {
 	*x = BuiltinGrant{}
-	mi := &file_auth_v1_auth_proto_msgTypes[25]
+	mi := &file_auth_v1_auth_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1610,7 +1706,7 @@ func (x *BuiltinGrant) String() string {
 func (*BuiltinGrant) ProtoMessage() {}
 
 func (x *BuiltinGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[25]
+	mi := &file_auth_v1_auth_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1623,7 +1719,7 @@ func (x *BuiltinGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuiltinGrant.ProtoReflect.Descriptor instead.
 func (*BuiltinGrant) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{25}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BuiltinGrant) GetRole() string {
@@ -1651,7 +1747,7 @@ type PermissionDef struct {
 
 func (x *PermissionDef) Reset() {
 	*x = PermissionDef{}
-	mi := &file_auth_v1_auth_proto_msgTypes[26]
+	mi := &file_auth_v1_auth_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1663,7 +1759,7 @@ func (x *PermissionDef) String() string {
 func (*PermissionDef) ProtoMessage() {}
 
 func (x *PermissionDef) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[26]
+	mi := &file_auth_v1_auth_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1676,7 +1772,7 @@ func (x *PermissionDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionDef.ProtoReflect.Descriptor instead.
 func (*PermissionDef) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{26}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PermissionDef) GetResource() string {
@@ -1714,7 +1810,7 @@ type RegisterPermissionsResponse struct {
 
 func (x *RegisterPermissionsResponse) Reset() {
 	*x = RegisterPermissionsResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[27]
+	mi := &file_auth_v1_auth_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1726,7 +1822,7 @@ func (x *RegisterPermissionsResponse) String() string {
 func (*RegisterPermissionsResponse) ProtoMessage() {}
 
 func (x *RegisterPermissionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[27]
+	mi := &file_auth_v1_auth_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1739,7 +1835,7 @@ func (x *RegisterPermissionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPermissionsResponse.ProtoReflect.Descriptor instead.
 func (*RegisterPermissionsResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{27}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RegisterPermissionsResponse) GetRegistered() uint32 {
@@ -1797,7 +1893,7 @@ type SkippedGrant struct {
 
 func (x *SkippedGrant) Reset() {
 	*x = SkippedGrant{}
-	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	mi := &file_auth_v1_auth_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1809,7 +1905,7 @@ func (x *SkippedGrant) String() string {
 func (*SkippedGrant) ProtoMessage() {}
 
 func (x *SkippedGrant) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[28]
+	mi := &file_auth_v1_auth_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1822,7 +1918,7 @@ func (x *SkippedGrant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkippedGrant.ProtoReflect.Descriptor instead.
 func (*SkippedGrant) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{28}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SkippedGrant) GetRole() string {
@@ -1864,7 +1960,7 @@ type RoleError struct {
 
 func (x *RoleError) Reset() {
 	*x = RoleError{}
-	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	mi := &file_auth_v1_auth_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +1972,7 @@ func (x *RoleError) String() string {
 func (*RoleError) ProtoMessage() {}
 
 func (x *RoleError) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[29]
+	mi := &file_auth_v1_auth_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +1985,7 @@ func (x *RoleError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleError.ProtoReflect.Descriptor instead.
 func (*RoleError) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{29}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RoleError) GetSlug() string {
@@ -1916,7 +2012,7 @@ type LookupContactsRequest struct {
 
 func (x *LookupContactsRequest) Reset() {
 	*x = LookupContactsRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[30]
+	mi := &file_auth_v1_auth_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1928,7 +2024,7 @@ func (x *LookupContactsRequest) String() string {
 func (*LookupContactsRequest) ProtoMessage() {}
 
 func (x *LookupContactsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[30]
+	mi := &file_auth_v1_auth_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1941,7 +2037,7 @@ func (x *LookupContactsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupContactsRequest.ProtoReflect.Descriptor instead.
 func (*LookupContactsRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{30}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *LookupContactsRequest) GetTenantId() string {
@@ -1969,7 +2065,7 @@ type Contact struct {
 
 func (x *Contact) Reset() {
 	*x = Contact{}
-	mi := &file_auth_v1_auth_proto_msgTypes[31]
+	mi := &file_auth_v1_auth_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2077,7 @@ func (x *Contact) String() string {
 func (*Contact) ProtoMessage() {}
 
 func (x *Contact) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[31]
+	mi := &file_auth_v1_auth_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2090,7 @@ func (x *Contact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Contact.ProtoReflect.Descriptor instead.
 func (*Contact) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{31}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Contact) GetUserId() string {
@@ -2027,7 +2123,7 @@ type LookupContactsResponse struct {
 
 func (x *LookupContactsResponse) Reset() {
 	*x = LookupContactsResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[32]
+	mi := &file_auth_v1_auth_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2039,7 +2135,7 @@ func (x *LookupContactsResponse) String() string {
 func (*LookupContactsResponse) ProtoMessage() {}
 
 func (x *LookupContactsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[32]
+	mi := &file_auth_v1_auth_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2052,7 +2148,7 @@ func (x *LookupContactsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupContactsResponse.ProtoReflect.Descriptor instead.
 func (*LookupContactsResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{32}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *LookupContactsResponse) GetContacts() []*Contact {
@@ -2074,7 +2170,7 @@ type ListMembersRequest struct {
 
 func (x *ListMembersRequest) Reset() {
 	*x = ListMembersRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[33]
+	mi := &file_auth_v1_auth_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2086,7 +2182,7 @@ func (x *ListMembersRequest) String() string {
 func (*ListMembersRequest) ProtoMessage() {}
 
 func (x *ListMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[33]
+	mi := &file_auth_v1_auth_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2099,7 +2195,7 @@ func (x *ListMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembersRequest.ProtoReflect.Descriptor instead.
 func (*ListMembersRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{33}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListMembersRequest) GetTenantId() string {
@@ -2140,7 +2236,7 @@ type ListMembersResponse struct {
 
 func (x *ListMembersResponse) Reset() {
 	*x = ListMembersResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[34]
+	mi := &file_auth_v1_auth_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2152,7 +2248,7 @@ func (x *ListMembersResponse) String() string {
 func (*ListMembersResponse) ProtoMessage() {}
 
 func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[34]
+	mi := &file_auth_v1_auth_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2165,7 +2261,7 @@ func (x *ListMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembersResponse.ProtoReflect.Descriptor instead.
 func (*ListMembersResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{34}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListMembersResponse) GetUserIds() []string {
@@ -2192,7 +2288,7 @@ type LookupProfilesRequest struct {
 
 func (x *LookupProfilesRequest) Reset() {
 	*x = LookupProfilesRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[35]
+	mi := &file_auth_v1_auth_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2204,7 +2300,7 @@ func (x *LookupProfilesRequest) String() string {
 func (*LookupProfilesRequest) ProtoMessage() {}
 
 func (x *LookupProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[35]
+	mi := &file_auth_v1_auth_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2217,7 +2313,7 @@ func (x *LookupProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupProfilesRequest.ProtoReflect.Descriptor instead.
 func (*LookupProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{35}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *LookupProfilesRequest) GetTenantId() string {
@@ -2245,7 +2341,7 @@ type PublicProfile struct {
 
 func (x *PublicProfile) Reset() {
 	*x = PublicProfile{}
-	mi := &file_auth_v1_auth_proto_msgTypes[36]
+	mi := &file_auth_v1_auth_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2257,7 +2353,7 @@ func (x *PublicProfile) String() string {
 func (*PublicProfile) ProtoMessage() {}
 
 func (x *PublicProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[36]
+	mi := &file_auth_v1_auth_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2270,7 +2366,7 @@ func (x *PublicProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicProfile.ProtoReflect.Descriptor instead.
 func (*PublicProfile) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{36}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PublicProfile) GetUserId() string {
@@ -2303,7 +2399,7 @@ type LookupProfilesResponse struct {
 
 func (x *LookupProfilesResponse) Reset() {
 	*x = LookupProfilesResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[37]
+	mi := &file_auth_v1_auth_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2315,7 +2411,7 @@ func (x *LookupProfilesResponse) String() string {
 func (*LookupProfilesResponse) ProtoMessage() {}
 
 func (x *LookupProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[37]
+	mi := &file_auth_v1_auth_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2328,7 +2424,7 @@ func (x *LookupProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupProfilesResponse.ProtoReflect.Descriptor instead.
 func (*LookupProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{37}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *LookupProfilesResponse) GetProfiles() []*PublicProfile {
@@ -2420,7 +2516,13 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x1bMintEnrollmentTokenResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
-	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"4\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"&\n" +
+	"\x12TokenStatusRequest\x12\x10\n" +
+	"\x03jti\x18\x01 \x01(\tR\x03jti\"n\n" +
+	"\x13TokenStatusResponse\x12\x1a\n" +
+	"\bconsumed\x18\x01 \x01(\bR\bconsumed\x12;\n" +
+	"\vconsumed_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"consumedAt\"4\n" +
 	"\x1cVerifyEnrollmentTokenRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\"q\n" +
 	"\x1dVerifyEnrollmentTokenResponse\x12\x1b\n" +
@@ -2527,11 +2629,12 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
 	"Introspect\x12\x1a.auth.v1.IntrospectRequest\x1a\x1b.auth.v1.IntrospectResponse\x12?\n" +
 	"\bExchange\x12\x18.auth.v1.ExchangeRequest\x1a\x19.auth.v1.ExchangeResponse\x12B\n" +
-	"\tMintToken\x12\x19.auth.v1.MintTokenRequest\x1a\x1a.auth.v1.MintTokenResponse2\xd6\x01\n" +
+	"\tMintToken\x12\x19.auth.v1.MintTokenRequest\x1a\x1a.auth.v1.MintTokenResponse2\xa0\x02\n" +
 	"\n" +
 	"Enrollment\x12`\n" +
 	"\x13MintEnrollmentToken\x12#.auth.v1.MintEnrollmentTokenRequest\x1a$.auth.v1.MintEnrollmentTokenResponse\x12f\n" +
-	"\x15VerifyEnrollmentToken\x12%.auth.v1.VerifyEnrollmentTokenRequest\x1a&.auth.v1.VerifyEnrollmentTokenResponse2\xf0\x01\n" +
+	"\x15VerifyEnrollmentToken\x12%.auth.v1.VerifyEnrollmentTokenRequest\x1a&.auth.v1.VerifyEnrollmentTokenResponse\x12H\n" +
+	"\vTokenStatus\x12\x1b.auth.v1.TokenStatusRequest\x1a\x1c.auth.v1.TokenStatusResponse2\xf0\x01\n" +
 	"\rAuthorization\x126\n" +
 	"\x05Check\x12\x15.auth.v1.CheckRequest\x1a\x16.auth.v1.CheckResponse\x12E\n" +
 	"\n" +
@@ -2554,7 +2657,7 @@ func file_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_auth_v1_auth_proto_rawDescData
 }
 
-var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_auth_v1_auth_proto_goTypes = []any{
 	(*ListKeysRequest)(nil),               // 0: auth.v1.ListKeysRequest
 	(*ListKeysResponse)(nil),              // 1: auth.v1.ListKeysResponse
@@ -2572,85 +2675,90 @@ var file_auth_v1_auth_proto_goTypes = []any{
 	(*MintTokenResponse)(nil),             // 13: auth.v1.MintTokenResponse
 	(*MintEnrollmentTokenRequest)(nil),    // 14: auth.v1.MintEnrollmentTokenRequest
 	(*MintEnrollmentTokenResponse)(nil),   // 15: auth.v1.MintEnrollmentTokenResponse
-	(*VerifyEnrollmentTokenRequest)(nil),  // 16: auth.v1.VerifyEnrollmentTokenRequest
-	(*VerifyEnrollmentTokenResponse)(nil), // 17: auth.v1.VerifyEnrollmentTokenResponse
-	(*CheckRequest)(nil),                  // 18: auth.v1.CheckRequest
-	(*CheckResponse)(nil),                 // 19: auth.v1.CheckResponse
-	(*BatchCheckRequest)(nil),             // 20: auth.v1.BatchCheckRequest
-	(*PermissionRef)(nil),                 // 21: auth.v1.PermissionRef
-	(*BatchCheckResponse)(nil),            // 22: auth.v1.BatchCheckResponse
-	(*RegisterPermissionsRequest)(nil),    // 23: auth.v1.RegisterPermissionsRequest
-	(*ModuleRoleDef)(nil),                 // 24: auth.v1.ModuleRoleDef
-	(*BuiltinGrant)(nil),                  // 25: auth.v1.BuiltinGrant
-	(*PermissionDef)(nil),                 // 26: auth.v1.PermissionDef
-	(*RegisterPermissionsResponse)(nil),   // 27: auth.v1.RegisterPermissionsResponse
-	(*SkippedGrant)(nil),                  // 28: auth.v1.SkippedGrant
-	(*RoleError)(nil),                     // 29: auth.v1.RoleError
-	(*LookupContactsRequest)(nil),         // 30: auth.v1.LookupContactsRequest
-	(*Contact)(nil),                       // 31: auth.v1.Contact
-	(*LookupContactsResponse)(nil),        // 32: auth.v1.LookupContactsResponse
-	(*ListMembersRequest)(nil),            // 33: auth.v1.ListMembersRequest
-	(*ListMembersResponse)(nil),           // 34: auth.v1.ListMembersResponse
-	(*LookupProfilesRequest)(nil),         // 35: auth.v1.LookupProfilesRequest
-	(*PublicProfile)(nil),                 // 36: auth.v1.PublicProfile
-	(*LookupProfilesResponse)(nil),        // 37: auth.v1.LookupProfilesResponse
-	nil,                                   // 38: auth.v1.CheckRequest.ContextEntry
-	(*timestamppb.Timestamp)(nil),         // 39: google.protobuf.Timestamp
+	(*TokenStatusRequest)(nil),            // 16: auth.v1.TokenStatusRequest
+	(*TokenStatusResponse)(nil),           // 17: auth.v1.TokenStatusResponse
+	(*VerifyEnrollmentTokenRequest)(nil),  // 18: auth.v1.VerifyEnrollmentTokenRequest
+	(*VerifyEnrollmentTokenResponse)(nil), // 19: auth.v1.VerifyEnrollmentTokenResponse
+	(*CheckRequest)(nil),                  // 20: auth.v1.CheckRequest
+	(*CheckResponse)(nil),                 // 21: auth.v1.CheckResponse
+	(*BatchCheckRequest)(nil),             // 22: auth.v1.BatchCheckRequest
+	(*PermissionRef)(nil),                 // 23: auth.v1.PermissionRef
+	(*BatchCheckResponse)(nil),            // 24: auth.v1.BatchCheckResponse
+	(*RegisterPermissionsRequest)(nil),    // 25: auth.v1.RegisterPermissionsRequest
+	(*ModuleRoleDef)(nil),                 // 26: auth.v1.ModuleRoleDef
+	(*BuiltinGrant)(nil),                  // 27: auth.v1.BuiltinGrant
+	(*PermissionDef)(nil),                 // 28: auth.v1.PermissionDef
+	(*RegisterPermissionsResponse)(nil),   // 29: auth.v1.RegisterPermissionsResponse
+	(*SkippedGrant)(nil),                  // 30: auth.v1.SkippedGrant
+	(*RoleError)(nil),                     // 31: auth.v1.RoleError
+	(*LookupContactsRequest)(nil),         // 32: auth.v1.LookupContactsRequest
+	(*Contact)(nil),                       // 33: auth.v1.Contact
+	(*LookupContactsResponse)(nil),        // 34: auth.v1.LookupContactsResponse
+	(*ListMembersRequest)(nil),            // 35: auth.v1.ListMembersRequest
+	(*ListMembersResponse)(nil),           // 36: auth.v1.ListMembersResponse
+	(*LookupProfilesRequest)(nil),         // 37: auth.v1.LookupProfilesRequest
+	(*PublicProfile)(nil),                 // 38: auth.v1.PublicProfile
+	(*LookupProfilesResponse)(nil),        // 39: auth.v1.LookupProfilesResponse
+	nil,                                   // 40: auth.v1.CheckRequest.ContextEntry
+	(*timestamppb.Timestamp)(nil),         // 41: google.protobuf.Timestamp
 }
 var file_auth_v1_auth_proto_depIdxs = []int32{
 	2,  // 0: auth.v1.ListKeysResponse.keys:type_name -> auth.v1.Key
-	39, // 1: auth.v1.Key.not_after:type_name -> google.protobuf.Timestamp
+	41, // 1: auth.v1.Key.not_after:type_name -> google.protobuf.Timestamp
 	6,  // 2: auth.v1.RevokedSinceResponse.revocations:type_name -> auth.v1.Revocation
-	39, // 3: auth.v1.Revocation.ts:type_name -> google.protobuf.Timestamp
-	39, // 4: auth.v1.IntrospectResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 3: auth.v1.Revocation.ts:type_name -> google.protobuf.Timestamp
+	41, // 4: auth.v1.IntrospectResponse.expires_at:type_name -> google.protobuf.Timestamp
 	10, // 5: auth.v1.ExchangeResponse.identity:type_name -> auth.v1.SessionIdentity
-	39, // 6: auth.v1.ExchangeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 6: auth.v1.ExchangeResponse.expires_at:type_name -> google.protobuf.Timestamp
 	10, // 7: auth.v1.MintTokenResponse.identity:type_name -> auth.v1.SessionIdentity
-	39, // 8: auth.v1.MintTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
-	39, // 9: auth.v1.MintEnrollmentTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
-	38, // 10: auth.v1.CheckRequest.context:type_name -> auth.v1.CheckRequest.ContextEntry
-	21, // 11: auth.v1.BatchCheckRequest.permissions:type_name -> auth.v1.PermissionRef
-	19, // 12: auth.v1.BatchCheckResponse.results:type_name -> auth.v1.CheckResponse
-	26, // 13: auth.v1.RegisterPermissionsRequest.permissions:type_name -> auth.v1.PermissionDef
-	25, // 14: auth.v1.RegisterPermissionsRequest.builtin_grants:type_name -> auth.v1.BuiltinGrant
-	24, // 15: auth.v1.RegisterPermissionsRequest.roles:type_name -> auth.v1.ModuleRoleDef
-	28, // 16: auth.v1.RegisterPermissionsResponse.skipped_grants:type_name -> auth.v1.SkippedGrant
-	29, // 17: auth.v1.RegisterPermissionsResponse.role_errors:type_name -> auth.v1.RoleError
-	31, // 18: auth.v1.LookupContactsResponse.contacts:type_name -> auth.v1.Contact
-	36, // 19: auth.v1.LookupProfilesResponse.profiles:type_name -> auth.v1.PublicProfile
-	0,  // 20: auth.v1.Keys.List:input_type -> auth.v1.ListKeysRequest
-	3,  // 21: auth.v1.Sessions.RevokedSince:input_type -> auth.v1.RevokedSinceRequest
-	5,  // 22: auth.v1.Sessions.Watch:input_type -> auth.v1.WatchRequest
-	7,  // 23: auth.v1.Sessions.Introspect:input_type -> auth.v1.IntrospectRequest
-	9,  // 24: auth.v1.Sessions.Exchange:input_type -> auth.v1.ExchangeRequest
-	12, // 25: auth.v1.Sessions.MintToken:input_type -> auth.v1.MintTokenRequest
-	14, // 26: auth.v1.Enrollment.MintEnrollmentToken:input_type -> auth.v1.MintEnrollmentTokenRequest
-	16, // 27: auth.v1.Enrollment.VerifyEnrollmentToken:input_type -> auth.v1.VerifyEnrollmentTokenRequest
-	18, // 28: auth.v1.Authorization.Check:input_type -> auth.v1.CheckRequest
-	20, // 29: auth.v1.Authorization.BatchCheck:input_type -> auth.v1.BatchCheckRequest
-	23, // 30: auth.v1.Authorization.RegisterPermissions:input_type -> auth.v1.RegisterPermissionsRequest
-	35, // 31: auth.v1.Profiles.Lookup:input_type -> auth.v1.LookupProfilesRequest
-	33, // 32: auth.v1.Profiles.ListMembers:input_type -> auth.v1.ListMembersRequest
-	30, // 33: auth.v1.Profiles.Contacts:input_type -> auth.v1.LookupContactsRequest
-	1,  // 34: auth.v1.Keys.List:output_type -> auth.v1.ListKeysResponse
-	4,  // 35: auth.v1.Sessions.RevokedSince:output_type -> auth.v1.RevokedSinceResponse
-	6,  // 36: auth.v1.Sessions.Watch:output_type -> auth.v1.Revocation
-	8,  // 37: auth.v1.Sessions.Introspect:output_type -> auth.v1.IntrospectResponse
-	11, // 38: auth.v1.Sessions.Exchange:output_type -> auth.v1.ExchangeResponse
-	13, // 39: auth.v1.Sessions.MintToken:output_type -> auth.v1.MintTokenResponse
-	15, // 40: auth.v1.Enrollment.MintEnrollmentToken:output_type -> auth.v1.MintEnrollmentTokenResponse
-	17, // 41: auth.v1.Enrollment.VerifyEnrollmentToken:output_type -> auth.v1.VerifyEnrollmentTokenResponse
-	19, // 42: auth.v1.Authorization.Check:output_type -> auth.v1.CheckResponse
-	22, // 43: auth.v1.Authorization.BatchCheck:output_type -> auth.v1.BatchCheckResponse
-	27, // 44: auth.v1.Authorization.RegisterPermissions:output_type -> auth.v1.RegisterPermissionsResponse
-	37, // 45: auth.v1.Profiles.Lookup:output_type -> auth.v1.LookupProfilesResponse
-	34, // 46: auth.v1.Profiles.ListMembers:output_type -> auth.v1.ListMembersResponse
-	32, // 47: auth.v1.Profiles.Contacts:output_type -> auth.v1.LookupContactsResponse
-	34, // [34:48] is the sub-list for method output_type
-	20, // [20:34] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	41, // 8: auth.v1.MintTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 9: auth.v1.MintEnrollmentTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	41, // 10: auth.v1.TokenStatusResponse.consumed_at:type_name -> google.protobuf.Timestamp
+	40, // 11: auth.v1.CheckRequest.context:type_name -> auth.v1.CheckRequest.ContextEntry
+	23, // 12: auth.v1.BatchCheckRequest.permissions:type_name -> auth.v1.PermissionRef
+	21, // 13: auth.v1.BatchCheckResponse.results:type_name -> auth.v1.CheckResponse
+	28, // 14: auth.v1.RegisterPermissionsRequest.permissions:type_name -> auth.v1.PermissionDef
+	27, // 15: auth.v1.RegisterPermissionsRequest.builtin_grants:type_name -> auth.v1.BuiltinGrant
+	26, // 16: auth.v1.RegisterPermissionsRequest.roles:type_name -> auth.v1.ModuleRoleDef
+	30, // 17: auth.v1.RegisterPermissionsResponse.skipped_grants:type_name -> auth.v1.SkippedGrant
+	31, // 18: auth.v1.RegisterPermissionsResponse.role_errors:type_name -> auth.v1.RoleError
+	33, // 19: auth.v1.LookupContactsResponse.contacts:type_name -> auth.v1.Contact
+	38, // 20: auth.v1.LookupProfilesResponse.profiles:type_name -> auth.v1.PublicProfile
+	0,  // 21: auth.v1.Keys.List:input_type -> auth.v1.ListKeysRequest
+	3,  // 22: auth.v1.Sessions.RevokedSince:input_type -> auth.v1.RevokedSinceRequest
+	5,  // 23: auth.v1.Sessions.Watch:input_type -> auth.v1.WatchRequest
+	7,  // 24: auth.v1.Sessions.Introspect:input_type -> auth.v1.IntrospectRequest
+	9,  // 25: auth.v1.Sessions.Exchange:input_type -> auth.v1.ExchangeRequest
+	12, // 26: auth.v1.Sessions.MintToken:input_type -> auth.v1.MintTokenRequest
+	14, // 27: auth.v1.Enrollment.MintEnrollmentToken:input_type -> auth.v1.MintEnrollmentTokenRequest
+	18, // 28: auth.v1.Enrollment.VerifyEnrollmentToken:input_type -> auth.v1.VerifyEnrollmentTokenRequest
+	16, // 29: auth.v1.Enrollment.TokenStatus:input_type -> auth.v1.TokenStatusRequest
+	20, // 30: auth.v1.Authorization.Check:input_type -> auth.v1.CheckRequest
+	22, // 31: auth.v1.Authorization.BatchCheck:input_type -> auth.v1.BatchCheckRequest
+	25, // 32: auth.v1.Authorization.RegisterPermissions:input_type -> auth.v1.RegisterPermissionsRequest
+	37, // 33: auth.v1.Profiles.Lookup:input_type -> auth.v1.LookupProfilesRequest
+	35, // 34: auth.v1.Profiles.ListMembers:input_type -> auth.v1.ListMembersRequest
+	32, // 35: auth.v1.Profiles.Contacts:input_type -> auth.v1.LookupContactsRequest
+	1,  // 36: auth.v1.Keys.List:output_type -> auth.v1.ListKeysResponse
+	4,  // 37: auth.v1.Sessions.RevokedSince:output_type -> auth.v1.RevokedSinceResponse
+	6,  // 38: auth.v1.Sessions.Watch:output_type -> auth.v1.Revocation
+	8,  // 39: auth.v1.Sessions.Introspect:output_type -> auth.v1.IntrospectResponse
+	11, // 40: auth.v1.Sessions.Exchange:output_type -> auth.v1.ExchangeResponse
+	13, // 41: auth.v1.Sessions.MintToken:output_type -> auth.v1.MintTokenResponse
+	15, // 42: auth.v1.Enrollment.MintEnrollmentToken:output_type -> auth.v1.MintEnrollmentTokenResponse
+	19, // 43: auth.v1.Enrollment.VerifyEnrollmentToken:output_type -> auth.v1.VerifyEnrollmentTokenResponse
+	17, // 44: auth.v1.Enrollment.TokenStatus:output_type -> auth.v1.TokenStatusResponse
+	21, // 45: auth.v1.Authorization.Check:output_type -> auth.v1.CheckResponse
+	24, // 46: auth.v1.Authorization.BatchCheck:output_type -> auth.v1.BatchCheckResponse
+	29, // 47: auth.v1.Authorization.RegisterPermissions:output_type -> auth.v1.RegisterPermissionsResponse
+	39, // 48: auth.v1.Profiles.Lookup:output_type -> auth.v1.LookupProfilesResponse
+	36, // 49: auth.v1.Profiles.ListMembers:output_type -> auth.v1.ListMembersResponse
+	34, // 50: auth.v1.Profiles.Contacts:output_type -> auth.v1.LookupContactsResponse
+	36, // [36:51] is the sub-list for method output_type
+	21, // [21:36] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_auth_v1_auth_proto_init() }
@@ -2664,7 +2772,7 @@ func file_auth_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   39,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

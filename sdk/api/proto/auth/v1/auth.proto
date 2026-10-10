@@ -36,11 +36,17 @@ service Sessions {
 service Enrollment {
   // MintEnrollmentToken issues a single-use, short-lived token authorising the
   // enrollment of the given SPIFFE paths in a tenant (the credential a workload
-  // presents to lcm for its FIRST SVID). Policy: gateway/console identities only.
+  // presents to lcm for its FIRST SVID). ttl_seconds <= 0 means 10 minutes; at
+  // most 24 hours, a longer ttl is refused (InvalidArgument). Policy:
+  // gateway/console identities only.
   rpc MintEnrollmentToken(MintEnrollmentTokenRequest) returns (MintEnrollmentTokenResponse);
   // VerifyEnrollmentToken validates a token (signature, audience, expiry) and
   // BURNS its jti so it can be used at most once. Policy: the lcm identity only.
   rpc VerifyEnrollmentToken(VerifyEnrollmentTokenRequest) returns (VerifyEnrollmentTokenResponse);
+  // TokenStatus reports whether an enrollment token's jti has been used (burned
+  // by VerifyEnrollmentToken) and when. An unknown jti is consumed=false; a jti
+  // that is not a UUID is InvalidArgument. Policy: the gateway identity only.
+  rpc TokenStatus(TokenStatusRequest) returns (TokenStatusResponse);
 }
 
 service Authorization {
@@ -124,6 +130,13 @@ message MintEnrollmentTokenRequest {
 message MintEnrollmentTokenResponse {
   string token = 1;
   google.protobuf.Timestamp expires_at = 2;
+}
+message TokenStatusRequest {
+  string jti = 1;
+}
+message TokenStatusResponse {
+  bool consumed = 1;
+  google.protobuf.Timestamp consumed_at = 2; // unset when not consumed
 }
 message VerifyEnrollmentTokenRequest {
   string token = 1;

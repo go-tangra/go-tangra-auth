@@ -57,7 +57,7 @@ func TestEnrollmentFailures(t *testing.T) {
 	iss := NewIssuer(r, "https://auth.example.org")
 	iss.now = r.now
 
-	// Required inputs; an out-of-range ttl falls back to the default lifetime.
+	// Required inputs; ttl <= 0 means the default lifetime.
 	if _, _, err := iss.IssueEnrollment("", []string{"svc/x"}, time.Minute); err == nil {
 		t.Fatal("empty tenant accepted")
 	}
@@ -101,7 +101,7 @@ func TestEnrollmentFailures(t *testing.T) {
 	for name, s := range map[string]string{
 		"no kid":         sign(claims(time.Minute, "t1"), ""),
 		"unknown kid":    sign(claims(time.Minute, "t1"), "nope"),
-		"long lifetime":  sign(claims(time.Hour, "t1"), kid),
+		"long lifetime":  sign(claims(maxEnrollLifetime+time.Second, "t1"), kid),
 		"missing tenant": sign(claims(time.Minute, ""), kid),
 	} {
 		if _, err := iss.VerifyEnrollment(s); err == nil {
@@ -129,6 +129,75 @@ func TestEnrollmentFailures(t *testing.T) {
 	r.mu.Unlock()
 	if _, _, err := iss.IssueEnrollment("t1", []string{"svc/x"}, time.Minute); !errors.Is(err, ErrNoActiveKey) {
 		t.Fatalf("empty ring: %v", err)
+	}
+}
+
+// The lifetime is up to 24 h (the gateway's add-module join tokens); a longer
+// one is refused, never silently shortened; 0 or negative means the default.
+func TestEnrollmentLifetimeBounds(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	r, _ := newRing(t, &now)
+	iss := NewIssuer(r, "https://auth.example.org")
+	iss.now = r.now
+
+	if maxEnrollLifetime != 24*time.Hour || defaultEnrollLifetime != 10*time.Minute {
+		t.Fatalf("bounds: max %v default %v", maxEnrollLifetime, defaultEnrollLifetime)
+	}
+	tok, g, err := iss.IssueEnrollment("t1", []string{"svc/x"}, 24*time.Hour)
+	if err != nil || !g.ExpiresAt.Equal(now.Add(24*time.Hour)) {
+		t.Fatalf("24h: %v %v", g.ExpiresAt, err)
+	}
+	// It verifies until the end of its life.
+	now = now.Add(24*time.Hour - time.Minute)
+	if got, err := iss.VerifyEnrollment(tok); err != nil || got.JTI != g.JTI {
+		t.Fatalf("24h token near its end: %v", err)
+	}
+	now = now.Add(-(24*time.Hour - time.Minute))
+
+	for _, ttl := range []time.Duration{24*time.Hour + time.Second, 48 * time.Hour} {
+		s, _, err := iss.IssueEnrollment("t1", []string{"svc/x"}, ttl)
+		if !errors.Is(err, ErrEnrollmentLifetime) || s != "" {
+			t.Fatalf("ttl %v: %v", ttl, err)
+		}
+	}
+	for _, ttl := range []time.Duration{0, -time.Second} {
+		_, g, err := iss.IssueEnrollment("t1", []string{"svc/x"}, ttl)
+		if err != nil || !g.ExpiresAt.Equal(now.Add(10*time.Minute)) {
+			t.Fatalf("ttl %v: %v %v", ttl, g.ExpiresAt, err)
+		}
+	}
+}
+
+// A 24 h enrollment token minted just before a rotation stays verifiable for
+// its whole life: the retired key is kept until it could no longer matter.
+func TestEnrollmentSurvivesRotation(t *testing.T) {
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	r, _ := newRing(t, &now) // rotation every hour, retiring 10 min
+	iss := NewIssuer(r, "https://auth.example.org")
+	iss.now = r.now
+	first := r.Keys()[0].KID
+	now = now.Add(59 * time.Minute)
+	tok, _, err := iss.IssueEnrollment("t1", []string{"svc/x"}, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	minted := now
+	for now.Before(minted.Add(24*time.Hour - time.Minute)) {
+		now = now.Add(5 * time.Minute)
+		if err := r.Sweep(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := iss.VerifyEnrollment(tok); err != nil {
+		t.Fatalf("24h token after rotations: %v", err)
+	}
+	// Removed once its last token has expired (plus skew).
+	for now.Before(minted.Add(26 * time.Hour)) {
+		now = now.Add(5 * time.Minute)
+		_ = r.Sweep(t.Context())
+	}
+	if _, ok := r.PublicKey(first); ok {
+		t.Fatal("retired key kept forever")
 	}
 }
 

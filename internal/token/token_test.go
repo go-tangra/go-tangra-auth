@@ -197,10 +197,16 @@ func TestRotationStatesAndJWKS(t *testing.T) {
 	if _, ok := r.PublicKey(first); !ok {
 		t.Fatal("retired key must stay published")
 	}
-	// Forgotten only after the last possible token expired (15m + skew).
+	// Kept while an enrollment token (up to 24 h) it signed could be valid,
+	// forgotten only after that (+ skew).
 	now = now.Add(16 * time.Minute)
 	_ = r.Sweep(t.Context())
-	if _, ok := r.PublicKey(first); ok || ks.Len() != 1 {
+	if _, ok := r.PublicKey(first); !ok {
+		t.Fatal("retired key forgotten while an enrollment token could still be valid")
+	}
+	now = now.Add(24*time.Hour + time.Minute)
+	_ = r.Sweep(t.Context())
+	if _, ok := r.PublicKey(first); ok {
 		t.Fatalf("retired key still present (%d keys)", ks.Len())
 	}
 	// Reload from the store keeps the active key and unseals it.

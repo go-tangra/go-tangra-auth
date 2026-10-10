@@ -138,7 +138,7 @@ func TestRingDefaultsAndFailures(t *testing.T) {
 	if err := r.Sweep(ctx); err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(20 * time.Minute)
+	now = now.Add(maxEnrollLifetime + 2*time.Minute) // past the retired key's last enrollment token
 	fk.remove = true
 	if err := r.Sweep(ctx); err == nil {
 		t.Fatal("remove failure ignored")
