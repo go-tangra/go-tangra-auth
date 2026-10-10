@@ -71,6 +71,13 @@ the service-to-service channel the auth service itself runs on.
   them to the gateway identity and every call is audited as `token_exchanged`.
 - `Sessions/Introspect` exists for callers that cannot verify offline; every call
   is audited with the calling service as actor.
+- `Enrollment/MintEnrollmentToken` mints single-use lcm enrollment (join)
+  tokens (audience `lcm`, exact SPIFFE paths, default 10 min, at most 24 h; a
+  longer ttl is refused with `InvalidArgument`, never shortened).
+  `Enrollment/VerifyEnrollmentToken` (lcm only) burns the jti in
+  `enrollment_jti` (never removed before the token has expired), so a token is
+  usable once over its whole life. `Enrollment/TokenStatus` (gateway only)
+  reads that ledger: consumed and when, or not (unknown jti included).
 
 ## OAuth 2.1 code flow
 
@@ -495,7 +502,7 @@ for the password.
 
 - Browser API: `api/openapi/console.yaml` (validated at runtime; every route
   is mounted from the document and the contract test refuses drift).
-- Service API: `api/proto/auth/v1/auth.proto` (`Keys`, `Sessions`,
-  `Authorization`) over the Freya channel, policed by `deploy/policy.yaml`.
+- Service API: `sdk/api/proto/auth/v1/auth.proto` (`Keys`, `Sessions`,
+  `Authorization`, `Enrollment`, `Profiles`) over the Freya channel, policed by `deploy/policy.yaml`.
 - Token, session and revocation semantics:
   `specs/002-tenant-auth-service/contracts/token.md`.

@@ -4,7 +4,11 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,9 +31,24 @@ func TestEnrollmentTokenMintVerifyReplay(t *testing.T) {
 	if err != nil || mint.GetToken() == "" {
 		t.Fatalf("mint: %v", err)
 	}
+	// TokenStatus: an unknown jti and a minted but unused one are unconsumed.
+	jti := enrollJTI(t, mint.GetToken())
+	for _, j := range []string{jti, "00000000-0000-0000-0000-0000000000ff"} {
+		if st, err := srv.TokenStatus(ctx, &authv1.TokenStatusRequest{Jti: j}); err != nil || st.GetConsumed() || st.GetConsumedAt() != nil {
+			t.Fatalf("status before use %s: %+v %v", j, st, err)
+		}
+	}
+	before := time.Now().Add(-time.Minute)
 	v, err := srv.VerifyEnrollmentToken(ctx, &authv1.VerifyEnrollmentTokenRequest{Token: mint.GetToken()})
-	if err != nil || v.GetTenantId() != tenant || len(v.GetSpiffePaths()) != 1 || v.GetSpiffePaths()[0] != sid || v.GetJti() == "" {
+	if err != nil || v.GetTenantId() != tenant || len(v.GetSpiffePaths()) != 1 || v.GetSpiffePaths()[0] != sid || v.GetJti() != jti {
 		t.Fatalf("verify: %+v %v", v, err)
+	}
+	// ... and consumed, with its time, once verified.
+	if st, err := srv.TokenStatus(ctx, &authv1.TokenStatusRequest{Jti: jti}); err != nil || !st.GetConsumed() || st.GetConsumedAt().AsTime().Before(before) || st.GetConsumedAt().AsTime().After(time.Now().Add(time.Minute)) {
+		t.Fatalf("status after use: %+v %v", st, err)
+	}
+	if _, err := srv.TokenStatus(ctx, &authv1.TokenStatusRequest{Jti: "nope"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("malformed jti: %v", err)
 	}
 	// replay: the jti is burned, so a second verify must fail single-use.
 	// The status message is the closed reason lcm relays to the workload.
@@ -42,4 +61,21 @@ func TestEnrollmentTokenMintVerifyReplay(t *testing.T) {
 	if st, _ := status.FromError(err); st.Code() != codes.Unauthenticated || st.Message() != grpcapi.EnrollTokenInvalid {
 		t.Fatalf("garbage must be Unauthenticated %s, got %v", grpcapi.EnrollTokenInvalid, err)
 	}
+}
+
+// enrollJTI reads the jti from a token's payload, as the gateway does.
+func enrollJTI(t *testing.T, tok string) string {
+	t.Helper()
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		t.Fatalf("token has %d parts", len(parts))
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	var c struct {
+		JTI string `json:"jti"`
+	}
+	if err != nil || json.Unmarshal(raw, &c) != nil || c.JTI == "" {
+		t.Fatalf("payload: %v", err)
+	}
+	return c.JTI
 }

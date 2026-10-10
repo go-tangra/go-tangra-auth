@@ -401,6 +401,7 @@ var Sessions_ServiceDesc = grpc.ServiceDesc{
 const (
 	Enrollment_MintEnrollmentToken_FullMethodName   = "/auth.v1.Enrollment/MintEnrollmentToken"
 	Enrollment_VerifyEnrollmentToken_FullMethodName = "/auth.v1.Enrollment/VerifyEnrollmentToken"
+	Enrollment_TokenStatus_FullMethodName           = "/auth.v1.Enrollment/TokenStatus"
 )
 
 // EnrollmentClient is the client API for Enrollment service.
@@ -409,11 +410,17 @@ const (
 type EnrollmentClient interface {
 	// MintEnrollmentToken issues a single-use, short-lived token authorising the
 	// enrollment of the given SPIFFE paths in a tenant (the credential a workload
-	// presents to lcm for its FIRST SVID). Policy: gateway/console identities only.
+	// presents to lcm for its FIRST SVID). ttl_seconds <= 0 means 10 minutes; at
+	// most 24 hours, a longer ttl is refused (InvalidArgument). Policy:
+	// gateway/console identities only.
 	MintEnrollmentToken(ctx context.Context, in *MintEnrollmentTokenRequest, opts ...grpc.CallOption) (*MintEnrollmentTokenResponse, error)
 	// VerifyEnrollmentToken validates a token (signature, audience, expiry) and
 	// BURNS its jti so it can be used at most once. Policy: the lcm identity only.
 	VerifyEnrollmentToken(ctx context.Context, in *VerifyEnrollmentTokenRequest, opts ...grpc.CallOption) (*VerifyEnrollmentTokenResponse, error)
+	// TokenStatus reports whether an enrollment token's jti has been used (burned
+	// by VerifyEnrollmentToken) and when. An unknown jti is consumed=false; a jti
+	// that is not a UUID is InvalidArgument. Policy: the gateway identity only.
+	TokenStatus(ctx context.Context, in *TokenStatusRequest, opts ...grpc.CallOption) (*TokenStatusResponse, error)
 }
 
 type enrollmentClient struct {
@@ -444,17 +451,33 @@ func (c *enrollmentClient) VerifyEnrollmentToken(ctx context.Context, in *Verify
 	return out, nil
 }
 
+func (c *enrollmentClient) TokenStatus(ctx context.Context, in *TokenStatusRequest, opts ...grpc.CallOption) (*TokenStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TokenStatusResponse)
+	err := c.cc.Invoke(ctx, Enrollment_TokenStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EnrollmentServer is the server API for Enrollment service.
 // All implementations must embed UnimplementedEnrollmentServer
 // for forward compatibility.
 type EnrollmentServer interface {
 	// MintEnrollmentToken issues a single-use, short-lived token authorising the
 	// enrollment of the given SPIFFE paths in a tenant (the credential a workload
-	// presents to lcm for its FIRST SVID). Policy: gateway/console identities only.
+	// presents to lcm for its FIRST SVID). ttl_seconds <= 0 means 10 minutes; at
+	// most 24 hours, a longer ttl is refused (InvalidArgument). Policy:
+	// gateway/console identities only.
 	MintEnrollmentToken(context.Context, *MintEnrollmentTokenRequest) (*MintEnrollmentTokenResponse, error)
 	// VerifyEnrollmentToken validates a token (signature, audience, expiry) and
 	// BURNS its jti so it can be used at most once. Policy: the lcm identity only.
 	VerifyEnrollmentToken(context.Context, *VerifyEnrollmentTokenRequest) (*VerifyEnrollmentTokenResponse, error)
+	// TokenStatus reports whether an enrollment token's jti has been used (burned
+	// by VerifyEnrollmentToken) and when. An unknown jti is consumed=false; a jti
+	// that is not a UUID is InvalidArgument. Policy: the gateway identity only.
+	TokenStatus(context.Context, *TokenStatusRequest) (*TokenStatusResponse, error)
 	mustEmbedUnimplementedEnrollmentServer()
 }
 
@@ -470,6 +493,9 @@ func (UnimplementedEnrollmentServer) MintEnrollmentToken(context.Context, *MintE
 }
 func (UnimplementedEnrollmentServer) VerifyEnrollmentToken(context.Context, *VerifyEnrollmentTokenRequest) (*VerifyEnrollmentTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyEnrollmentToken not implemented")
+}
+func (UnimplementedEnrollmentServer) TokenStatus(context.Context, *TokenStatusRequest) (*TokenStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TokenStatus not implemented")
 }
 func (UnimplementedEnrollmentServer) mustEmbedUnimplementedEnrollmentServer() {}
 func (UnimplementedEnrollmentServer) testEmbeddedByValue()                    {}
@@ -528,6 +554,24 @@ func _Enrollment_VerifyEnrollmentToken_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Enrollment_TokenStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TokenStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EnrollmentServer).TokenStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Enrollment_TokenStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EnrollmentServer).TokenStatus(ctx, req.(*TokenStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Enrollment_ServiceDesc is the grpc.ServiceDesc for Enrollment service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -542,6 +586,10 @@ var Enrollment_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyEnrollmentToken",
 			Handler:    _Enrollment_VerifyEnrollmentToken_Handler,
+		},
+		{
+			MethodName: "TokenStatus",
+			Handler:    _Enrollment_TokenStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
