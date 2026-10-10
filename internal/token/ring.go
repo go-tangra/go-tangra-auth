@@ -157,8 +157,9 @@ func (r *Ring) Sweep(ctx context.Context) error {
 			}
 		case StateRetired:
 			// Only active keys sign, so nothing was signed after retiring
-			// began; keep the key for the full token lifetime plus skew.
-			if k.RetiredAt != nil && now.Sub(*k.RetiredAt) >= r.cfg.AccessLifetime+r.cfg.ClockSkew {
+			// began; keep the key for the longest token lifetime (an
+			// enrollment token, up to 24 h) plus skew.
+			if k.RetiredAt != nil && now.Sub(*k.RetiredAt) >= r.keepRetired() {
 				if err := r.ks.Remove(ctx, kid); err != nil {
 					r.mu.Unlock()
 					return err
@@ -174,6 +175,12 @@ func (r *Ring) Sweep(ctx context.Context) error {
 		return r.Rotate(ctx)
 	}
 	return nil
+}
+
+// keepRetired is how long a retired key stays verifiable: the longest token it
+// could have signed (access or enrollment) plus clock skew.
+func (r *Ring) keepRetired() time.Duration {
+	return max(r.cfg.AccessLifetime, maxEnrollLifetime) + r.cfg.ClockSkew
 }
 
 // Run sweeps every interval until ctx ends.

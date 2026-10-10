@@ -27,7 +27,7 @@ func mintEnrollmentToken(args []string) int {
 	cfgPath := fs.String("config", "deploy/dev.yaml", "configuration file")
 	spiffe := fs.String("spiffe", "", "SPIFFE id(s) the token authorises, comma-separated (required)")
 	tenant := fs.String("tenant", meshTenant, "tenant id the SVID is issued under (default: the lcm mesh tenant)")
-	ttl := fs.Duration("ttl", 10*time.Minute, "token lifetime")
+	ttl := fs.Duration("ttl", 10*time.Minute, "token lifetime (at most 24h; longer is refused)")
 	out := fs.String("out", "", "write the token to this file (0600); default stdout")
 	if err := fs.Parse(args); err != nil {
 		return 2
