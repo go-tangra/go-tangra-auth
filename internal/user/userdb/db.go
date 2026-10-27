@@ -18,6 +18,10 @@ func (d DBStore) TenantBySlug(ctx context.Context, slug string) (t store.Tenant,
 	err = d.St.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { t, err = store.GetTenantBySlug(ctx, tx, slug); return err })
 	return
 }
+func (d DBStore) SoleTenant(ctx context.Context) (t store.Tenant, err error) {
+	err = d.St.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { t, err = store.GetSoleTenant(ctx, tx); return err })
+	return
+}
 func (d DBStore) UserByEmail(ctx context.Context, tid, email string) (u store.User, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { u, err = store.GetUserByEmail(ctx, tx, tid, email); return err })
 	return

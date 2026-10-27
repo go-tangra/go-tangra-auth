@@ -32,6 +32,10 @@ func (d DBRecoveryStore) TenantBySlug(ctx context.Context, slug string) (t store
 	err = d.St.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { t, err = store.GetTenantBySlug(ctx, tx, slug); return err })
 	return
 }
+func (d DBRecoveryStore) SoleTenant(ctx context.Context) (t store.Tenant, err error) {
+	err = d.St.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { t, err = store.GetSoleTenant(ctx, tx); return err })
+	return
+}
 func (d DBRecoveryStore) Tenant(ctx context.Context, tid string) (t store.Tenant, err error) {
 	err = d.St.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error { t, err = store.GetTenant(ctx, tx, tid); return err })
 	return
