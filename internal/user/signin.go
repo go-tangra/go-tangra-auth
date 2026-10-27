@@ -43,6 +43,7 @@ const (
 // Store is what sign-in needs from persistence.
 type Store interface {
 	TenantBySlug(ctx context.Context, slug string) (store.Tenant, error)
+	SoleTenant(ctx context.Context) (store.Tenant, error)
 	UserByEmail(ctx context.Context, tenantID, email string) (store.User, error)
 	Roles(ctx context.Context, tenantID, userID string) ([]string, error)
 	TouchSignin(ctx context.Context, tenantID, userID string) error
@@ -144,25 +145,20 @@ func (s *Service) Start(ctx context.Context, in Input) (Result, error) {
 		s.attempt(ctx, "", "", emailHash, ipHash, "refused", "rate_limited")
 		return Result{}, ErrRateLimited
 	}
-	// No tenant given: take it from the e-mail domain. An underivable or
-	// unknown tenant is the same refusal as any other failure (no oracle).
-	if strings.TrimSpace(in.TenantSlug) == "" {
-		in.TenantSlug, _ = tenant.SlugFromEmail(email)
-	}
-	slug, err := tenant.ParseSlug(in.TenantSlug)
-	var t store.Tenant
+	// No tenant given: take it from the e-mail domain, or the only tenant
+	// (tenant.Lookup). An underivable or unknown tenant is the same refusal
+	// as any other failure (no oracle).
+	t, err := tenant.Lookup(ctx, in.TenantSlug, email, s.st.TenantBySlug, s.st.SoleTenant)
 	var u store.User
 	known := false
 	if err == nil {
-		if t, err = s.st.TenantBySlug(ctx, slug); err == nil {
-			if u, err = s.st.UserByEmail(ctx, t.ID, email); err == nil {
-				// An imported account is indistinguishable from a
-				// non-existent one: no lockout, no locked oracle (SR-006).
-				if u.Status == "imported" {
-					u = store.User{}
-				} else {
-					known = true
-				}
+		if u, err = s.st.UserByEmail(ctx, t.ID, email); err == nil {
+			// An imported account is indistinguishable from a
+			// non-existent one: no lockout, no locked oracle (SR-006).
+			if u.Status == "imported" {
+				u = store.User{}
+			} else {
+				known = true
 			}
 		}
 	}

@@ -96,6 +96,30 @@ func TestSigninMatrix(t *testing.T) {
 	}
 }
 
+// A deployment with a single tenant takes it when no tenant is given and the
+// e-mail domain names none; with more tenants the fallback is off.
+func TestSigninSoleTenant(t *testing.T) {
+	ms := memstore.New()
+	ms.AddTenant(store.Tenant{ID: tA, Slug: "platform", Status: "active", Kind: "platform", Policy: []byte("{}")})
+	h, _ := password.Hash("correct horse battery")
+	ms.AddUser(store.User{ID: "u1", TenantID: tA, Email: "alice@jobs.test", Status: "active", PasswordHash: &h})
+	c := cache.New(cache.NewMemory())
+	svc := New(ms, c, nil, session.New(ms, c, nil), fakeMFA{good: "123456"})
+	svc.pad = func(time.Time) {}
+	ctx := context.Background()
+	if res, err := svc.Start(ctx, Input{Email: "alice@jobs.test", Password: "correct horse battery", IP: "1"}); err != nil || res.Session.UserID != "u1" {
+		t.Fatalf("sole tenant: %+v %v", res, err)
+	}
+	// A wrongly named tenant is not rescued by the fallback.
+	if _, err := svc.Start(ctx, Input{TenantSlug: "nope", Email: "alice@jobs.test", Password: "correct horse battery", IP: "1"}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("explicit unknown tenant: %v", err)
+	}
+	ms.AddTenant(store.Tenant{ID: tB, Slug: "acme", Status: "active", Kind: "customer", Policy: []byte("{}")})
+	if _, err := svc.Start(ctx, Input{Email: "alice@jobs.test", Password: "correct horse battery", IP: "1"}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("two tenants must not fall back: %v", err)
+	}
+}
+
 func TestLockoutAndRateLimits(t *testing.T) {
 	svc, ms, c := setup(t)
 	ctx := context.Background()

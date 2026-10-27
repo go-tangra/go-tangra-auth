@@ -40,6 +40,31 @@ func GetTenantBySlug(ctx context.Context, tx pgx.Tx, slug string) (Tenant, error
 	return scanTenant(tx.QueryRow(ctx, "SELECT "+tenantCols+" FROM tenants WHERE slug = $1", slug))
 }
 
+// GetSoleTenant returns the deployment's only tenant; ErrNotFound when there
+// are none or more than one.
+func GetSoleTenant(ctx context.Context, tx pgx.Tx) (Tenant, error) {
+	rows, err := tx.Query(ctx, "SELECT "+tenantCols+" FROM tenants LIMIT 2")
+	if err != nil {
+		return Tenant{}, err
+	}
+	defer rows.Close()
+	var out []Tenant
+	for rows.Next() {
+		t, err := scanTenant(rows)
+		if err != nil {
+			return Tenant{}, err
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return Tenant{}, err
+	}
+	if len(out) != 1 {
+		return Tenant{}, ErrNotFound
+	}
+	return out[0], nil
+}
+
 // ListTenants (operator scope).
 func ListTenants(ctx context.Context, tx pgx.Tx) ([]Tenant, error) {
 	rows, err := tx.Query(ctx, "SELECT "+tenantCols+" FROM tenants ORDER BY created_at")

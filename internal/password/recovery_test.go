@@ -84,3 +84,21 @@ func TestRecoveryTenantFromEmailDomain(t *testing.T) {
 		t.Fatalf("unknown domain: %v recoveries=%d", err, len(ms.Recoveries))
 	}
 }
+
+// With a single tenant, a blank tenant and an unmatched domain fall back to it.
+func TestRecoverySoleTenant(t *testing.T) {
+	ms, sm, ob := setup(t) // setup's only tenant is acme
+	ctx := context.Background()
+	h, _ := Hash("old-password-1")
+	ms.AddUser(store.User{ID: "u-j", TenantID: tid, Email: "s.p@jobs.test", Status: "active", PasswordHash: &h})
+	aw := audit.NewWriter(ms, nil)
+	defer aw.Close()
+	rec := NewRecovery(ms, ob, sm, aw, "https://auth.example.org")
+	rec.SetPad(func(time.Time) {})
+	if err := rec.Request(ctx, "", "S.P@jobs.test", "ip"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ms.Recoveries) != 1 || len(ms.Outbox) != 1 {
+		t.Fatalf("blank tenant should fall back to the sole tenant: recoveries=%d outbox=%d", len(ms.Recoveries), len(ms.Outbox))
+	}
+}

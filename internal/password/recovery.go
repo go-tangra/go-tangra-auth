@@ -29,6 +29,7 @@ var ErrInvalidToken = errors.New("invalid_token")
 // RecoveryStore is what recovery needs.
 type RecoveryStore interface {
 	TenantBySlug(ctx context.Context, slug string) (store.Tenant, error)
+	SoleTenant(ctx context.Context) (store.Tenant, error)
 	Tenant(ctx context.Context, tenantID string) (store.Tenant, error)
 	UserByEmail(ctx context.Context, tenantID, email string) (store.User, error)
 	InsertRecoveryRequest(ctx context.Context, r store.RecoveryRequest, ipHash string) error
@@ -63,15 +64,9 @@ func (r *Recovery) Request(ctx context.Context, tenantSlug, emailAddr, ipHash st
 	start := r.now()
 	defer r.pad(start)
 	addr := strings.ToLower(strings.TrimSpace(emailAddr))
-	// No tenant given: take it from the e-mail domain, as sign-in does.
-	if strings.TrimSpace(tenantSlug) == "" {
-		tenantSlug, _ = tenant.SlugFromEmail(addr)
-	}
-	slug, err := tenant.ParseSlug(tenantSlug)
-	if err != nil {
-		return nil
-	}
-	t, err := r.st.TenantBySlug(ctx, slug)
+	// No tenant given: take it from the e-mail domain, or the only tenant,
+	// as sign-in does.
+	t, err := tenant.Lookup(ctx, tenantSlug, addr, r.st.TenantBySlug, r.st.SoleTenant)
 	if err != nil || t.Status != "active" {
 		return nil
 	}

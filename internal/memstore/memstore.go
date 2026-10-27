@@ -293,6 +293,18 @@ func (m *Store) TenantBySlug(_ context.Context, slug string) (store.Tenant, erro
 	return store.Tenant{}, store.ErrNotFound
 }
 
+func (m *Store) SoleTenant(_ context.Context) (store.Tenant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.Tenants) != 1 {
+		return store.Tenant{}, store.ErrNotFound
+	}
+	for _, t := range m.Tenants {
+		return t, nil
+	}
+	return store.Tenant{}, store.ErrNotFound
+}
+
 func (m *Store) UserByEmail(_ context.Context, tid, email string) (store.User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
