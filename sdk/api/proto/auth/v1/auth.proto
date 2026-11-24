@@ -239,6 +239,34 @@ service Profiles {
   // by policy.yaml only (the signing module). Inactive, foreign and unknown ids
   // and users without an e-mail are omitted; the phone number is never returned.
   rpc Contacts(LookupContactsRequest) returns (LookupContactsResponse);
+  // Members pages the active members of a tenant with their login, display
+  // name, the roles they hold in the calling module (directly and through
+  // groups) and their group ids: provisioning into external systems and
+  // member pickers. The module is the caller's service name from its SPIFFE
+  // id (".../svc/<module>"); roles of other modules, custom and built-in roles
+  // are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+  // services allowed by policy.yaml only (the teleport module).
+  rpc Members(ListMemberDetailsRequest) returns (ListMemberDetailsResponse);
+}
+message ListMemberDetailsRequest {
+  string tenant_id = 1;
+  string cursor = 2;            // last id of the previous page
+  int32 limit = 3;              // 1..1000, default 1000
+  repeated string user_ids = 4; // at most 1000: filter instead of paging
+  // Optional, at most 100 characters: case-insensitive substring of the login
+  // or the display name; results are ordered and paged by id as without it.
+  string query = 5;
+}
+message MemberDetail {
+  string user_id = 1;
+  string login = 2;              // the sign-in identifier as auth stores it
+  string display_name = 3;
+  repeated string roles = 4;     // module role slugs of the calling module, sorted
+  repeated string group_ids = 5; // groups the member belongs to, sorted
+}
+message ListMemberDetailsResponse {
+  repeated MemberDetail members = 1; // active users only, ordered by id
+  string next_cursor = 2;            // empty on the last page
 }
 message LookupContactsRequest {
   string tenant_id = 1;
