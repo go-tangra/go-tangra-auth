@@ -2,11 +2,13 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	authv1 "github.com/go-tangra/go-tangra-auth/sdk/v4/api/proto/auth/v1"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/user"
 )
@@ -78,6 +80,43 @@ func (s *ProfilesServer) Contacts(ctx context.Context, req *authv1.LookupContact
 	out := &authv1.LookupContactsResponse{}
 	for _, r := range rows {
 		out.Contacts = append(out.Contacts, &authv1.Contact{UserId: r.ID, DisplayName: r.DisplayName, Email: r.Email})
+	}
+	return out, nil
+}
+
+// Members pages active members of one tenant with login, display name, the
+// roles held in the calling module and group ids (admitted by policy for the
+// teleport module only). The module is the caller's service name, derived
+// from its SPIFFE id like RegisterPermissions; a caller naming no module is
+// refused.
+func (s *ProfilesServer) Members(ctx context.Context, req *authv1.ListMemberDetailsRequest) (*authv1.ListMemberDetailsResponse, error) {
+	ctx, svc := serviceCtx(ctx)
+	actor, ok := tenantctx.FromContext(ctx)
+	if !ok || svc == "" && actor.Kind != tenantctx.KindService {
+		return nil, status.Error(codes.Unauthenticated, "service identity required")
+	}
+	if svc == "" {
+		svc = actor.ServiceID
+	}
+	module, err := permref.ModuleFromSPIFFE(svc)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "module service identity required")
+	}
+	if !tenantctx.ValidTenantID(req.GetTenantId()) || req.GetLimit() < 0 || req.GetLimit() > user.MembersMax || len(req.GetUserIds()) > user.MembersMax {
+		return nil, status.Error(codes.InvalidArgument, "malformed request")
+	}
+	actor.TenantID = req.GetTenantId()
+	rows, next, err := s.Profiles.MemberDetails(ctx, actor, module, svc, user.MemberDetailsQuery{
+		After: req.GetCursor(), Limit: int(req.GetLimit()), IDs: req.GetUserIds(), Query: req.GetQuery()})
+	switch {
+	case errors.Is(err, user.ErrInvalidQuery):
+		return nil, status.Error(codes.InvalidArgument, "malformed query")
+	case err != nil:
+		return nil, status.Error(codes.Unavailable, "profiles unavailable")
+	}
+	out := &authv1.ListMemberDetailsResponse{Members: make([]*authv1.MemberDetail, 0, len(rows)), NextCursor: next}
+	for _, r := range rows {
+		out.Members = append(out.Members, &authv1.MemberDetail{UserId: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: r.Roles, GroupIds: r.GroupIDs})
 	}
 	return out, nil
 }

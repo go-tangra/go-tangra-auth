@@ -89,6 +89,10 @@ const (
 	// Feature 027: a service read members' e-mail addresses (details: count
 	// and the calling service, never the addresses).
 	ContactsLookedUp EventType = "contacts_looked_up"
+	// A module listed member details (login, its roles, group ids) through
+	// Profiles.Members (details: count, calling service and module, never
+	// logins).
+	MemberDetailsListed EventType = "member_details_listed"
 )
 
 var known = map[EventType]struct{}{}
@@ -101,7 +105,7 @@ func init() {
 		GroupCreated, GroupUpdated, GroupDeleted, GroupMemberAdded, GroupMemberRemoved, GroupRoleGranted, GroupRoleRevoked, ProfileUpdated, AvatarUpdated, AvatarRemoved,
 		DirectoryConnectionCreated, DirectoryConnectionUpdated, DirectoryConnectionDeleted, DirectoryConnectionTested, DirectorySearched,
 		DirectoryImported, ImportedUserDeleted, EmailGivenUp, MFAReset, MFACloneSuspected,
-		ModuleRegistered, ModuleRoleUpserted, ModuleRoleRetired, RoleCloned, PermissionMigrated, PermissionPruned, ContactsLookedUp} {
+		ModuleRegistered, ModuleRoleUpserted, ModuleRoleRetired, RoleCloned, PermissionMigrated, PermissionPruned, ContactsLookedUp, MemberDetailsListed} {
 		known[t] = struct{}{}
 	}
 }

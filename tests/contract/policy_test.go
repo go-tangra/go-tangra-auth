@@ -52,3 +52,37 @@ func mustID(t *testing.T, s string) identity.SPIFFEID {
 	}
 	return id
 }
+
+// TestProfilesMembersPolicy pins who may list member details (login, the
+// caller module's roles, group ids): the teleport module only, besides the
+// gateway's catch-all forward rule. The other directory services keep
+// Lookup/ListMembers and are refused Members.
+func TestProfilesMembersPolicy(t *testing.T) {
+	f, err := os.Open("../../deploy/policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	p, err := authz.Load(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decide := func(svc, op string) authz.Decision {
+		t.Helper()
+		return p.Authorize(context.Background(), mustID(t, "spiffe://example.org/svc/"+svc), "auth", op)
+	}
+	const members = "/auth.v1.Profiles/Members"
+	for _, op := range []string{"/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", members} {
+		if d := decide("teleport", op); !d.Allowed || d.RuleID != "teleport-directory" {
+			t.Errorf("teleport %s: %+v", op, d)
+		}
+	}
+	if decide("teleport", "/auth.v1.Profiles/Contacts").Allowed {
+		t.Error("teleport may read e-mail contacts")
+	}
+	for _, svc := range []string{"notification", "asset", "ticket", "deployer", "signing", "hr", "lcm", "warden", "teleport-evil", "console", "portal"} {
+		if decide(svc, members).Allowed {
+			t.Errorf("%s may call Members", svc)
+		}
+	}
+}

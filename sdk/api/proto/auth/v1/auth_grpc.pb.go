@@ -786,6 +786,7 @@ const (
 	Profiles_Lookup_FullMethodName      = "/auth.v1.Profiles/Lookup"
 	Profiles_ListMembers_FullMethodName = "/auth.v1.Profiles/ListMembers"
 	Profiles_Contacts_FullMethodName    = "/auth.v1.Profiles/Contacts"
+	Profiles_Members_FullMethodName     = "/auth.v1.Profiles/Members"
 )
 
 // ProfilesClient is the client API for Profiles service.
@@ -806,6 +807,14 @@ type ProfilesClient interface {
 	// by policy.yaml only (the signing module). Inactive, foreign and unknown ids
 	// and users without an e-mail are omitted; the phone number is never returned.
 	Contacts(ctx context.Context, in *LookupContactsRequest, opts ...grpc.CallOption) (*LookupContactsResponse, error)
+	// Members pages the active members of a tenant with their login, display
+	// name, the roles they hold in the calling module (directly and through
+	// groups) and their group ids: provisioning into external systems and
+	// member pickers. The module is the caller's service name from its SPIFFE
+	// id (".../svc/<module>"); roles of other modules, custom and built-in roles
+	// are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+	// services allowed by policy.yaml only (the teleport module).
+	Members(ctx context.Context, in *ListMemberDetailsRequest, opts ...grpc.CallOption) (*ListMemberDetailsResponse, error)
 }
 
 type profilesClient struct {
@@ -846,6 +855,16 @@ func (c *profilesClient) Contacts(ctx context.Context, in *LookupContactsRequest
 	return out, nil
 }
 
+func (c *profilesClient) Members(ctx context.Context, in *ListMemberDetailsRequest, opts ...grpc.CallOption) (*ListMemberDetailsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMemberDetailsResponse)
+	err := c.cc.Invoke(ctx, Profiles_Members_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProfilesServer is the server API for Profiles service.
 // All implementations must embed UnimplementedProfilesServer
 // for forward compatibility.
@@ -864,6 +883,14 @@ type ProfilesServer interface {
 	// by policy.yaml only (the signing module). Inactive, foreign and unknown ids
 	// and users without an e-mail are omitted; the phone number is never returned.
 	Contacts(context.Context, *LookupContactsRequest) (*LookupContactsResponse, error)
+	// Members pages the active members of a tenant with their login, display
+	// name, the roles they hold in the calling module (directly and through
+	// groups) and their group ids: provisioning into external systems and
+	// member pickers. The module is the caller's service name from its SPIFFE
+	// id (".../svc/<module>"); roles of other modules, custom and built-in roles
+	// are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+	// services allowed by policy.yaml only (the teleport module).
+	Members(context.Context, *ListMemberDetailsRequest) (*ListMemberDetailsResponse, error)
 	mustEmbedUnimplementedProfilesServer()
 }
 
@@ -882,6 +909,9 @@ func (UnimplementedProfilesServer) ListMembers(context.Context, *ListMembersRequ
 }
 func (UnimplementedProfilesServer) Contacts(context.Context, *LookupContactsRequest) (*LookupContactsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Contacts not implemented")
+}
+func (UnimplementedProfilesServer) Members(context.Context, *ListMemberDetailsRequest) (*ListMemberDetailsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Members not implemented")
 }
 func (UnimplementedProfilesServer) mustEmbedUnimplementedProfilesServer() {}
 func (UnimplementedProfilesServer) testEmbeddedByValue()                  {}
@@ -958,6 +988,24 @@ func _Profiles_Contacts_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Profiles_Members_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMemberDetailsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProfilesServer).Members(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Profiles_Members_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProfilesServer).Members(ctx, req.(*ListMemberDetailsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Profiles_ServiceDesc is the grpc.ServiceDesc for Profiles service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -976,6 +1024,10 @@ var Profiles_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Contacts",
 			Handler:    _Profiles_Contacts_Handler,
+		},
+		{
+			MethodName: "Members",
+			Handler:    _Profiles_Members_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

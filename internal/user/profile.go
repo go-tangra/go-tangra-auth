@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/go-tangra/go-tangra-auth/v4/internal/audit"
+	"github.com/go-tangra/go-tangra-auth/v4/internal/permref"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/store"
 	"github.com/go-tangra/go-tangra-auth/v4/internal/tenantctx"
 )
@@ -35,6 +37,7 @@ type ProfileStore interface {
 	LookupContacts(ctx context.Context, tenantID string, ids []string) ([]store.PublicProfile, error)
 	SearchProfiles(ctx context.Context, tenantID, q string, limit int) ([]store.PublicProfile, error)
 	ListActiveMemberIDs(ctx context.Context, tenantID, after string, limit int, ids []string) ([]string, error)
+	ListMemberDetails(ctx context.Context, tenantID string, f store.MemberFilter) ([]store.MemberDetail, error)
 }
 
 // MembersMax bounds one page of ListMembers.
@@ -319,6 +322,91 @@ func (p *Profiles) Members(ctx context.Context, actor tenantctx.Actor, after str
 		out = []string{}
 	}
 	return out, next, nil
+}
+
+// MemberQueryMax bounds the member details query (characters).
+const MemberQueryMax = 100
+
+// ErrInvalidQuery refuses a member details query that is too long or holds
+// control characters.
+var ErrInvalidQuery = errors.New("user: invalid query")
+
+// MemberDetailView is one active member for a module (Profiles.Members): the
+// login, display name, the module's own role slugs and the group ids.
+type MemberDetailView struct {
+	ID, Login, DisplayName string
+	Roles, GroupIDs        []string
+}
+
+// MemberDetailsQuery selects a page of MemberDetails (ListMembers semantics
+// plus an optional login/display-name substring).
+type MemberDetailsQuery struct {
+	After string
+	Limit int
+	IDs   []string
+	Query string
+}
+
+// MemberDetails pages the active members of the actor's tenant with the roles
+// they hold in module (directly or through groups: the EffectiveRoles rows
+// the decision path reads, kept to module roles of that module) and their
+// group ids. The listing is audited with the count and the calling service,
+// never logins.
+func (p *Profiles) MemberDetails(ctx context.Context, actor tenantctx.Actor, module, caller string, q MemberDetailsQuery) ([]MemberDetailView, string, error) {
+	query := strings.TrimSpace(q.Query)
+	if len([]rune(query)) > MemberQueryMax || strings.IndexFunc(query, unicode.IsControl) >= 0 {
+		return nil, "", ErrInvalidQuery
+	}
+	limit := q.Limit
+	if limit <= 0 || limit > MembersMax {
+		limit = MembersMax
+	}
+	ids := q.IDs
+	if len(ids) > MembersMax {
+		ids = ids[:MembersMax]
+	}
+	var valid []string
+	for _, id := range ids { // malformed ids cannot be members (and would not cast to uuid)
+		if tenantctx.ValidTenantID(id) {
+			valid = append(valid, id)
+		}
+	}
+	out := []MemberDetailView{}
+	if len(ids) > 0 && len(valid) == 0 {
+		return out, "", nil
+	}
+	rows, err := p.st.ListMemberDetails(ctx, actor.TenantID, store.MemberFilter{After: q.After, Limit: limit, IDs: valid, Query: query})
+	if err != nil {
+		return nil, "", err
+	}
+	for _, r := range rows {
+		v := MemberDetailView{ID: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: ModuleRoles(r.Roles, module), GroupIDs: r.GroupIDs}
+		if v.GroupIDs == nil {
+			v.GroupIDs = []string{}
+		}
+		out = append(out, v)
+	}
+	next := ""
+	if len(ids) == 0 && len(out) == limit {
+		next = out[len(out)-1].ID
+	}
+	p.emit(audit.Event{Type: audit.MemberDetailsListed, TenantID: actor.TenantID, ActorKind: string(actor.Kind), ActorUserID: actor.UserID,
+		Outcome: "ok", SubjectKind: "user", Details: map[string]any{"count": len(out), "service": caller, "module": module, "query": query != ""}})
+	return out, next, nil
+}
+
+// ModuleRoles keeps the module-local slugs of module's roles among a user's
+// effective role rows ("m.<module>.<slug>" → "<slug>"), distinct and sorted.
+// Custom and built-in roles and other modules' roles are dropped.
+func ModuleRoles(rows []store.EffectiveRoleRow, module string) []string {
+	out := []string{}
+	for _, r := range rows {
+		if m, slug, ok := permref.ParseModuleRoleSlug(r.Slug); ok && m == module && !slices.Contains(out, slug) {
+			out = append(out, slug)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Search finds active members of the actor's tenant by name or email for

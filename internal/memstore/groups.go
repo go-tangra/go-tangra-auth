@@ -445,6 +445,51 @@ func (m *Store) ListActiveMemberIDs(_ context.Context, tid, after string, limit 
 	return out, nil
 }
 
+// ListMemberDetails mirrors store.ListMemberDetails: active members by id
+// with the EffectiveRoles rows and sorted group ids of each.
+func (m *Store) ListMemberDetails(ctx context.Context, tid string, f store.MemberFilter) ([]store.MemberDetail, error) {
+	m.mu.Lock()
+	want := map[string]bool{}
+	for _, id := range f.IDs {
+		want[id] = true
+	}
+	lq := strings.ToLower(f.Query)
+	var out []store.MemberDetail
+	for _, u := range m.Users {
+		if u.TenantID != tid || u.Status != "active" {
+			continue
+		}
+		if len(f.IDs) > 0 && !want[u.ID] || len(f.IDs) == 0 && u.ID <= f.After {
+			continue
+		}
+		if lq != "" && !strings.Contains(strings.ToLower(u.Email), lq) && !strings.Contains(strings.ToLower(u.DisplayName), lq) {
+			continue
+		}
+		out = append(out, store.MemberDetail{ID: u.ID, Login: u.Email, DisplayName: u.DisplayName})
+	}
+	m.mu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	if len(out) > f.Limit {
+		out = out[:f.Limit]
+	}
+	for i := range out {
+		rows, err := m.EffectiveRoles(ctx, tid, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		groups, err := m.UserGroups(ctx, tid, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Roles = rows
+		for _, g := range groups {
+			out[i].GroupIDs = append(out[i].GroupIDs, g.ID)
+		}
+		sort.Strings(out[i].GroupIDs)
+	}
+	return out, nil
+}
+
 func (m *Store) SearchProfiles(_ context.Context, tid, q string, limit int) ([]store.PublicProfile, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
