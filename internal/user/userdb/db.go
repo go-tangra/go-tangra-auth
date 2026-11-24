@@ -106,6 +106,10 @@ func (d DBAdminStore) ListActiveMemberIDs(ctx context.Context, tid, after string
 	})
 	return
 }
+func (d DBAdminStore) ListMemberDetails(ctx context.Context, tid string, f store.MemberFilter) (out []store.MemberDetail, err error) {
+	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.ListMemberDetails(ctx, tx, tid, f); return err })
+	return
+}
 func (d DBAdminStore) SearchProfiles(ctx context.Context, tid, q string, limit int) (out []store.PublicProfile, err error) {
 	err = d.St.Tx(ctx, store.Scope{TenantID: tid}, func(tx pgx.Tx) error { out, err = store.SearchProfiles(ctx, tx, tid, q, limit); return err })
 	return

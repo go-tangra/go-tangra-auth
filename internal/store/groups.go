@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,27 +243,64 @@ func GroupRoleSlugs(ctx context.Context, tx pgx.Tx, tenantID string) (map[string
 // EffectiveRoles returns every (role, source) pair of a user: direct bindings
 // and roles inherited through group membership.
 func EffectiveRoles(ctx context.Context, tx pgx.Tx, tenantID, userID string) ([]EffectiveRoleRow, error) {
+	byUser, err := EffectiveRolesOf(ctx, tx, tenantID, []string{userID})
+	if err != nil {
+		return nil, err
+	}
+	return byUser[userID], nil
+}
+
+// EffectiveRolesOf is EffectiveRoles for several users in one query (one
+// statement serves both, so member listings and the decision path agree):
+// user id → rows ordered by slug, source, group name.
+func EffectiveRolesOf(ctx context.Context, tx pgx.Tx, tenantID string, userIDs []string) (map[string][]EffectiveRoleRow, error) {
+	out := map[string][]EffectiveRoleRow{}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
 	rows, err := tx.Query(ctx, `
-		SELECT r.id, r.slug, 'direct', '', ''
+		SELECT b.user_id::text, r.id, r.slug, 'direct' AS source, '' AS group_id, '' AS group_name
 		  FROM role_bindings b JOIN roles r ON r.id = b.role_id
-		 WHERE b.tenant_id = $1 AND b.user_id = $2
+		 WHERE b.tenant_id = $1 AND b.user_id = ANY($2::uuid[])
 		UNION ALL
-		SELECT r.id, r.slug, 'group', g.id::text, g.name
+		SELECT m.user_id::text, r.id, r.slug, 'group', g.id::text, g.name
 		  FROM group_members m JOIN group_roles gr ON gr.group_id = m.group_id
 		  JOIN roles r ON r.id = gr.role_id JOIN groups g ON g.id = m.group_id
-		 WHERE m.tenant_id = $1 AND m.user_id = $2
-		ORDER BY 2, 3, 5`, tenantID, userID)
+		 WHERE m.tenant_id = $1 AND m.user_id = ANY($2::uuid[])
+		ORDER BY 1, 3, 4, 6`, tenantID, userIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []EffectiveRoleRow
 	for rows.Next() {
+		var uid string
 		var r EffectiveRoleRow
-		if err := rows.Scan(&r.RoleID, &r.Slug, &r.Source, &r.GroupID, &r.GroupName); err != nil {
+		if err := rows.Scan(&uid, &r.RoleID, &r.Slug, &r.Source, &r.GroupID, &r.GroupName); err != nil {
 			return nil, err
 		}
-		out = append(out, r)
+		out[uid] = append(out[uid], r)
+	}
+	return out, rows.Err()
+}
+
+// GroupIDsOf lists the ids of the groups each user belongs to (sorted).
+func GroupIDsOf(ctx context.Context, tx pgx.Tx, tenantID string, userIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id::text, group_id::text FROM group_members
+		WHERE tenant_id = $1 AND user_id = ANY($2::uuid[]) ORDER BY 1, 2`, tenantID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var uid, gid string
+		if err := rows.Scan(&uid, &gid); err != nil {
+			return nil, err
+		}
+		out[uid] = append(out[uid], gid)
 	}
 	return out, rows.Err()
 }
@@ -392,6 +430,77 @@ func ListActiveMemberIDs(ctx context.Context, tx pgx.Tx, tenantID, after string,
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+// MemberFilter selects a page of ListMemberDetails: active members after the
+// cursor id, or the active ones among IDs; Query (optional) is a
+// case-insensitive substring of the login or the display name.
+type MemberFilter struct {
+	After string
+	Limit int
+	IDs   []string
+	Query string
+}
+
+// MemberDetail is one active member: the login (the sign-in e-mail as
+// stored), the display name, the EffectiveRoles rows and the group ids.
+type MemberDetail struct {
+	ID, Login, DisplayName string
+	Roles                  []EffectiveRoleRow
+	GroupIDs               []string
+}
+
+// ListMemberDetails pages active members of the tenant by id with their
+// effective roles (EffectiveRolesOf, the decision path's rows) and groups.
+func ListMemberDetails(ctx context.Context, tx pgx.Tx, tenantID string, f MemberFilter) ([]MemberDetail, error) {
+	q := "SELECT id::text, email::text, display_name FROM users WHERE tenant_id = $1 AND status = 'active'"
+	args := []any{tenantID}
+	if len(f.IDs) > 0 {
+		args = append(args, f.IDs)
+		q += " AND id = ANY($2::uuid[])"
+	} else {
+		args = append(args, f.After)
+		q += " AND id::text > $2"
+	}
+	if f.Query != "" {
+		args = append(args, escapeLike(f.Query))
+		q += " AND (email::text ILIKE '%' || $3 || '%' OR display_name ILIKE '%' || $3 || '%')"
+	}
+	args = append(args, f.Limit)
+	q += " ORDER BY id LIMIT $" + strconv.Itoa(len(args))
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	var out []MemberDetail
+	for rows.Next() {
+		var m MemberDetail
+		if err := rows.Scan(&m.ID, &m.Login, &m.DisplayName); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(out))
+	for i, m := range out {
+		ids[i] = m.ID
+	}
+	roles, err := EffectiveRolesOf(ctx, tx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := GroupIDsOf(ctx, tx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Roles, out[i].GroupIDs = roles[out[i].ID], groups[out[i].ID]
+	}
+	return out, nil
 }
 
 // LookupContacts returns id, display name and e-mail of the given active
