@@ -44,6 +44,13 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Contacts"]
     effect: allow
+  - id: teleport-directory
+    # Access provisioning: member logins, the teleport roles they hold and
+    # their groups (Members); no e-mail contacts.
+    from: ["spiffe://example.org/svc/teleport"]
+    to: ["auth"]
+    operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Members"]
+    effect: allow
   - id: gateway-exchange
     from: ["spiffe://example.org/svc/gateway"]
     to: ["auth"]
