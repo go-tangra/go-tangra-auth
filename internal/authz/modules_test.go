@@ -645,6 +645,48 @@ func TestBuiltinGrantsReportedNotLost(t *testing.T) {
 	}
 }
 
+// A grant to a built-in role the tenant's kind does not define (customer
+// tenants have no operator) is expected: not reported, counted as not
+// applicable. A role the kind defines but the tenant lacks is still reported.
+func TestBuiltinGrantsNotApplicableByKind(t *testing.T) {
+	f := newModFixture(t)
+	tenants := []string{tA, tB}
+	for i := 0; i < 6; i++ {
+		id := "0190f7c2-6a3e-7c1a-9b2e-2f6f9d1b4d0" + string(rune('0'+i))
+		f.ms.AddTenant(store.Tenant{ID: id, Slug: "x" + id[len(id)-1:], Status: "active", Kind: "customer", Policy: []byte("{}")})
+		tenants = append(tenants, id)
+	}
+	f.mods.BuiltinRolesOf = func(context.Context, string) ([]string, error) {
+		return []string{"owner", "admin", "member", "auditor"}, nil // customer kind
+	}
+	res, err := f.mods.Register(f.sys, wardenReg(tenants...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byRole := map[string]SkippedGrant{}
+	for _, s := range res.Skipped {
+		byRole[s.Role] = s
+	}
+	if _, ok := byRole["operator"]; ok || res.NotApplicable != 8 {
+		t.Fatalf("operator is not a customer built-in role: skipped %+v, not applicable %d", byRole["operator"], res.NotApplicable)
+	}
+	if au := byRole["auditor"]; au.Tenants != 6 || au.Reason != SkipRoleMissing {
+		t.Fatalf("auditor is a customer role the new tenants lack: %+v", au)
+	}
+	// A failing lookup reports the missing role instead of hiding it.
+	f.mods.BuiltinRolesOf = func(context.Context, string) ([]string, error) { return nil, errors.New("down") }
+	if res, err = f.mods.Register(f.sys, wardenReg(tenants...)); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range res.Skipped {
+		found = found || s.Role == "operator"
+	}
+	if !found || res.NotApplicable != 0 {
+		t.Fatalf("lookup failure must report: %+v (not applicable %d)", res.Skipped, res.NotApplicable)
+	}
+}
+
 // T039 (authz part): a new tenant receives every non-retired module
 // permission and role of the catalogue without a re-registration.
 func TestInstantiateTenant(t *testing.T) {
