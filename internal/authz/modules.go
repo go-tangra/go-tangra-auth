@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -104,6 +105,10 @@ type RegisterResult struct {
 	RolesUpserted int
 	RolesRetired  []string
 	GrantsRevoked int // built-in grants withdrawn, all tenants
+	// NotApplicable counts built-in grants to a role the tenant's kind does
+	// not define (member in the platform tenant, operator in a customer
+	// tenant): expected, so neither applied nor reported as skipped.
+	NotApplicable int
 }
 
 // Modules owns module registration: the platform catalogue, module-scoped
@@ -120,6 +125,29 @@ type Modules struct {
 	PlatformTenant string
 	// Tenants lists every active tenant (module retirement).
 	Tenants func(ctx context.Context) ([]string, error)
+	// BuiltinRolesOf returns the built-in roles a tenant's kind defines. A
+	// grant to a built-in role outside that set is not applicable and is not
+	// reported; a grant to a role the kind defines but the tenant lacks is
+	// (role_missing). nil (or an error) reports every missing role.
+	BuiltinRolesOf func(ctx context.Context, tenantID string) ([]string, error)
+}
+
+// definesBuiltin reports whether the tenant's kind defines the built-in role
+// (true without BuiltinRolesOf or when the lookup fails, so a missing role is
+// reported rather than hidden). kinds caches the lookup per tenant.
+func (m *Modules) definesBuiltin(ctx context.Context, tenantID, role string, kinds map[string][]string) bool {
+	if m.BuiltinRolesOf == nil {
+		return true
+	}
+	roles, ok := kinds[tenantID]
+	if !ok {
+		var err error
+		if roles, err = m.BuiltinRolesOf(ctx, tenantID); err != nil {
+			return true
+		}
+		kinds[tenantID] = roles
+	}
+	return slices.Contains(roles, role)
 }
 
 // NewModules wires the service.
@@ -279,6 +307,7 @@ func (m *Modules) Register(ctx context.Context, reg Registration) (RegisterResul
 	}
 	// Tenants.
 	skipped := map[string]*SkippedGrant{}
+	kinds := map[string][]string{} // tenant → built-in roles of its kind (definesBuiltin)
 	kept := map[string]int{}
 	for _, tid := range reg.Tenants {
 		n, err := m.reg.Register(sys, tid, reg.Module, reg.Registrant, reg.Permissions)
@@ -311,6 +340,10 @@ func (m *Modules) Register(ctx context.Context, reg Registration) (RegisterResul
 			if err != nil {
 				return res, err
 			}
+			if !found && !m.definesBuiltin(sys, tid, g.Role, kinds) {
+				res.NotApplicable++
+				continue
+			}
 			if !found {
 				sg := skipped[g.Role]
 				if sg == nil {
@@ -337,7 +370,7 @@ func (m *Modules) Register(ctx context.Context, reg Registration) (RegisterResul
 	}
 	m.emit(audit.Event{Type: audit.ModuleRegistered, TenantID: at, ActorKind: "service", ActorService: reg.Registrant, Outcome: "ok", SubjectKind: "module", SubjectID: "",
 		Details: map[string]any{"module": reg.Module, "delegate": reg.Delegate, "permissions": len(reg.Permissions), "roles": len(defs), "tenants": len(reg.Tenants),
-			"role_errors": len(res.RoleErrors), "skipped_grants": len(res.Skipped), "grants_revoked": res.GrantsRevoked}})
+			"role_errors": len(res.RoleErrors), "skipped_grants": len(res.Skipped), "grants_revoked": res.GrantsRevoked, "grants_not_applicable": res.NotApplicable}})
 	for _, d := range upserted {
 		m.emit(audit.Event{Type: audit.ModuleRoleUpserted, TenantID: at, ActorKind: "service", ActorService: reg.Registrant, Outcome: "ok", SubjectKind: "module_role",
 			Details: map[string]any{"module": d.Module, "slug": d.Slug, "permissions": qualify(d.Module, d.Permissions), "tenants": len(reg.Tenants)}})

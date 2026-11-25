@@ -256,6 +256,7 @@ func Build(ctx context.Context, cfg config.Config, o Options) (a *App, err error
 	a.Modules = authz.NewModules(authzdb.DBModuleStore{St: a.Store}, a.Registry, a.Roles, a.Authz, a.Audit)
 	a.Modules.PlatformTenant = PlatformTenantID
 	a.Modules.Tenants = a.activeTenantIDs
+	a.Modules.BuiltinRolesOf = a.builtinRolesOf
 	a.Verifier = authz.NewVerifier(authzdb.DBVerifyStore{DBRoleStore: roleStore}, a.Authz, a.Audit)
 	a.HTTP.RegisterUS3(httpapi.US3Deps{Roles: a.Roles, Registry: a.Registry})
 	a.MFA = mfa.New(mfadb.DBStore{St: a.Store}, a.Cache, a.Envelope, a.Audit, cfg.MFA.Issuer)
@@ -384,6 +385,21 @@ func (a *App) buildWebAuthn(ctx context.Context) error {
 }
 
 // activeTenantIDs lists tenants a service may register permissions for.
+// builtinRolesOf returns the built-in roles of a tenant's kind (module
+// registration: grants to a role the kind does not define are expected).
+func (a *App) builtinRolesOf(ctx context.Context, tenantID string) ([]string, error) {
+	var t store.Tenant
+	err := a.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
+		var err error
+		t, err = store.GetTenant(ctx, tx, tenantID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return BuiltinRolesFor(t.Kind), nil
+}
+
 func (a *App) activeTenantIDs(ctx context.Context) ([]string, error) {
 	var ids []string
 	err := a.Store.Tx(ctx, store.Scope{System: true}, func(tx pgx.Tx) error {
