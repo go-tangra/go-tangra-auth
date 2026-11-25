@@ -244,7 +244,7 @@ service Profiles {
   // groups) and their group ids: provisioning into external systems and
   // member pickers. The module is the caller's service name from its SPIFFE
   // id (".../svc/<module>"); roles of other modules, custom and built-in roles
-  // are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+  // are never returned (built-in roles are, in builtin_roles). No e-mail field, phone, secrets or MFA state. Policy:
   // services allowed by policy.yaml only (the teleport module).
   rpc Members(ListMemberDetailsRequest) returns (ListMemberDetailsResponse);
 }
@@ -263,6 +263,10 @@ message MemberDetail {
   string display_name = 3;
   repeated string roles = 4;     // module role slugs of the calling module, sorted
   repeated string group_ids = 5; // groups the member belongs to, sorted
+  // Built-in roles the member holds (owner, admin, member, auditor,
+  // operator), directly or through groups, sorted: lets a module address
+  // tenant administrators (e.g. deployer status e-mails).
+  repeated string builtin_roles = 6;
 }
 message ListMemberDetailsResponse {
   repeated MemberDetail members = 1; // active users only, ordered by id

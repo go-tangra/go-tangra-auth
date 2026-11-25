@@ -812,7 +812,7 @@ type ProfilesClient interface {
 	// groups) and their group ids: provisioning into external systems and
 	// member pickers. The module is the caller's service name from its SPIFFE
 	// id (".../svc/<module>"); roles of other modules, custom and built-in roles
-	// are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+	// are never returned (built-in roles are, in builtin_roles). No e-mail field, phone, secrets or MFA state. Policy:
 	// services allowed by policy.yaml only (the teleport module).
 	Members(ctx context.Context, in *ListMemberDetailsRequest, opts ...grpc.CallOption) (*ListMemberDetailsResponse, error)
 }
@@ -888,7 +888,7 @@ type ProfilesServer interface {
 	// groups) and their group ids: provisioning into external systems and
 	// member pickers. The module is the caller's service name from its SPIFFE
 	// id (".../svc/<module>"); roles of other modules, custom and built-in roles
-	// are never returned. No e-mail field, phone, secrets or MFA state. Policy:
+	// are never returned (built-in roles are, in builtin_roles). No e-mail field, phone, secrets or MFA state. Policy:
 	// services allowed by policy.yaml only (the teleport module).
 	Members(context.Context, *ListMemberDetailsRequest) (*ListMemberDetailsResponse, error)
 	mustEmbedUnimplementedProfilesServer()

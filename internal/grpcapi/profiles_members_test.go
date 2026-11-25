@@ -141,6 +141,16 @@ func TestProfilesMembersRolesAndGroups(t *testing.T) {
 	if f := m[mdFrank]; len(f.GetRoles()) != 0 || len(f.GetGroupIds()) != 0 || f.GetLogin() != "frank@x.test" {
 		t.Fatalf("frank %+v", f)
 	}
+	// Built-in roles are reported apart (tenant administrators); custom and
+	// module roles never appear there.
+	if d := m[mdDana]; !slices.Equal(d.GetBuiltinRoles(), []string{"admin"}) {
+		t.Fatalf("dana built-in roles %v", d.GetBuiltinRoles())
+	}
+	for _, id := range []string{mdBob, mdCarol, mdFrank} {
+		if b := m[id].GetBuiltinRoles(); len(b) != 0 {
+			t.Fatalf("%s holds no built-in role, got %v", id, b)
+		}
+	}
 	for _, d := range res.GetMembers() {
 		s := d.String()
 		if strings.Contains(s, "+385") || strings.Contains(s, "sealed") || strings.Contains(s, "warden") || strings.Contains(s, "viewer") {

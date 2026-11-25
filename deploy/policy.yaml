@@ -51,6 +51,13 @@ rules:
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Members"]
     effect: allow
+  - id: deployer-directory
+    # Deployment status e-mails: members with their built-in and deployer
+    # roles (Members) and the e-mail of the administrators (Contacts).
+    from: ["spiffe://example.org/svc/deployer"]
+    to: ["auth"]
+    operations: ["/auth.v1.Profiles/Members", "/auth.v1.Profiles/Contacts"]
+    effect: allow
   - id: gateway-exchange
     from: ["spiffe://example.org/svc/gateway"]
     to: ["auth"]
