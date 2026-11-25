@@ -7,7 +7,7 @@ toolchain go1.26.11
 require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-kratos/kratos/v3 v3.0.0 // indirect
-	github.com/go-tangra/go-tangra/v4 v4.10.1
+	github.com/go-tangra/go-tangra/v4 v4.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/openfga/go-sdk v0.8.2
@@ -25,7 +25,7 @@ require (
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-tangra/go-tangra-auth/sdk/v4 v4.0.0
-	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.1.0
+	github.com/go-tangra/go-tangra-portal/sdk/v4 v4.2.1
 	github.com/go-webauthn/webauthn v0.18.2
 	golang.org/x/image v0.46.0
 )
