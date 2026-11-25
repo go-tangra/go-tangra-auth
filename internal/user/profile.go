@@ -336,6 +336,7 @@ var ErrInvalidQuery = errors.New("user: invalid query")
 type MemberDetailView struct {
 	ID, Login, DisplayName string
 	Roles, GroupIDs        []string
+	BuiltinRoles           []string // built-in role slugs held (owner, admin, ...)
 }
 
 // MemberDetailsQuery selects a page of MemberDetails (ListMembers semantics
@@ -380,7 +381,7 @@ func (p *Profiles) MemberDetails(ctx context.Context, actor tenantctx.Actor, mod
 		return nil, "", err
 	}
 	for _, r := range rows {
-		v := MemberDetailView{ID: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: ModuleRoles(r.Roles, module), GroupIDs: r.GroupIDs}
+		v := MemberDetailView{ID: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: ModuleRoles(r.Roles, module), GroupIDs: r.GroupIDs, BuiltinRoles: BuiltinRoles(r.Roles)}
 		if v.GroupIDs == nil {
 			v.GroupIDs = []string{}
 		}
@@ -403,6 +404,19 @@ func ModuleRoles(rows []store.EffectiveRoleRow, module string) []string {
 	for _, r := range rows {
 		if m, slug, ok := permref.ParseModuleRoleSlug(r.Slug); ok && m == module && !slices.Contains(out, slug) {
 			out = append(out, slug)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// BuiltinRoles keeps the built-in role slugs (permref.ReservedSlugs) among a
+// user's effective role rows, distinct and sorted.
+func BuiltinRoles(rows []store.EffectiveRoleRow) []string {
+	out := []string{}
+	for _, r := range rows {
+		if permref.IsReserved(r.Slug) && !slices.Contains(out, r.Slug) {
+			out = append(out, r.Slug)
 		}
 	}
 	slices.Sort(out)

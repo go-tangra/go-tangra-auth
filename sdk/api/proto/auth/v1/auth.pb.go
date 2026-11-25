@@ -2081,12 +2081,16 @@ func (x *ListMemberDetailsRequest) GetQuery() string {
 }
 
 type MemberDetail struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Login         string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"` // the sign-in identifier as auth stores it
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Roles         []string               `protobuf:"bytes,4,rep,name=roles,proto3" json:"roles,omitempty"`                       // module role slugs of the calling module, sorted
-	GroupIds      []string               `protobuf:"bytes,5,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"` // groups the member belongs to, sorted
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	UserId      string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Login       string                 `protobuf:"bytes,2,opt,name=login,proto3" json:"login,omitempty"` // the sign-in identifier as auth stores it
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Roles       []string               `protobuf:"bytes,4,rep,name=roles,proto3" json:"roles,omitempty"`                       // module role slugs of the calling module, sorted
+	GroupIds    []string               `protobuf:"bytes,5,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"` // groups the member belongs to, sorted
+	// Built-in roles the member holds (owner, admin, member, auditor,
+	// operator), directly or through groups, sorted: lets a module address
+	// tenant administrators (e.g. deployer status e-mails).
+	BuiltinRoles  []string `protobuf:"bytes,6,rep,name=builtin_roles,json=builtinRoles,proto3" json:"builtin_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2152,6 +2156,13 @@ func (x *MemberDetail) GetRoles() []string {
 func (x *MemberDetail) GetGroupIds() []string {
 	if x != nil {
 		return x.GroupIds
+	}
+	return nil
+}
+
+func (x *MemberDetail) GetBuiltinRoles() []string {
+	if x != nil {
+		return x.BuiltinRoles
 	}
 	return nil
 }
@@ -2804,13 +2815,14 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x19\n" +
 	"\buser_ids\x18\x04 \x03(\tR\auserIds\x12\x14\n" +
-	"\x05query\x18\x05 \x01(\tR\x05query\"\x93\x01\n" +
+	"\x05query\x18\x05 \x01(\tR\x05query\"\xb8\x01\n" +
 	"\fMemberDetail\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
 	"\x05login\x18\x02 \x01(\tR\x05login\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05roles\x18\x04 \x03(\tR\x05roles\x12\x1b\n" +
-	"\tgroup_ids\x18\x05 \x03(\tR\bgroupIds\"m\n" +
+	"\tgroup_ids\x18\x05 \x03(\tR\bgroupIds\x12#\n" +
+	"\rbuiltin_roles\x18\x06 \x03(\tR\fbuiltinRoles\"m\n" +
 	"\x19ListMemberDetailsResponse\x12/\n" +
 	"\amembers\x18\x01 \x03(\v2\x15.auth.v1.MemberDetailR\amembers\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +

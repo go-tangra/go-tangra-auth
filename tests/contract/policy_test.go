@@ -54,8 +54,8 @@ func mustID(t *testing.T, s string) identity.SPIFFEID {
 }
 
 // TestProfilesMembersPolicy pins who may list member details (login, the
-// caller module's roles, group ids): the teleport module only, besides the
-// gateway's catch-all forward rule. The other directory services keep
+// caller module's roles, group ids): the teleport and deployer modules only,
+// besides the gateway's catch-all forward rule. The other directory services keep
 // Lookup/ListMembers and are refused Members.
 func TestProfilesMembersPolicy(t *testing.T) {
 	f, err := os.Open("../../deploy/policy.yaml")
@@ -80,7 +80,14 @@ func TestProfilesMembersPolicy(t *testing.T) {
 	if decide("teleport", "/auth.v1.Profiles/Contacts").Allowed {
 		t.Error("teleport may read e-mail contacts")
 	}
-	for _, svc := range []string{"notification", "asset", "ticket", "deployer", "signing", "hr", "lcm", "warden", "teleport-evil", "console", "portal"} {
+	// The deployer addresses status e-mails to administrators: Members for
+	// their roles, Contacts for the e-mail.
+	for _, op := range []string{"/auth.v1.Profiles/ListMembers", members, "/auth.v1.Profiles/Contacts"} {
+		if d := decide("deployer", op); !d.Allowed || d.RuleID != "deployer-directory" {
+			t.Errorf("deployer %s: %+v", op, d)
+		}
+	}
+	for _, svc := range []string{"notification", "asset", "ticket", "signing", "hr", "lcm", "warden", "teleport-evil", "console", "portal"} {
 		if decide(svc, members).Allowed {
 			t.Errorf("%s may call Members", svc)
 		}

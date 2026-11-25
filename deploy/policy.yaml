@@ -29,10 +29,13 @@ rules:
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
     effect: allow
   - id: deployer-directory
-    # Job events are addressed to the members holding deployer jobs:read.
+    # Job events are addressed to the members holding deployer jobs:read
+    # (ListMembers); deployment status e-mails go to owners, admins and
+    # deployer administrators (Members for their roles, Contacts for the
+    # e-mail).
     from: ["spiffe://example.org/svc/deployer"]
     to: ["auth"]
-    operations: ["/auth.v1.Profiles/ListMembers"]
+    operations: ["/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Members", "/auth.v1.Profiles/Contacts"]
     effect: allow
   - id: signing-directory
     from: ["spiffe://example.org/svc/signing"]

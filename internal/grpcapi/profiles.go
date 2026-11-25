@@ -116,7 +116,7 @@ func (s *ProfilesServer) Members(ctx context.Context, req *authv1.ListMemberDeta
 	}
 	out := &authv1.ListMemberDetailsResponse{Members: make([]*authv1.MemberDetail, 0, len(rows)), NextCursor: next}
 	for _, r := range rows {
-		out.Members = append(out.Members, &authv1.MemberDetail{UserId: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: r.Roles, GroupIds: r.GroupIDs})
+		out.Members = append(out.Members, &authv1.MemberDetail{UserId: r.ID, Login: r.Login, DisplayName: r.DisplayName, Roles: r.Roles, GroupIds: r.GroupIDs, BuiltinRoles: r.BuiltinRoles})
 	}
 	return out, nil
 }
