@@ -29,10 +29,13 @@ rules:
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers"]
     effect: allow
   - id: deployer-directory
-    # Job events are addressed to the members holding deployer jobs:read.
+    # Job events are addressed to the members holding deployer jobs:read
+    # (ListMembers); deployment status e-mails go to owners, admins and
+    # deployer administrators (Members for their roles, Contacts for the
+    # e-mail).
     from: ["spiffe://example.org/svc/deployer"]
     to: ["auth"]
-    operations: ["/auth.v1.Profiles/ListMembers"]
+    operations: ["/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Members", "/auth.v1.Profiles/Contacts"]
     effect: allow
   - id: signing-directory
     from: ["spiffe://example.org/svc/signing"]
@@ -50,13 +53,6 @@ rules:
     from: ["spiffe://example.org/svc/teleport"]
     to: ["auth"]
     operations: ["/auth.v1.Profiles/Lookup", "/auth.v1.Profiles/ListMembers", "/auth.v1.Profiles/Members"]
-    effect: allow
-  - id: deployer-directory
-    # Deployment status e-mails: members with their built-in and deployer
-    # roles (Members) and the e-mail of the administrators (Contacts).
-    from: ["spiffe://example.org/svc/deployer"]
-    to: ["auth"]
-    operations: ["/auth.v1.Profiles/Members", "/auth.v1.Profiles/Contacts"]
     effect: allow
   - id: gateway-exchange
     from: ["spiffe://example.org/svc/gateway"]
